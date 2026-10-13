@@ -3,8 +3,11 @@ const router = express.Router()
 const mongoose = require('mongoose')
 const Company = require('../models/Company')
 
+const roleMiddleware = require('../middleware/roleMiddleware')
+const authMiddleware = require('../middleware/authMiddleware')
+
 // POST /companies/register
-router.post('/register', async (req, res) => {
+router.post('/register', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
   try {
     const { companyName, companyCode, email, phone, gstin, address } = req.body
 
@@ -68,7 +71,7 @@ router.post('/register', async (req, res) => {
 })
 
 // GET /companies
-router.get('/', async (req, res) => {
+router.get('/', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
   try {
     const companies = await Company.find().sort({ createdAt: -1 }).select('-__v')
 
@@ -89,7 +92,7 @@ router.get('/', async (req, res) => {
 })
 
 // GET /companies/:id
-router.get('/:id', async (req, res) => {
+router.get('/:id', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
   try {
     const { id } = req.params
 
@@ -127,7 +130,7 @@ router.get('/:id', async (req, res) => {
 })
 
 // PUT /companies/:id Update company details
-router.put('/:id', async (req, res) => {
+router.put('/:id',authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
   try {
     const { id } = req.params
     const allowedFields = ['companyName', 'companyCode', 'email', 'phone', 'gstin', 'address', 'status']
@@ -253,7 +256,7 @@ router.put('/:id', async (req, res) => {
 })
 
 // PATCH /companies/:id/status Activate or deactivate a company
-router.patch('/:id/status', async (req, res) => {
+router.patch('/:id/status',authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
   try {
     const { id } = req.params
     const { status } = req.body

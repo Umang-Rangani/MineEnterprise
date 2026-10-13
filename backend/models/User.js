@@ -6,7 +6,16 @@ const userSchema = new mongoose.Schema(
     companyId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'CompanyEnterPrise',
-      required: [true, 'Company ID is required'],
+      default: null,
+      required: function () {
+        return this.role !== 'SuperAdmin'
+      },
+      validate: {
+        validator: function (value) {
+          return this.role === 'SuperAdmin' ? value == null : value != null
+        },
+        message: 'Company ID is required for company users',
+      },
       index: true,
     },
 
@@ -55,9 +64,20 @@ const userSchema = new mongoose.Schema(
   },
 )
 
+// Email must be unique within each company.
 userSchema.index({ companyId: 1, email: 1 }, { unique: true })
 
-// Hash the password before saving.
+// Allow only one Global SuperAdmin.
+userSchema.index(
+  { role: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      role: 'SuperAdmin',
+    },
+  },
+)
+
 userSchema.pre('save', async function () {
   if (!this.isModified('password')) {
     return
@@ -66,10 +86,10 @@ userSchema.pre('save', async function () {
   this.password = await bcrypt.hash(this.password, 12)
 })
 
-// Compare entered password with the stored hash.
 userSchema.methods.comparePassword = async function (enteredPassword) {
   return bcrypt.compare(enteredPassword, this.password)
 }
 
 const User = mongoose.model('UserEnterPrise', userSchema)
+
 module.exports = User

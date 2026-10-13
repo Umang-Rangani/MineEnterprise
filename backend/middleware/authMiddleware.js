@@ -3,6 +3,15 @@ const mongoose = require('mongoose')
 const User = require('../models/User')
 const Company = require('../models/Company')
 
+const clearAuthCookie = (res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  })
+}
+
 const authMiddleware = async (req, res, next) => {
   try {
     if (!process.env.JWT_SECRET) {
@@ -25,7 +34,9 @@ const authMiddleware = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET)
 
-    if (!decoded.userId || !decoded.companyId || !mongoose.isValidObjectId(decoded.userId) || !mongoose.isValidObjectId(decoded.companyId)) {
+    if (!decoded.userId || !mongoose.isValidObjectId(decoded.userId)) {
+      clearAuthCookie(res)
+
       return res.status(401).json({
         success: false,
         message: 'Invalid authentication token',
@@ -35,12 +46,7 @@ const authMiddleware = async (req, res, next) => {
     const user = await User.findById(decoded.userId).select('_id companyId name email role status')
 
     if (!user || user.status !== 'Active') {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-      })
+      clearAuthCookie(res)
 
       return res.status(401).json({
         success: false,
@@ -48,13 +54,40 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-    if (user.companyId.toString() !== decoded.companyId) {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
+    // Global SuperAdmin does not belong to a company.
+    if (user.role === 'SuperAdmin') {
+      if (user.companyId || decoded.companyId) {
+        clearAuthCookie(res)
+
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid SuperAdmin authentication',
+        })
+      }
+
+      req.user = {
+        userId: user._id.toString(),
+        companyId: null,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      }
+
+      return next()
+    }
+
+    // All other users must belong to an active company.
+    if (!user.companyId || !decoded.companyId || !mongoose.isValidObjectId(decoded.companyId)) {
+      clearAuthCookie(res)
+
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid company authentication',
       })
+    }
+
+    if (user.companyId.toString() !== decoded.companyId) {
+      clearAuthCookie(res)
 
       return res.status(401).json({
         success: false,
@@ -65,12 +98,7 @@ const authMiddleware = async (req, res, next) => {
     const company = await Company.findById(user.companyId).select('_id status')
 
     if (!company || company.status !== 'Active') {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-      })
+      clearAuthCookie(res)
 
       return res.status(403).json({
         success: false,
@@ -78,7 +106,6 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-    // Use current database values, not role values supplied by the client.
     req.user = {
       userId: user._id.toString(),
       companyId: user.companyId.toString(),
@@ -87,15 +114,10 @@ const authMiddleware = async (req, res, next) => {
       role: user.role,
     }
 
-    next()
+    return next()
   } catch (error) {
     if (error.name === 'JsonWebTokenError' || error.name === 'TokenExpiredError' || error.name === 'CastError') {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-      })
+      clearAuthCookie(res)
 
       return res.status(401).json({
         success: false,
