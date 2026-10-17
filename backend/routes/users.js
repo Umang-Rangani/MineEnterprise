@@ -8,55 +8,6 @@ const authMiddleware = require('../middleware/authMiddleware')
 
 const router = express.Router()
 
-const createToken = (user) => {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is missing in .env')
-  }
-
-  const payload = {
-    userId: user._id.toString(),
-    role: user.role,
-  }
-
-  if (user.companyId) {
-    payload.companyId = user.companyId.toString()
-  }
-
-  return jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: '1d',
-  })
-}
-
-const publicUser = (user) => ({
-  id: user._id,
-  companyId: user.companyId || null,
-  name: user.name,
-  email: user.email,
-  role: user.role,
-  status: user.status,
-  lastLogin: user.lastLogin,
-})
-
-const clearAuthCookie = (res) => {
-  res.clearCookie('token', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-  })
-}
-
-const matchesSetupKey = (providedKey, expectedKey) => {
-  if (typeof providedKey !== 'string' || !expectedKey) {
-    return false
-  }
-
-  const provided = Buffer.from(providedKey)
-  const expected = Buffer.from(expectedKey)
-
-  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected)
-}
-
 // One-time Global SuperAdmin setup.
 router.post('/setup-superadmin', async (req, res) => {
   try {
@@ -70,7 +21,17 @@ router.post('/setup-superadmin', async (req, res) => {
       })
     }
 
-    if (!matchesSetupKey(setupKey, expectedKey)) {
+    if (typeof setupKey !== 'string') {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid setup authorization',
+      })
+    }
+
+    const providedBuffer = Buffer.from(setupKey)
+    const expectedBuffer = Buffer.from(expectedKey)
+
+    if (providedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(providedBuffer, expectedBuffer)) {
       return res.status(403).json({
         success: false,
         message: 'Invalid setup authorization',
@@ -79,7 +40,7 @@ router.post('/setup-superadmin', async (req, res) => {
 
     const { name, email, password } = req.body
 
-    if (!name?.trim() || !email?.trim() || !password) {
+    if (typeof name !== 'string' || !name.trim() || typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
       return res.status(400).json({
         success: false,
         message: 'Name, email and password are required',
@@ -100,7 +61,6 @@ router.post('/setup-superadmin', async (req, res) => {
       })
     }
 
-    // Atomic unique index in User.js prevents multiple SuperAdmins.
     const user = await User.create({
       companyId: null,
       name: name.trim(),
@@ -113,7 +73,15 @@ router.post('/setup-superadmin', async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'SuperAdmin created successfully',
-      data: publicUser(user),
+      data: {
+        id: user._id,
+        companyId: null,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        lastLogin: user.lastLogin,
+      },
     })
   } catch (error) {
     if (error.code === 11000) {
@@ -139,150 +107,71 @@ router.post('/setup-superadmin', async (req, res) => {
   }
 })
 
-// Register first CompanyAdmin for a company.
-router.post('/register', async (req, res) => {
-  try {
-    const { companyId, name, email, password } = req.body
-
-    if (!companyId || !name?.trim() || !email?.trim() || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Company ID, name, email and password are required',
-      })
-    }
-
-    if (!mongoose.isValidObjectId(companyId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid company ID',
-      })
-    }
-
-    if (password.length < 8 || password.length > 128) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must contain 8 to 128 characters',
-      })
-    }
-
-    const normalizedEmail = email.trim().toLowerCase()
-    const company = await Company.findById(companyId)
-
-    if (!company) {
-      return res.status(404).json({
-        success: false,
-        message: 'Company not found',
-      })
-    }
-
-    if (company.status !== 'Active') {
-      return res.status(403).json({
-        success: false,
-        message: 'This company is inactive',
-      })
-    }
-
-    const existingAdmin = await User.findOne({
-      companyId: company._id,
-      role: 'CompanyAdmin',
-    })
-
-    if (existingAdmin) {
-      return res.status(403).json({
-        success: false,
-        message: 'A Company Admin already exists for this company',
-      })
-    }
-
-    const user = await User.create({
-      companyId: company._id,
-      name: name.trim(),
-      email: normalizedEmail,
-      password,
-      role: 'CompanyAdmin',
-    })
-
-    return res.status(201).json({
-      success: true,
-      message: 'Company Admin registered successfully',
-      data: publicUser(user),
-    })
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'Duplicate account detected',
-      })
-    }
-
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      })
-    }
-
-    console.error('Register error:', error.message)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to register user',
-    })
-  }
+// Public user registration is disabled.
+// CompanyAdmin is created during company registration.
+router.post('/register', (req, res) => {
+  return res.status(410).json({
+    success: false,
+    message: 'Public user registration is disabled. Register your company using /companies/register.',
+  })
 })
 
-// Login: SuperAdmin uses email/password.
-// Company users use companyId/email/password.
+// Login:
+// Company users, SuperAdmin: email + password.
 router.post('/login', async (req, res) => {
   try {
-    const { companyId, email, password } = req.body
+    const { email, password } = req.body
 
-    if (!email?.trim() || !password) {
+    if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password) {
       return res.status(400).json({
         success: false,
         message: 'Email and password are required',
       })
     }
 
-    const normalizedEmail = email.trim().toLowerCase()
-    let user
-
-    if (!companyId) {
-      user = await User.findOne({
-        role: 'SuperAdmin',
-        email: normalizedEmail,
-        companyId: null,
-      }).select('+password')
-    } else {
-      if (!mongoose.isValidObjectId(companyId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid company ID',
-        })
-      }
-
-      const company = await Company.findById(companyId)
-
-      if (!company || company.status !== 'Active') {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid login details or inactive company',
-        })
-      }
-
-      user = await User.findOne({
-        companyId: company._id,
-        email: normalizedEmail,
-        role: { $ne: 'SuperAdmin' },
-      }).select('+password')
-    }
-
-    if (!user) {
+    if (password.length > 128) {
       return res.status(401).json({
         success: false,
         message: 'Invalid login details',
       })
     }
+
+    const normalizedEmail = email.trim().toLowerCase()
+
+    // Find the account using email only.
+    // Email must be unique across all companies for password-only login.
+    const users = await User.find({
+      email: normalizedEmail,
+    }).select('+password')
+
+    if (users.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid login details',
+      })
+    }
+
+    // Check the supplied password against matching email accounts.
+    const matchingUsers = []
+
+    for (const candidate of users) {
+      const passwordValid = await candidate.comparePassword(password)
+
+      if (passwordValid) {
+        matchingUsers.push(candidate)
+      }
+    }
+
+    // Reject ambiguous matches instead of choosing the wrong company account.
+    if (matchingUsers.length !== 1) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid login details',
+      })
+    }
+
+    const user = matchingUsers[0]
+    let company = null
 
     if (user.status !== 'Active') {
       return res.status(403).json({
@@ -291,19 +180,57 @@ router.post('/login', async (req, res) => {
       })
     }
 
-    const isPasswordValid = await user.comparePassword(password)
+    if (user.role === 'SuperAdmin') {
+      if (user.companyId) {
+        return res.status(403).json({
+          success: false,
+          message: 'Invalid SuperAdmin account configuration',
+        })
+      }
+    } else {
+      if (!user.companyId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid login details',
+        })
+      }
 
-    if (!isPasswordValid) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid login details',
-      })
+      company = await Company.findById(user.companyId)
+
+      if (!company || company.status !== 'Active') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your company is inactive or unavailable.',
+        })
+      }
+
+      if (user.companyId.toString() !== company._id.toString()) {
+        return res.status(403).json({
+          success: false,
+          message: 'Company access denied',
+        })
+      }
     }
 
     user.lastLogin = new Date()
     await user.save()
 
-    const token = createToken(user)
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is missing in .env')
+    }
+
+    const payload = {
+      userId: user._id.toString(),
+      role: user.role,
+    }
+
+    if (user.companyId) {
+      payload.companyId = user.companyId.toString()
+    }
+
+    const token = jwt.sign(payload, process.env.JWT_SECRET, {
+      expiresIn: '1d',
+    })
 
     res.cookie('token', token, {
       httpOnly: true,
@@ -316,7 +243,16 @@ router.post('/login', async (req, res) => {
     return res.status(200).json({
       success: true,
       message: 'Login successful',
-      data: publicUser(user),
+      data: {
+        id: user._id,
+        companyId: user.companyId || null,
+        companyName: company ? company.companyName : null,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        lastLogin: user.lastLogin,
+      },
     })
   } catch (error) {
     console.error('Login error:', error.message)
@@ -343,7 +279,12 @@ router.get('/me', authMiddleware, async (req, res) => {
     const user = await User.findById(userId).select('-password').populate('companyId', 'companyName companyCode status')
 
     if (!user || user.status !== 'Active') {
-      clearAuthCookie(res)
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+      })
 
       return res.status(401).json({
         success: false,
@@ -353,7 +294,12 @@ router.get('/me', authMiddleware, async (req, res) => {
 
     if (user.role === 'SuperAdmin') {
       if (user.companyId) {
-        clearAuthCookie(res)
+        res.clearCookie('token', {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+        })
 
         return res.status(403).json({
           success: false,
@@ -361,7 +307,12 @@ router.get('/me', authMiddleware, async (req, res) => {
         })
       }
     } else if (!user.companyId || user.companyId.status !== 'Active') {
-      clearAuthCookie(res)
+      res.clearCookie('token', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+      })
 
       return res.status(403).json({
         success: false,
@@ -371,7 +322,17 @@ router.get('/me', authMiddleware, async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      data: publicUser(user),
+      data: {
+        id: user._id,
+        companyId: user.companyId ? user.companyId._id : null,
+        companyCode: user.companyId ? user.companyId.companyCode : null,
+        companyName: user.companyId ? user.companyId.companyName : null,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.status,
+        lastLogin: user.lastLogin,
+      },
     })
   } catch (error) {
     console.error('Current user error:', error.message)
@@ -385,7 +346,12 @@ router.get('/me', authMiddleware, async (req, res) => {
 
 // Logout.
 router.post('/logout', (req, res) => {
-  clearAuthCookie(res)
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  })
 
   return res.status(200).json({
     success: true,

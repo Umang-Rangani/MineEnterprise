@@ -11,6 +11,8 @@ var indexRouter = require('./routes/index')
 var usersRouter = require('./routes/users')
 var companiesRouter = require('./routes/companies')
 
+var erpPermissionsRouter = require('./routes/erp/permissions')  
+
 var app = express()
 
 // CORS Configuration
@@ -35,6 +37,9 @@ app.use(express.static(path.join(__dirname, 'public')))
 app.use('/', indexRouter)
 app.use('/users', usersRouter)
 app.use('/companies', companiesRouter);
+
+app.use('/erp/permissions', erpPermissionsRouter)
+
 
 // 404 Handler
 app.use(function (req, res, next) {
