@@ -1,518 +1,297 @@
 const express = require('express')
-const router = express.Router()
+const bcrypt = require('bcryptjs')
 const mongoose = require('mongoose')
-const crypto = require('crypto')
-
-const Company = require('../models/Company')
 const User = require('../models/User')
-const roleMiddleware = require('../middleware/roleMiddleware')
+const Company = require('../models/Company')
+
+const router = express.Router()
+
 const authMiddleware = require('../middleware/authMiddleware')
 
-// POST /companies/register
-// Public company registration request
+// SuperAdmin: Get all registered companies
+router.get('/pending', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'SuperAdmin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. SuperAdmin only.',
+      })
+    }
+
+    const companies = await Company.find({ status: 'Pending' }).populate('owner', 'name email phone').sort({ createdAt: -1 }).lean()
+
+    return res.status(200).json({
+      success: true,
+      count: companies.length,
+      companies,
+    })
+  } catch (error) {
+    console.error('Pending companies error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to fetch pending companies.',
+    })
+  }
+})
+
 router.post('/register', async (req, res) => {
-  let company
+  const { name, email, password, phone, companyName, businessType, companyEmail, companyPhone, website, addressLine1, addressLine2, city, state, country, postalCode, gstNumber, panNumber, currency, businessCategory } = req.body
+
+  if (
+    !name?.trim() ||
+    !email?.trim() ||
+    !password ||
+    !companyName?.trim() ||
+    !businessType ||
+    !companyEmail?.trim() ||
+    !companyPhone?.trim() ||
+    !addressLine1?.trim() ||
+    !city?.trim() ||
+    !state?.trim() ||
+    !country?.trim() ||
+    !postalCode?.trim() ||
+    !businessCategory?.trim()
+  ) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please fill in all required owner and company fields.',
+    })
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({
+      success: false,
+      message: 'Password must be at least 8 characters long.',
+    })
+  }
+
+  const allowedBusinessTypes = ['Manufacturer', 'Wholesaler', 'Retailer', 'Distributor', 'Other']
+
+  if (!allowedBusinessTypes.includes(businessType)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid business type.',
+    })
+  }
+
+  const normalizedEmail = email.trim().toLowerCase()
+  const normalizedCompanyEmail = companyEmail.trim().toLowerCase()
+
+  const session = await mongoose.startSession()
 
   try {
-    const { companyName, email, phone, ownerName, ownerEmail, ownerPassword, businessType, gstin, address } = req.body
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    })
 
-    if (!companyName?.trim() || !email?.trim() || !ownerName?.trim() || !ownerEmail?.trim() || !ownerPassword || !businessType?.trim()) {
-      return res.status(400).json({
+    if (existingUser) {
+      return res.status(409).json({
         success: false,
-        message: 'Company name, company email, owner name, owner email, password and business type are required',
-      })
-    }
-
-    if (typeof ownerPassword !== 'string' || ownerPassword.length < 8) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must contain at least 8 characters',
-      })
-    }
-
-    const normalizedCompanyEmail = email.trim().toLowerCase()
-    const normalizedOwnerEmail = ownerEmail.trim().toLowerCase()
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedCompanyEmail) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedOwnerEmail)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide valid company and owner email addresses',
+        message: 'An account with this email already exists.',
       })
     }
 
     const existingCompany = await Company.findOne({
-      email: normalizedCompanyEmail,
-      status: { $in: ['Pending', 'Active'] },
+      companyEmail: normalizedCompanyEmail,
     })
 
     if (existingCompany) {
       return res.status(409).json({
         success: false,
-        message: 'A company with this email already has a pending request or an active account',
+        message: 'A company with this email is already registered.',
       })
     }
 
-    // Generate a unique company code directly inside this route
-    const prefix =
-      companyName
-        .trim()
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .toUpperCase()
-        .slice(0, 6) || 'COMPANY'
+    const hashedPassword = await bcrypt.hash(password, 12)
 
-    let companyCode = ''
+    await session.withTransaction(async () => {
+      const [owner] = await User.create(
+        [
+          {
+            name: name.trim(),
+            email: normalizedEmail,
+            password: hashedPassword,
+            phone: phone?.trim() || '',
+            role: 'CompanyAdmin',
+            companyId: null,
+            status: 'Active',
+          },
+        ],
+        { session },
+      )
 
-    for (let attempt = 0; attempt < 5; attempt++) {
-      const generatedCode = `${prefix}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`
-
-      const codeExists = await Company.exists({
-        companyCode: generatedCode,
-      })
-
-      if (!codeExists) {
-        companyCode = generatedCode
-        break
-      }
-    }
-
-    if (!companyCode) {
-      return res.status(500).json({
-        success: false,
-        message: 'Unable to generate a company code. Please try again.',
-      })
-    }
-
-    company = await Company.create({
-      companyName: companyName.trim(),
-      companyCode,
-      email: normalizedCompanyEmail,
-      phone: typeof phone === 'string' ? phone.trim() : '',
-      ownerName: ownerName.trim(),
-      businessType: businessType.trim(),
-      gstin: typeof gstin === 'string' ? gstin.trim().toUpperCase() : '',
-      address: typeof address === 'string' ? address.trim() : '',
-      status: 'Pending',
-    })
-
-    await User.create({
-      companyId: company._id,
-      name: ownerName.trim(),
-      email: normalizedOwnerEmail,
-      password: ownerPassword,
-      role: 'CompanyAdmin',
-      status: 'Inactive',
+      await Company.create(
+        [
+          {
+            companyName: companyName.trim(),
+            businessType,
+            companyEmail: normalizedCompanyEmail,
+            companyPhone: companyPhone.trim(),
+            website: website?.trim() || '',
+            owner: owner._id,
+            addressLine1: addressLine1.trim(),
+            addressLine2: addressLine2?.trim() || '',
+            city: city.trim(),
+            state: state.trim(),
+            country: country.trim(),
+            postalCode: postalCode.trim(),
+            gstNumber: gstNumber?.trim() || '',
+            panNumber: panNumber?.trim() || '',
+            currency: currency?.trim() || 'INR',
+            businessCategory: businessCategory.trim(),
+            status: 'Pending',
+          },
+        ],
+        { session },
+      )
     })
 
     return res.status(201).json({
       success: true,
-      message: 'Registration request submitted successfully. Please wait for SuperAdmin approval.',
-      data: {
-        companyId: company._id,
-        companyName: company.companyName,
-        companyCode: company.companyCode,
-        status: company.status,
-      },
-    })
-  } catch (error) {
-    // Roll back company creation if owner account creation fails
-    if (company) {
-      await Company.findByIdAndDelete(company._id).catch(() => {})
-    }
-
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'Company code or owner account already exists',
-      })
-    }
-
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      })
-    }
-
-    console.error('Company registration error:', error.message)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to submit company registration request',
-    })
-  }
-})
-
-// GET /companies
-// SuperAdmin: get all companies
-router.get('/', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
-  try {
-    const companies = await Company.find().sort({ createdAt: -1 }).select('-__v')
-
-    return res.status(200).json({
-      success: true,
-      count: companies.length,
-      message: 'Companies fetched successfully',
-      data: companies,
-    })
-  } catch (error) {
-    console.error('Get companies error:', error.message)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch companies',
-    })
-  }
-})
-
-// GET /companies/:id
-// SuperAdmin: get company details
-router.get('/:id', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
-  try {
-    const { id } = req.params
-
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid company ID',
-      })
-    }
-
-    const company = await Company.findById(id).select('-__v')
-
-    if (!company) {
-      return res.status(404).json({
-        success: false,
-        message: 'Company not found',
-      })
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Company details fetched successfully',
-      data: company,
-    })
-  } catch (error) {
-    console.error('Get company details error:', error.message)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch company details',
-    })
-  }
-})
-
-// PUT /companies/:id
-// Update company details without changing approval status
-router.put('/:id', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
-  try {
-    const { id } = req.params
-
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid company ID',
-      })
-    }
-
-    const allowedFields = ['companyName', 'companyCode', 'email', 'phone', 'ownerName', 'businessType', 'gstin', 'address']
-
-    const updates = {}
-
-    for (const field of allowedFields) {
-      if (Object.prototype.hasOwnProperty.call(req.body, field)) {
-        updates[field] = req.body[field]
-      }
-    }
-
-    if (!Object.keys(updates).length) {
-      return res.status(400).json({
-        success: false,
-        message: 'No valid fields provided for update',
-      })
-    }
-
-    for (const field of ['companyName', 'email', 'ownerName', 'businessType']) {
-      if (updates[field] !== undefined && (typeof updates[field] !== 'string' || !updates[field].trim())) {
-        return res.status(400).json({
-          success: false,
-          message: `${field} cannot be empty`,
-        })
-      }
-    }
-
-    if (updates.companyName !== undefined) {
-      updates.companyName = updates.companyName.trim()
-    }
-
-    if (updates.ownerName !== undefined) {
-      updates.ownerName = updates.ownerName.trim()
-    }
-
-    if (updates.businessType !== undefined) {
-      updates.businessType = updates.businessType.trim()
-    }
-
-    if (updates.email !== undefined) {
-      updates.email = updates.email.trim().toLowerCase()
-
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updates.email)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Please provide a valid email',
-        })
-      }
-    }
-
-    if (updates.companyCode !== undefined) {
-      if (typeof updates.companyCode !== 'string' || !updates.companyCode.trim()) {
-        return res.status(400).json({
-          success: false,
-          message: 'Company code cannot be empty',
-        })
-      }
-
-      updates.companyCode = updates.companyCode.trim().toUpperCase()
-    }
-
-    for (const field of ['phone', 'address', 'gstin']) {
-      if (updates[field] !== undefined && typeof updates[field] !== 'string') {
-        return res.status(400).json({
-          success: false,
-          message: `${field} must be a string`,
-        })
-      }
-    }
-
-    if (updates.gstin !== undefined) {
-      updates.gstin = updates.gstin.trim().toUpperCase()
-    }
-
-    const company = await Company.findByIdAndUpdate(
-      id,
-      { $set: updates },
-      {
-        new: true,
-        runValidators: true,
-      },
-    ).select('-__v')
-
-    if (!company) {
-      return res.status(404).json({
-        success: false,
-        message: 'Company not found',
-      })
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Company details updated successfully',
-      data: company,
+      message: 'Registration submitted successfully. Your company is awaiting SuperAdmin approval.',
     })
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: 'Company code already exists',
+        message: 'An account or company with these details already exists.',
       })
     }
 
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      })
-    }
-
-    console.error('Update company error:', error.message)
+    console.error('Company registration error:', error)
 
     return res.status(500).json({
       success: false,
-      message: 'Failed to update company',
+      message: 'Unable to submit company registration.',
     })
+  } finally {
+    await session.endSession()
   }
 })
 
-// POST /companies/:id/approve
-// SuperAdmin: approve a pending company
-router.post('/:id/approve', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
+router.patch('/:companyId/review', authMiddleware, async (req, res) => {
   try {
-    const { id } = req.params
-
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({
+    if (req.user.role !== 'SuperAdmin') {
+      return res.status(403).json({
         success: false,
-        message: 'Invalid company ID',
+        message: 'Access denied. SuperAdmin only.',
       })
     }
 
-    const company = await Company.findById(id)
+    const { companyId } = req.params
+    const { action, rejectionReason } = req.body
+
+    if (!mongoose.isValidObjectId(companyId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid company ID.',
+      })
+    }
+
+    if (!['Approve', 'Reject'].includes(action)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Action must be Approve or Reject.',
+      })
+    }
+
+    const company = await Company.findById(companyId)
 
     if (!company) {
       return res.status(404).json({
         success: false,
-        message: 'Company not found',
+        message: 'Company not found.',
       })
     }
 
     if (company.status !== 'Pending') {
       return res.status(409).json({
         success: false,
-        message: 'Only pending company requests can be approved',
+        message: 'Only pending companies can be reviewed.',
       })
     }
 
-    const owner = await User.findOne({
-      companyId: company._id,
-      role: 'CompanyAdmin',
-    })
+    if (action === 'Reject' && !rejectionReason?.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a rejection reason.',
+      })
+    }
 
-    if (!owner) {
+    if (action === 'Approve') {
+      const session = await mongoose.startSession()
+
+      try {
+        await session.withTransaction(async () => {
+          const updatedCompany = await Company.findOneAndUpdate(
+            { _id: companyId, status: 'Pending' },
+            {
+              $set: {
+                status: 'Approved',
+                approvedBy: req.user.userId,
+                approvedAt: new Date(),
+                rejectionReason: '',
+              },
+            },
+            { new: true, session },
+          )
+
+          if (!updatedCompany) {
+            throw new Error('COMPANY_REVIEW_CONFLICT')
+          }
+
+          await User.updateOne({ _id: updatedCompany.owner, role: 'CompanyAdmin' }, { $set: { companyId: updatedCompany._id } }, { session })
+        })
+      } catch (error) {
+        if (error.message === 'COMPANY_REVIEW_CONFLICT') {
+          return res.status(409).json({
+            success: false,
+            message: 'Company has already been reviewed.',
+          })
+        }
+
+        throw error
+      } finally {
+        await session.endSession()
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Company approved successfully.',
+      })
+    }
+
+    const updatedCompany = await Company.findOneAndUpdate(
+      { _id: companyId, status: 'Pending' },
+      {
+        $set: {
+          status: 'Rejected',
+          approvedBy: null,
+          approvedAt: null,
+          rejectionReason: rejectionReason.trim(),
+        },
+      },
+      { new: true },
+    )
+
+    if (!updatedCompany) {
       return res.status(409).json({
         success: false,
-        message: 'Company owner account was not found',
-      })
-    }
-
-    // Activate owner first so company remains Pending if this save fails
-    owner.status = 'Active'
-    await owner.save()
-
-    company.status = 'Active'
-    company.approvedBy = req.user.userId
-    company.approvedAt = new Date()
-    company.rejectedBy = null
-    company.rejectedAt = null
-    company.rejectionReason = ''
-
-    await company.save()
-
-    return res.status(200).json({
-      success: true,
-      message: 'Company approved successfully. Owner can now log in.',
-      data: {
-        companyId: company._id,
-        companyName: company.companyName,
-        status: company.status,
-        ownerEmail: owner.email,
-      },
-    })
-  } catch (error) {
-    console.error('Approve company error:', error.message)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to approve company',
-    })
-  }
-})
-
-// POST /companies/:id/reject
-// SuperAdmin: reject a pending company
-router.post('/:id/reject', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
-  try {
-    const { id } = req.params
-    const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : ''
-
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid company ID',
-      })
-    }
-
-    if (!reason) {
-      return res.status(400).json({
-        success: false,
-        message: 'A rejection reason is required',
-      })
-    }
-
-    if (reason.length > 500) {
-      return res.status(400).json({
-        success: false,
-        message: 'Rejection reason cannot exceed 500 characters',
-      })
-    }
-
-    const company = await Company.findOne({
-      _id: id,
-      status: 'Pending',
-    })
-
-    if (!company) {
-      return res.status(404).json({
-        success: false,
-        message: 'Pending company request not found',
-      })
-    }
-
-    company.status = 'Rejected'
-    company.rejectedBy = req.user.userId
-    company.rejectedAt = new Date()
-    company.rejectionReason = reason
-
-    await company.save()
-
-    return res.status(200).json({
-      success: true,
-      message: 'Company registration request rejected',
-      data: {
-        companyId: company._id,
-        status: company.status,
-        rejectionReason: company.rejectionReason,
-      },
-    })
-  } catch (error) {
-    console.error('Reject company error:', error.message)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to reject company request',
-    })
-  }
-})
-
-// PATCH /companies/:id/status
-// SuperAdmin: deactivate an active company
-router.patch('/:id/status', authMiddleware, roleMiddleware('SuperAdmin'), async (req, res) => {
-  try {
-    const { id } = req.params
-    const { status } = req.body
-
-    if (!mongoose.isValidObjectId(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid company ID',
-      })
-    }
-
-    if (status !== 'Inactive') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only Active companies can be deactivated through this endpoint',
-      })
-    }
-
-    const company = await Company.findOneAndUpdate({ _id: id, status: 'Active' }, { $set: { status: 'Inactive' } }, { new: true, runValidators: true }).select('-__v')
-
-    if (!company) {
-      return res.status(404).json({
-        success: false,
-        message: 'Active company not found',
+        message: 'Company has already been reviewed.',
       })
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Company deactivated successfully',
-      data: company,
+      message: 'Company rejected successfully.',
     })
   } catch (error) {
-    console.error('Company status update error:', error.message)
+    console.error('Company review error:', error)
 
     return res.status(500).json({
       success: false,
-      message: 'Failed to deactivate company',
+      message: 'Unable to review company.',
     })
   }
 })

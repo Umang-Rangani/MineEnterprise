@@ -4,67 +4,114 @@ const companySchema = new mongoose.Schema(
   {
     companyName: {
       type: String,
-      required: [true, 'Company name is required'],
+      required: true,
       trim: true,
-      minlength: [2, 'Company name must contain at least 2 characters'],
-      maxlength: [150, 'Company name cannot exceed 150 characters'],
-    },
-
-    companyCode: {
-      type: String,
-      unique: true,
-      uppercase: true,
-      trim: true,
-      default: undefined,
-    },
-
-    email: {
-      type: String,
-      required: [true, 'Company email is required'],
-      lowercase: true,
-      trim: true,
-      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Please provide a valid company email'],
-    },
-
-    phone: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-
-    ownerName: {
-      type: String,
-      required: [true, 'Owner name is required'],
-      trim: true,
-      minlength: [2, 'Owner name must contain at least 2 characters'],
-      maxlength: [100, 'Owner name cannot exceed 100 characters'],
     },
 
     businessType: {
       type: String,
-      required: [true, 'Business type is required'],
-      trim: true,
-      maxlength: [100, 'Business type cannot exceed 100 characters'],
+      required: true,
+      enum: ['Manufacturer', 'Wholesaler', 'Retailer', 'Distributor', 'Other'],
     },
 
-    gstin: {
+    companyEmail: {
       type: String,
+      required: true,
+      lowercase: true,
+      trim: true,
+    },
+
+    companyPhone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    logo: {
+      type: String,
+      default: '',
+    },
+
+    website: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+
+    owner: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UserEnterPrise',
+      required: true,
+    },
+
+    addressLine1: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    addressLine2: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+
+    city: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    state: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    country: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    postalCode: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    gstNumber: {
+      type: String,
+      default: '',
+      trim: true,
+      uppercase: true,
+    },
+
+    panNumber: {
+      type: String,
+      default: '',
+      trim: true,
+      uppercase: true,
+    },
+
+    currency: {
+      type: String,
+      required: true,
+      default: 'INR',
       uppercase: true,
       trim: true,
-      default: '',
     },
 
-    address: {
+    businessCategory: {
       type: String,
+      required: true,
       trim: true,
-      default: '',
     },
 
     status: {
       type: String,
-      enum: ['Pending', 'Active', 'Rejected', 'Inactive'],
+      enum: ['Pending', 'Approved', 'Rejected', 'Inactive'],
       default: 'Pending',
-      index: true,
     },
 
     approvedBy: {
@@ -78,22 +125,10 @@ const companySchema = new mongoose.Schema(
       default: null,
     },
 
-    rejectedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'UserEnterPrise',
-      default: null,
-    },
-
-    rejectedAt: {
-      type: Date,
-      default: null,
-    },
-
     rejectionReason: {
       type: String,
-      trim: true,
       default: '',
-      maxlength: [500, 'Rejection reason cannot exceed 500 characters'],
+      trim: true,
     },
   },
   {
@@ -101,8 +136,7 @@ const companySchema = new mongoose.Schema(
   },
 )
 
-companySchema.index({ companyCode: 1 }, { unique: true, sparse: true })
+companySchema.index({ owner: 1 })
+companySchema.index({ status: 1 })
 
-const Company = mongoose.model('CompanyEnterPrise', companySchema)
-
-module.exports = Company
+module.exports = mongoose.models.CompanyEnterPrise || mongoose.model('CompanyEnterPrise', companySchema)

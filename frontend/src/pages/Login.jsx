@@ -25,7 +25,6 @@ export default function Login() {
 
     try {
       const currentUser = await login(email.trim(), password)
-
       const previousPath = location.state?.from?.pathname
 
       const destination = currentUser.role === 'SuperAdmin' ? '/superadmin' : previousPath && previousPath !== '/login' ? previousPath : '/'
@@ -161,7 +160,7 @@ export default function Login() {
               </div>
 
               {error && (
-                <div role="alert" className="rounded-lg border border-erp-danger/20 bg-erp-danger-bg px-3 py-2.5 text-xs text-erp-danger">
+                <div role="alert" className="rounded-lg border border-erp-danger/20 bg-erp-danger/10 px-3 py-2.5 text-xs text-erp-danger">
                   {error}
                 </div>
               )}
@@ -178,6 +177,7 @@ export default function Login() {
 
             <div className="mt-5 border-t border-erp-border pt-4">
               <p className="text-center text-xs text-erp-text-secondary">New to MineERP?</p>
+
               <Link
                 to="/register-company"
                 className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-erp-border bg-erp-surface px-4 py-2.5 text-xs font-semibold text-erp-primary transition hover:bg-erp-surface-secondary"

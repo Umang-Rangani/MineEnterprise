@@ -1,51 +1,44 @@
 const mongoose = require('mongoose')
-const bcrypt = require('bcryptjs')
 
 const userSchema = new mongoose.Schema(
   {
-    companyId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'CompanyEnterPrise',
-      default: null,
-      required: function () {
-        return this.role !== 'SuperAdmin'
-      },
-      validate: {
-        validator: function (value) {
-          return this.role === 'SuperAdmin' ? value == null : value != null
-        },
-        message: 'Company ID is required for company users',
-      },
-      index: true,
-    },
-
     name: {
       type: String,
-      required: [true, 'User name is required'],
+      required: true,
       trim: true,
-      minlength: [2, 'Name must contain at least 2 characters'],
-      maxlength: [100, 'Name cannot exceed 100 characters'],
     },
 
     email: {
       type: String,
-      required: [true, 'Email is required'],
-      trim: true,
+      required: true,
+      unique: true,
       lowercase: true,
+      trim: true,
     },
 
     password: {
       type: String,
-      required: [true, 'Password is required'],
-      minlength: [8, 'Password must contain at least 8 characters'],
+      required: true,
       select: false,
+    },
+
+    phone: {
+      type: String,
+      default: '',
+      trim: true,
     },
 
     role: {
       type: String,
-      enum: ['SuperAdmin', 'CompanyAdmin', 'Manager', 'Sales', 'Inventory', 'Accountant', 'HR'],
-      default: 'Sales',
-      required: true,
+      enum: ['SuperAdmin', 'CompanyAdmin', 'Employee', 'User'],
+      default: 'User',
+    },
+
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CompanyEnterPrise',
+      default: null,
+      index: true,
     },
 
     status: {
@@ -53,43 +46,10 @@ const userSchema = new mongoose.Schema(
       enum: ['Active', 'Inactive'],
       default: 'Active',
     },
-
-    lastLogin: {
-      type: Date,
-      default: null,
-    },
   },
   {
     timestamps: true,
   },
 )
 
-// Email must be unique within each company.
-userSchema.index({ companyId: 1, email: 1 }, { unique: true })
-
-// Allow only one Global SuperAdmin.
-userSchema.index(
-  { role: 1 },
-  {
-    unique: true,
-    partialFilterExpression: {
-      role: 'SuperAdmin',
-    },
-  },
-)
-
-userSchema.pre('save', async function () {
-  if (!this.isModified('password')) {
-    return
-  }
-
-  this.password = await bcrypt.hash(this.password, 12)
-})
-
-userSchema.methods.comparePassword = async function (enteredPassword) {
-  return bcrypt.compare(enteredPassword, this.password)
-}
-
-const User = mongoose.model('UserEnterPrise', userSchema)
-
-module.exports = User
+module.exports = mongoose.models.UserEnterPrise || mongoose.model('UserEnterPrise', userSchema)

@@ -97,14 +97,15 @@ const authMiddleware = async (req, res, next) => {
 
     const company = await Company.findById(user.companyId).select('_id status')
 
-    if (!company || company.status !== 'Active') {
+    if (!company || company.status !== 'Approved') {
       clearAuthCookie(res)
 
       return res.status(403).json({
         success: false,
-        message: 'Company is inactive or unavailable',
+        message: 'Company is not approved or is unavailable.',
       })
     }
+
 
     req.user = {
       userId: user._id.toString(),

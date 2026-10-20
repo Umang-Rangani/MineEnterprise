@@ -1,33 +1,82 @@
 @import 'tailwindcss';
 
 @theme {
+  /* Primary Brand */
   --color-erp-primary: #6d28d9;
   --color-erp-primary-hover: #5b21b6;
   --color-erp-primary-light: #ede9fe;
+  --color-erp-primary-dark: #4c1d95;
   --color-erp-accent: #8b5cf6;
+  --color-erp-accent-light: #f5f3ff;
 
+  /* Backgrounds */
   --color-erp-bg: #f8fafc;
   --color-erp-surface: #ffffff;
   --color-erp-surface-secondary: #f1f5f9;
+  --color-erp-surface-hover: #faf8ff;
+  --color-erp-surface-active: #ede9fe;
 
+  /* Text */
   --color-erp-text: #0f172a;
   --color-erp-text-secondary: #64748b;
   --color-erp-text-muted: #94a3b8;
   --color-erp-text-inverse: #ffffff;
+  --color-erp-text-link: #6d28d9;
 
+  /* Borders and Focus */
   --color-erp-border: #e2e8f0;
+  --color-erp-border-strong: #cbd5e1;
   --color-erp-hover: #f5f3ff;
   --color-erp-focus: #a78bfa;
+  --color-erp-ring: #ddd6fe;
 
+  /* Sidebar */
   --color-erp-sidebar-bg: #171329;
   --color-erp-sidebar-text: #c4b5fd;
   --color-erp-sidebar-text-muted: #a5a0b8;
   --color-erp-sidebar-hover: #292044;
   --color-erp-sidebar-active: #6d28d9;
   --color-erp-sidebar-border: #302944;
+  --color-erp-sidebar-active-text: #ffffff;
 
+  /* Status */
   --color-erp-success: #15803d;
+  --color-erp-success-light: #dcfce7;
+  --color-erp-success-border: #bbf7d0;
+
   --color-erp-warning: #b45309;
+  --color-erp-warning-light: #fef3c7;
+  --color-erp-warning-border: #fde68a;
+
   --color-erp-danger: #dc2626;
+  --color-erp-danger-light: #fee2e2;
+  --color-erp-danger-border: #fecaca;
+
   --color-erp-info: #2563eb;
+  --color-erp-info-light: #dbeafe;
+  --color-erp-info-border: #bfdbfe;
+
+  /* Ecommerce */
+  --color-erp-price: #15803d;
+  --color-erp-discount: #dc2626;
+  --color-erp-stock-low: #b45309;
+  --color-erp-stock-out: #dc2626;
+  --color-erp-rating: #d97706;
+
+  /* Data Visualization */
+  --color-erp-chart-primary: #7c3aed;
+  --color-erp-chart-secondary: #0d9488;
+  --color-erp-chart-tertiary: #f59e0b;
+  --color-erp-chart-quaternary: #3b82f6;
+
+  /* Overlays */
+  --color-erp-overlay: #0f172a;
+  --color-erp-overlay-light: #64748b;
+
+  /* Shadows */
+  --shadow-erp-card: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+
+  --shadow-erp-dropdown: 0 10px 25px -5px rgb(15 23 42 / 0.1), 0 8px 10px -6px rgb(15 23 42 / 0.08);
+
+  --shadow-erp-modal: 0 20px 50px -12px rgb(15 23 42 / 0.2);
 }

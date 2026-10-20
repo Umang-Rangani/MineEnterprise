@@ -8,10 +8,12 @@ var logger = require('morgan')
 var cors = require('cors')
 
 var indexRouter = require('./routes/index')
-var usersRouter = require('./routes/users')
+const superAdminAuth = require('./routes/superAdminAuth')
+const superAdminDashboard = require('./routes/superAdminDashboard')
+
+// var usersRouter = require('./routes/superAdminAuth')
 var companiesRouter = require('./routes/companies')
 
-var erpPermissionsRouter = require('./routes/erp/permissions')  
 
 var app = express()
 
@@ -32,13 +34,14 @@ app.use(cookieParser())
 // Static Files
 app.use(express.static(path.join(__dirname, 'public')))
 
-
 // Existing Routes
 app.use('/', indexRouter)
-app.use('/users', usersRouter)
-app.use('/companies', companiesRouter);
 
-app.use('/erp/permissions', erpPermissionsRouter)
+app.use('/superadmin', superAdminAuth)
+app.use('/superadmin/dashboard', superAdminDashboard)
+
+// app.use('/users', usersRouter)
+app.use('/companies', companiesRouter)
 
 
 // 404 Handler

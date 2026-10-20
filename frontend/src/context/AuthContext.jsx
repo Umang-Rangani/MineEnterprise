@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import axiosInstance from '../api/axiosInstance'
 
 const AuthContext = createContext(null)
@@ -7,52 +7,49 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = async () => {
     try {
-      const response = await axiosInstance.get('/users/me')
+      const response = await axiosInstance.get('/superadmin/me')
 
-      if (response.data?.success && response.data?.data) {
-        setUser(response.data.data)
-        return response.data.data
+      if (!response.data?.success || !response.data?.user) {
+        setUser(null)
+        return null
       }
 
+      setUser(response.data.user)
+      return response.data.user
+    } catch (error) {
       setUser(null)
       return null
-    } catch {
-      setUser(null)
-      return null
-    } finally {
-      setLoading(false)
     }
-  }, [])
-
-  useEffect(() => {
-    refreshUser()
-  }, [refreshUser])
+  }
 
   const login = async (email, password) => {
-    const response = await axiosInstance.post('/users/login', {
+    const response = await axiosInstance.post('/superadmin/login', {
       email: email.trim().toLowerCase(),
       password,
     })
 
-    if (!response.data?.success || !response.data?.data) {
+    if (!response.data?.success || !response.data?.user) {
       throw new Error(response.data?.message || 'Login failed')
     }
 
-    const currentUser = response.data.data
-    setUser(currentUser)
-
-    return currentUser
+    setUser(response.data.user)
+    return response.data.user
   }
 
-  const logout = async () => {
-    try {
-      await axiosInstance.post('/users/logout')
-    } finally {
-      setUser(null)
+  const logout = () => {
+    setUser(null)
+  }
+
+  useEffect(() => {
+    const restoreSession = async () => {
+      await refreshUser()
+      setLoading(false)
     }
-  }
+
+    restoreSession()
+  }, [])
 
   return (
     <AuthContext.Provider
