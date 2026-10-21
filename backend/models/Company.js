@@ -1,5 +1,43 @@
 const mongoose = require('mongoose')
 
+const customRoleSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+    },
+
+    description: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: 500,
+    },
+
+    permissions: {
+      type: [String],
+      default: [],
+    },
+
+    isSystem: {
+      type: Boolean,
+      default: false,
+      immutable: true,
+    },
+
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UserEnterPrise',
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+  },
+)
+
 const companySchema = new mongoose.Schema(
   {
     companyName: {
@@ -129,6 +167,11 @@ const companySchema = new mongoose.Schema(
       type: String,
       default: '',
       trim: true,
+    },
+
+    customRoles: {
+      type: [customRoleSchema],
+      default: [],
     },
   },
   {

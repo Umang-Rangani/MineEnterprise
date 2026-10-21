@@ -1,5 +1,29 @@
 const mongoose = require('mongoose')
 
+const assignedRoleSchema = new mongoose.Schema(
+  {
+    type: {
+      type: String,
+      enum: ['Predefined', 'Custom'],
+      required: true,
+    },
+
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    customRoleId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+  },
+  {
+    _id: false,
+  },
+)
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -32,6 +56,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ['SuperAdmin', 'CompanyAdmin', 'Employee', 'User'],
       default: 'User',
+    },
+
+    roles: {
+      type: [assignedRoleSchema],
+      default: [],
     },
 
     companyId: {

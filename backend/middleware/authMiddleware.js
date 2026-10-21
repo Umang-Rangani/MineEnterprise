@@ -43,7 +43,7 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-    const user = await User.findById(decoded.userId).select('_id companyId name email role status')
+    const user = await User.findById(decoded.userId).select('_id companyId name email role roles status')
 
     if (!user || user.status !== 'Active') {
       clearAuthCookie(res)
@@ -53,6 +53,14 @@ const authMiddleware = async (req, res, next) => {
         message: 'User account is inactive or unavailable',
       })
     }
+
+    const safeRoles = Array.isArray(user.roles)
+      ? user.roles.map((assignedRole) => ({
+          type: assignedRole.type,
+          name: assignedRole.name,
+          customRoleId: assignedRole.customRoleId ? assignedRole.customRoleId.toString() : null,
+        }))
+      : []
 
     // Global SuperAdmin does not belong to a company.
     if (user.role === 'SuperAdmin') {
@@ -71,12 +79,13 @@ const authMiddleware = async (req, res, next) => {
         name: user.name,
         email: user.email,
         role: user.role,
+        roles: safeRoles,
       }
 
       return next()
     }
 
-    // All other users must belong to an active company.
+    // All other users must belong to the company encoded in the token.
     if (!user.companyId || !decoded.companyId || !mongoose.isValidObjectId(decoded.companyId)) {
       clearAuthCookie(res)
 
@@ -95,7 +104,7 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-    const company = await Company.findById(user.companyId).select('_id status')
+    const company = await Company.findById(user.companyId).select('_id status').lean()
 
     if (!company || company.status !== 'Approved') {
       clearAuthCookie(res)
@@ -106,13 +115,13 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-
     req.user = {
       userId: user._id.toString(),
       companyId: user.companyId.toString(),
       name: user.name,
       email: user.email,
       role: user.role,
+      roles: safeRoles,
     }
 
     return next()

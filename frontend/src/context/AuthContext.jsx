@@ -38,8 +38,14 @@ export function AuthProvider({ children }) {
     return response.data.user
   }
 
-  const logout = () => {
-    setUser(null)
+  const logout = async () => {
+    try {
+      await axiosInstance.post('/superadmin/logout')
+    } catch (error) {
+      console.error('Logout error:', error)
+    } finally {
+      setUser(null)
+    }
   }
 
   useEffect(() => {

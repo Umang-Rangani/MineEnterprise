@@ -10,3 +10,9 @@ server/routes/company.js
 - નવી કંપનીનો status Pending રહેશે.
 - SuperAdmin કંપનીની વિગતો જોઈને Approve અથવા Reject કરી શકશે.
 next લખો, તો પહેલાં company registration માટેનો backend code બનાવીએ.
+
+
+
+
+
+ej che, change nhi kryo

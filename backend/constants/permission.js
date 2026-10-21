@@ -1,146 +1,269 @@
 const ROLES = {
   USER: 'User',
   SUPER_ADMIN: 'SuperAdmin',
-  ADMIN: 'Admin',
-  CATALOG_MANAGER: 'CatalogManager',
-  ORDER_MANAGER: 'OrderManager',
-  SUPPORT: 'Support',
+  COMPANY_ADMIN: 'CompanyAdmin',
+  EMPLOYEE: 'Employee',
+  MANAGER: 'Manager',
+  ACCOUNTANT: 'Accountant',
+  INVENTORY_MANAGER: 'InventoryManager',
+  SALES_MANAGER: 'SalesManager',
 }
 
-/** Roles allowed into the admin panel */
-const ADMIN_ROLES = [ROLES.SUPER_ADMIN, ROLES.ADMIN, ROLES.CATALOG_MANAGER, ROLES.ORDER_MANAGER, ROLES.SUPPORT]
+const SYSTEM_ROLES = [ROLES.SUPER_ADMIN, ROLES.COMPANY_ADMIN, ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.ACCOUNTANT, ROLES.INVENTORY_MANAGER, ROLES.SALES_MANAGER]
 
-/** Employee roles creatable from Users page + (not SuperAdmin, not User) */
-const EMPLOYEE_ROLES = [ROLES.ADMIN, ROLES.CATALOG_MANAGER, ROLES.ORDER_MANAGER, ROLES.SUPPORT]
+const PLATFORM_ROLES = [ROLES.SUPER_ADMIN]
 
-/** Higher index = higher privilege */
-const ROLE_HIERARCHY = [ROLES.SUPPORT, ROLES.CATALOG_MANAGER, ROLES.ORDER_MANAGER, ROLES.ADMIN, ROLES.SUPER_ADMIN]
+const COMPANY_ADMIN_ROLES = [ROLES.COMPANY_ADMIN]
+
+const EMPLOYEE_ROLES = [ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.ACCOUNTANT, ROLES.INVENTORY_MANAGER, ROLES.SALES_MANAGER]
+
+const ROLE_HIERARCHY = [ROLES.EMPLOYEE, ROLES.ACCOUNTANT, ROLES.INVENTORY_MANAGER, ROLES.SALES_MANAGER, ROLES.MANAGER, ROLES.COMPANY_ADMIN, ROLES.SUPER_ADMIN]
 
 const SECTION_KEYS = {
   Dashboard: 'Dashboard',
-  Category: 'Category',
-  SubCategory: 'SubCategory',
-  Brand: 'Brand',
+  Employee: 'Employee',
+  Role: 'Role',
   Product: 'Product',
-  Order: 'Order',
-  User: 'User',
-  Notification: 'Notification',
-  Contact: 'Contact',
+  Category: 'Category',
+  Inventory: 'Inventory',
+  Warehouse: 'Warehouse',
+  Supplier: 'Supplier',
+  Customer: 'Customer',
+  Purchase: 'Purchase',
+  Sales: 'Sales',
+  Invoice: 'Invoice',
+  Payment: 'Payment',
+  Expense: 'Expense',
+  Accounting: 'Accounting',
+  Reports: 'Reports',
+  Settings: 'Settings',
 }
 
 const ACTIONS = {
   Dashboard: {
-    VIEW: 'dash:view',
+    VIEW: 'dashboard:view',
   },
-  Category: {
-    LISTING: 'cat:listing',
-    VIEW: 'cat:view',
-    CREATE: 'cat:create',
-    UPDATE: 'cat:update',
-    DELETE: 'cat:delete',
+
+  Employee: {
+    LIST: 'employee:list',
+    VIEW: 'employee:view',
+    CREATE: 'employee:create',
+    UPDATE: 'employee:update',
+    UPDATE_STATUS: 'employee:update-status',
+    DELETE: 'employee:delete',
+    ASSIGN_ROLE: 'employee:assign-role',
+    MANAGE_PERMISSIONS: 'employee:manage-permissions',
   },
-  SubCategory: {
-    LISTING: 'sub:listing',
-    VIEW: 'sub:view',
-    CREATE: 'sub:create',
-    UPDATE: 'sub:update',
-    DELETE: 'sub:delete',
+
+  Role: {
+    LIST: 'role:list',
+    VIEW: 'role:view',
+    CREATE: 'role:create',
+    UPDATE: 'role:update',
+    DELETE: 'role:delete',
+    ASSIGN: 'role:assign',
+    MANAGE_PERMISSIONS: 'role:manage-permissions',
   },
-  Brand: {
-    LISTING: 'br:listing',
-    VIEW: 'br:view',
-    CREATE: 'br:create',
-    UPDATE: 'br:update',
-    DELETE: 'br:delete',
-  },
+
   Product: {
-    LISTING: 'prd:listing',
-    VIEW: 'prd:view',
-    CREATE: 'prd:create',
-    UPDATE: 'prd:update',
-    DELETE: 'prd:delete',
+    LIST: 'product:list',
+    VIEW: 'product:view',
+    CREATE: 'product:create',
+    UPDATE: 'product:update',
+    DELETE: 'product:delete',
+    EXPORT: 'product:export',
   },
-  Order: {
-    LISTING: 'ord:listing',
-    VIEW: 'ord:view',
-    UPDATE_STATUS: 'ord:update-status',
-    CONFIRM_PAYMENT: 'ord:confirm-payment',
-    RETURN_REVIEW: 'ord:return-review',
-    ITEM_RECEIVED: 'ord:item-received',
-    REFUND: 'ord:refund',
-    DELETE: 'ord:delete',
+
+  Category: {
+    LIST: 'category:list',
+    VIEW: 'category:view',
+    CREATE: 'category:create',
+    UPDATE: 'category:update',
+    DELETE: 'category:delete',
   },
-  User: {
-    LISTING: 'usr:listing',
-    VIEW: 'usr:view',
-    CREATE: 'usr:create',
-    UPDATE_STATUS: 'usr:update-status',
-    DELETE: 'usr:delete',
-    MANAGE_PERMISSIONS: 'usr:manage-permissions',
+
+  Inventory: {
+    VIEW: 'inventory:view',
+    VIEW_STOCK: 'inventory:view-stock',
+    ADJUST_STOCK: 'inventory:adjust-stock',
+    TRANSFER_STOCK: 'inventory:transfer-stock',
+    VIEW_HISTORY: 'inventory:view-history',
   },
-  Notification: {
-    LISTING: 'ntf:listing',
-    VIEW: 'ntf:view',
-    UPDATE: 'ntf:update',
-    DELETE: 'ntf:delete',
+
+  Warehouse: {
+    LIST: 'warehouse:list',
+    VIEW: 'warehouse:view',
+    CREATE: 'warehouse:create',
+    UPDATE: 'warehouse:update',
+    DELETE: 'warehouse:delete',
   },
-  Contact: {
-    LISTING: 'ctc:listing',
-    VIEW: 'ctc:view',
-    REPLY: 'ctc:reply',
-    UPDATE_STATUS: 'ctc:update-status',
-    DELETE: 'ctc:delete',
+
+  Supplier: {
+    LIST: 'supplier:list',
+    VIEW: 'supplier:view',
+    CREATE: 'supplier:create',
+    UPDATE: 'supplier:update',
+    DELETE: 'supplier:delete',
+  },
+
+  Customer: {
+    LIST: 'customer:list',
+    VIEW: 'customer:view',
+    CREATE: 'customer:create',
+    UPDATE: 'customer:update',
+    DELETE: 'customer:delete',
+  },
+
+  Purchase: {
+    LIST: 'purchase:list',
+    VIEW: 'purchase:view',
+    CREATE: 'purchase:create',
+    UPDATE: 'purchase:update',
+    DELETE: 'purchase:delete',
+    APPROVE: 'purchase:approve',
+    CANCEL: 'purchase:cancel',
+  },
+
+  Sales: {
+    LIST: 'sales:list',
+    VIEW: 'sales:view',
+    CREATE: 'sales:create',
+    UPDATE: 'sales:update',
+    DELETE: 'sales:delete',
+    APPROVE: 'sales:approve',
+    CANCEL: 'sales:cancel',
+  },
+
+  Invoice: {
+    LIST: 'invoice:list',
+    VIEW: 'invoice:view',
+    CREATE: 'invoice:create',
+    UPDATE: 'invoice:update',
+    DELETE: 'invoice:delete',
+    DOWNLOAD: 'invoice:download',
+  },
+
+  Payment: {
+    LIST: 'payment:list',
+    VIEW: 'payment:view',
+    RECORD: 'payment:record',
+    UPDATE: 'payment:update',
+    REFUND: 'payment:refund',
+  },
+
+  Expense: {
+    LIST: 'expense:list',
+    VIEW: 'expense:view',
+    CREATE: 'expense:create',
+    UPDATE: 'expense:update',
+    DELETE: 'expense:delete',
+    APPROVE: 'expense:approve',
+  },
+
+  Accounting: {
+    VIEW: 'accounting:view',
+    VIEW_LEDGER: 'accounting:view-ledger',
+    MANAGE_ACCOUNTS: 'accounting:manage-accounts',
+    JOURNAL_ENTRY: 'accounting:journal-entry',
+    RECONCILE: 'accounting:reconcile',
+  },
+
+  Reports: {
+    VIEW: 'reports:view',
+    EXPORT: 'reports:export',
+    FINANCIAL: 'reports:financial',
+    INVENTORY: 'reports:inventory',
+    SALES: 'reports:sales',
+    PURCHASE: 'reports:purchase',
+  },
+
+  Settings: {
+    VIEW: 'settings:view',
+    UPDATE_COMPANY: 'settings:update-company',
+    UPDATE_PREFERENCES: 'settings:update-preferences',
   },
 }
 
-const CATALOG_FULL = {
-  [SECTION_KEYS.Category]: Object.values(ACTIONS.Category),
-  [SECTION_KEYS.SubCategory]: Object.values(ACTIONS.SubCategory),
-  [SECTION_KEYS.Brand]: Object.values(ACTIONS.Brand),
-  [SECTION_KEYS.Product]: Object.values(ACTIONS.Product),
-}
+const ALL_SECTION_ACTIONS = Object.fromEntries(Object.entries(ACTIONS).map(([section, actions]) => [SECTION_KEYS[section], Object.values(actions)]))
 
-const CATALOG_READ = {
-  [SECTION_KEYS.Category]: [ACTIONS.Category.LISTING, ACTIONS.Category.VIEW],
-  [SECTION_KEYS.SubCategory]: [ACTIONS.SubCategory.LISTING, ACTIONS.SubCategory.VIEW],
-  [SECTION_KEYS.Brand]: [ACTIONS.Brand.LISTING, ACTIONS.Brand.VIEW],
-  [SECTION_KEYS.Product]: [ACTIONS.Product.LISTING, ACTIONS.Product.VIEW],
+const READ_ONLY_PERMISSIONS = {
+  [SECTION_KEYS.Dashboard]: [ACTIONS.Dashboard.VIEW],
+  [SECTION_KEYS.Product]: [ACTIONS.Product.LIST, ACTIONS.Product.VIEW],
+  [SECTION_KEYS.Category]: [ACTIONS.Category.LIST, ACTIONS.Category.VIEW],
+  [SECTION_KEYS.Inventory]: [ACTIONS.Inventory.VIEW, ACTIONS.Inventory.VIEW_STOCK, ACTIONS.Inventory.VIEW_HISTORY],
+  [SECTION_KEYS.Warehouse]: [ACTIONS.Warehouse.LIST, ACTIONS.Warehouse.VIEW],
+  [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW],
+  [SECTION_KEYS.Customer]: [ACTIONS.Customer.LIST, ACTIONS.Customer.VIEW],
 }
-
 
 const ROLE_DEFAULT_PERMISSIONS = {
-  [ROLES.SUPER_ADMIN]: {},
-  [ROLES.ADMIN]: {
+  [ROLES.SUPER_ADMIN]: null,
+
+  [ROLES.COMPANY_ADMIN]: ALL_SECTION_ACTIONS,
+
+  [ROLES.MANAGER]: {
+    ...READ_ONLY_PERMISSIONS,
+    [SECTION_KEYS.Employee]: [ACTIONS.Employee.LIST, ACTIONS.Employee.VIEW],
+    [SECTION_KEYS.Role]: [ACTIONS.Role.LIST, ACTIONS.Role.VIEW],
+    [SECTION_KEYS.Purchase]: Object.values(ACTIONS.Purchase),
+    [SECTION_KEYS.Sales]: Object.values(ACTIONS.Sales),
+    [SECTION_KEYS.Invoice]: Object.values(ACTIONS.Invoice),
+    [SECTION_KEYS.Reports]: Object.values(ACTIONS.Reports),
+  },
+
+  [ROLES.ACCOUNTANT]: {
     [SECTION_KEYS.Dashboard]: [ACTIONS.Dashboard.VIEW],
-    ...CATALOG_FULL,
-    [SECTION_KEYS.Order]: Object.values(ACTIONS.Order),
-    [SECTION_KEYS.User]: [ACTIONS.User.LISTING, ACTIONS.User.VIEW, ACTIONS.User.CREATE, ACTIONS.User.UPDATE_STATUS, ACTIONS.User.DELETE],
-    [SECTION_KEYS.Notification]: Object.values(ACTIONS.Notification),
-    [SECTION_KEYS.Contact]: Object.values(ACTIONS.Contact),
+    [SECTION_KEYS.Customer]: [ACTIONS.Customer.LIST, ACTIONS.Customer.VIEW],
+    [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW],
+    [SECTION_KEYS.Sales]: [ACTIONS.Sales.LIST, ACTIONS.Sales.VIEW],
+    [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW],
+    [SECTION_KEYS.Invoice]: Object.values(ACTIONS.Invoice),
+    [SECTION_KEYS.Payment]: Object.values(ACTIONS.Payment),
+    [SECTION_KEYS.Expense]: Object.values(ACTIONS.Expense),
+    [SECTION_KEYS.Accounting]: Object.values(ACTIONS.Accounting),
+    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.EXPORT, ACTIONS.Reports.FINANCIAL, ACTIONS.Reports.SALES, ACTIONS.Reports.PURCHASE],
   },
-  [ROLES.CATALOG_MANAGER]: {
+
+  [ROLES.INVENTORY_MANAGER]: {
     [SECTION_KEYS.Dashboard]: [ACTIONS.Dashboard.VIEW],
-    ...CATALOG_FULL,
+    [SECTION_KEYS.Product]: Object.values(ACTIONS.Product),
+    [SECTION_KEYS.Category]: Object.values(ACTIONS.Category),
+    [SECTION_KEYS.Inventory]: Object.values(ACTIONS.Inventory),
+    [SECTION_KEYS.Warehouse]: Object.values(ACTIONS.Warehouse),
+    [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW, ACTIONS.Supplier.CREATE, ACTIONS.Supplier.UPDATE],
+    [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW, ACTIONS.Purchase.CREATE, ACTIONS.Purchase.UPDATE],
+    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.INVENTORY, ACTIONS.Reports.PURCHASE],
   },
-  [ROLES.ORDER_MANAGER]: {
+
+  [ROLES.SALES_MANAGER]: {
     [SECTION_KEYS.Dashboard]: [ACTIONS.Dashboard.VIEW],
-    ...CATALOG_READ,
-    [SECTION_KEYS.Order]: Object.values(ACTIONS.Order),
-    [SECTION_KEYS.Notification]: Object.values(ACTIONS.Notification),
+    [SECTION_KEYS.Product]: [ACTIONS.Product.LIST, ACTIONS.Product.VIEW],
+    [SECTION_KEYS.Customer]: Object.values(ACTIONS.Customer),
+    [SECTION_KEYS.Sales]: Object.values(ACTIONS.Sales),
+    [SECTION_KEYS.Invoice]: Object.values(ACTIONS.Invoice),
+    [SECTION_KEYS.Payment]: [ACTIONS.Payment.LIST, ACTIONS.Payment.VIEW, ACTIONS.Payment.RECORD],
+    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.SALES, ACTIONS.Reports.EXPORT],
   },
-  [ROLES.SUPPORT]: {
-    [SECTION_KEYS.Order]: [ACTIONS.Order.LISTING, ACTIONS.Order.VIEW],
-    [SECTION_KEYS.Notification]: [ACTIONS.Notification.LISTING, ACTIONS.Notification.VIEW, ACTIONS.Notification.UPDATE],
-    [SECTION_KEYS.Contact]: Object.values(ACTIONS.Contact),
+
+  [ROLES.EMPLOYEE]: {
+    [SECTION_KEYS.Dashboard]: [ACTIONS.Dashboard.VIEW],
+    [SECTION_KEYS.Product]: [ACTIONS.Product.LIST, ACTIONS.Product.VIEW],
+    [SECTION_KEYS.Inventory]: [ACTIONS.Inventory.VIEW, ACTIONS.Inventory.VIEW_STOCK],
   },
+
+  [ROLES.USER]: {},
 }
 
 module.exports = {
   ROLES,
-  ADMIN_ROLES,
+  SYSTEM_ROLES,
+  PLATFORM_ROLES,
+  COMPANY_ADMIN_ROLES,
   EMPLOYEE_ROLES,
   ROLE_HIERARCHY,
   SECTION_KEYS,
   ACTIONS,
+  ALL_SECTION_ACTIONS,
+  READ_ONLY_PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
 }

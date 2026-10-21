@@ -15,7 +15,9 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false)
 
   if (!loading && user) {
-    return <Navigate to={user.role === 'SuperAdmin' ? '/superadmin' : '/'} replace />
+    const destination = user.role === 'SuperAdmin' ? '/superadmin' : user.role === 'CompanyAdmin' ? '/company' : '/'
+
+    return <Navigate to={destination} replace />
   }
 
   const handleSubmit = async (event) => {
@@ -27,7 +29,9 @@ export default function Login() {
       const currentUser = await login(email.trim(), password)
       const previousPath = location.state?.from?.pathname
 
-      const destination = currentUser.role === 'SuperAdmin' ? '/superadmin' : previousPath && previousPath !== '/login' ? previousPath : '/'
+      const roleDestination = currentUser.role === 'SuperAdmin' ? '/superadmin' : currentUser.role === 'CompanyAdmin' ? '/company' : '/'
+
+      const destination = currentUser.role === 'SuperAdmin' || currentUser.role === 'CompanyAdmin' ? roleDestination : previousPath && previousPath !== '/login' ? previousPath : '/'
 
       navigate(destination, { replace: true })
     } catch (err) {

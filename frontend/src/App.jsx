@@ -5,6 +5,9 @@ import HeroPage from './pages/HeroPage'
 import SuperAdminDashboard from './components/superadmin/SuperAdminDashboard'
 import SuperAdminRoute from './components/SuperAdminRoute'
 import CompanyRegistration from './pages/CompanyRegistration'
+import SuperAdminCompanies from './components/superadmin/SuperAdminCompanies'
+import CompaniesRoute from './components/company/CompaniesRoute'
+import CompanyDashboard from './components/company/CompanyDashboard'
 
 export default function App() {
   return (
@@ -12,15 +15,18 @@ export default function App() {
       <Route path="/" element={<HeroPage />} />
 
       <Route path="/login" element={<Login />} />
-
-
-      <Route path="/aa" element={<CompanyRegistration />} />
-
+      <Route path="/register-company" element={<CompanyRegistration />} />
 
       <Route element={<ProtectedRoute allowedRoles={['SuperAdmin']} />}>
         <Route path="/superadmin" element={<SuperAdminRoute />}>
           <Route index element={<SuperAdminDashboard />} />
-        
+          <Route path="companies" element={<SuperAdminCompanies />} />
+        </Route>
+      </Route>
+
+      <Route element={<ProtectedRoute allowedRoles={['CompanyAdmin']} />}>
+        <Route path="/company" element={<CompaniesRoute />}>
+          <Route index element={<CompanyDashboard />} />
         </Route>
       </Route>
 

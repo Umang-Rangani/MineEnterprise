@@ -1,42 +1,61 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Building2, Search, Filter, Eye, CheckCircle2, Clock3, XCircle, RefreshCw, X, Check, Ban, AlertCircle } from 'lucide-react'
+import { Building2, CheckCircle2, Clock3, RefreshCw, Search, XCircle, MapPin, Mail, Phone, Globe, AlertCircle, X, Eye, CalendarDays, FileText, UserRound, BriefcaseBusiness, Hash } from 'lucide-react'
 import axiosInstance from '../../api/axiosInstance'
+
+const formatDate = (date) => {
+  if (!date) return '—'
+
+  const parsedDate = new Date(date)
+
+  return Number.isNaN(parsedDate.getTime())
+    ? '—'
+    : parsedDate.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+}
+
+const DetailItem = ({ icon: Icon, label, value }) => (
+  <div className="flex min-w-0 gap-3 rounded-xl border border-erp-border bg-erp-surface p-3">
+    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-surface-secondary text-erp-primary">
+      <Icon size={17} />
+    </div>
+    <div className="min-w-0">
+      <p className="text-xs font-medium text-erp-text-muted">{label}</p>
+      <p className="mt-1 wrap-break-word text-sm font-semibold text-erp-text">{value || 'Not provided'}</p>
+    </div>
+  </div>
+)
 
 export default function SuperAdminCompanies() {
   const [companies, setCompanies] = useState([])
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('All')
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
-  const [notice, setNotice] = useState('')
-  const [processingId, setProcessingId] = useState('')
-  const [selectedCompany, setSelectedCompany] = useState(null)
-  const [rejectCompany, setRejectCompany] = useState(null)
+  const [search, setSearch] = useState('')
+  const [actionLoading, setActionLoading] = useState('')
+  const [message, setMessage] = useState('')
+  const [actionError, setActionError] = useState('')
+  const [viewCompany, setViewCompany] = useState(null)
+  const [rejectingCompany, setRejectingCompany] = useState(null)
   const [rejectionReason, setRejectionReason] = useState('')
 
-  const fetchCompanies = useCallback(async (isRefresh = false) => {
-    if (isRefresh) {
-      setRefreshing(true)
-    } else {
-      setLoading(true)
-    }
-
+  const fetchCompanies = useCallback(async () => {
+    setLoading(true)
     setError('')
 
     try {
-      const response = await axiosInstance.get('/companies')
+      const response = await axiosInstance.get('/companies/pending')
 
-      if (!response.data?.success || !Array.isArray(response.data?.data)) {
-        throw new Error(response.data?.message || 'Invalid companies response')
+      if (response.data?.success) {
+        setCompanies(Array.isArray(response.data.companies) ? response.data.companies : [])
+      } else {
+        setError(response.data?.message || 'Unable to load companies.')
       }
-
-      setCompanies(response.data.data)
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Failed to load companies.')
+      setError(err.response?.data?.message || 'Unable to load pending companies.')
     } finally {
       setLoading(false)
-      setRefreshing(false)
     }
   }, [])
 
@@ -47,309 +66,296 @@ export default function SuperAdminCompanies() {
   const filteredCompanies = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return companies.filter((company) => {
-      const matchesSearch = !query || [company.companyName, company.email, company.companyCode, company.ownerName].some((value) => value?.toLowerCase().includes(query))
+    if (!query) return companies
 
-      const matchesStatus = statusFilter === 'All' || company.status === statusFilter
+    return companies.filter((company) =>
+      [company.companyName, company.companyEmail, company.companyPhone, company.businessType, company.businessCategory, company.owner?.name, company.owner?.email, company.city, company.state, company.country, company.gstNumber, company.panNumber]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query)),
+    )
+  }, [companies, search])
 
-      return matchesSearch && matchesStatus
-    })
-  }, [companies, search, statusFilter])
+  const reviewCompany = async (company, action, reason = '') => {
+    if (!company?._id) return
 
-  const counts = useMemo(
-    () => ({
-      total: companies.length,
-      pending: companies.filter((company) => company.status === 'Pending').length,
-      active: companies.filter((company) => company.status === 'Active').length,
-      rejected: companies.filter((company) => company.status === 'Rejected').length,
-      inactive: companies.filter((company) => company.status === 'Inactive').length,
-    }),
-    [companies],
-  )
-
-  const approveCompany = async (company) => {
-    const confirmed = window.confirm(`Approve ${company.companyName}?\n\nThe company owner will be allowed to log in after approval.`)
-
-    if (!confirmed) return
-
-    setProcessingId(company._id)
-    setError('')
-    setNotice('')
+    setActionLoading(company._id)
+    setMessage('')
+    setActionError('')
 
     try {
-      const response = await axiosInstance.post(`/companies/${company._id}/approve`)
+      const payload = action === 'Reject' ? { action, rejectionReason: reason.trim() } : { action }
 
-      setNotice(response.data?.message || 'Company approved successfully.')
-      await fetchCompanies(true)
+      const response = await axiosInstance.patch(`/companies/${company._id}/review`, payload)
+
+      if (!response.data?.success) {
+        throw new Error(response.data?.message || 'Unable to review company.')
+      }
+
+      setCompanies((previous) => previous.filter((item) => item._id !== company._id))
+
+      setMessage(response.data.message || `Company ${action === 'Approve' ? 'approved' : 'rejected'} successfully.`)
+
+      setViewCompany(null)
+      setRejectingCompany(null)
+      setRejectionReason('')
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to approve company.')
+      setActionError(err.response?.data?.message || err.message || 'Unable to review company.')
     } finally {
-      setProcessingId('')
+      setActionLoading('')
     }
+  }
+
+  const handleApprove = (company) => {
+    if (!window.confirm(`Approve ${company.companyName}?`)) return
+    reviewCompany(company, 'Approve')
+  }
+
+  const handleReject = (event) => {
+    event.preventDefault()
+
+    if (!rejectionReason.trim()) {
+      setActionError('Please provide a rejection reason.')
+      return
+    }
+
+    reviewCompany(rejectingCompany, 'Reject', rejectionReason)
   }
 
   const openRejectDialog = (company) => {
-    setRejectCompany(company)
+    setViewCompany(null)
+    setRejectingCompany(company)
     setRejectionReason('')
-    setError('')
-    setNotice('')
+    setActionError('')
+    setMessage('')
   }
 
-  const rejectSelectedCompany = async (event) => {
-    event.preventDefault()
+  const closeRejectDialog = () => {
+    if (actionLoading) return
 
-    if (!rejectCompany || !rejectionReason.trim()) {
-      setError('Please enter a rejection reason.')
-      return
-    }
-
-    if (rejectionReason.trim().length > 500) {
-      setError('Rejection reason cannot exceed 500 characters.')
-      return
-    }
-
-    setProcessingId(rejectCompany._id)
-    setError('')
-    setNotice('')
-
-    try {
-      const response = await axiosInstance.post(`/companies/${rejectCompany._id}/reject`, { reason: rejectionReason.trim() })
-
-      setNotice(response.data?.message || 'Company request rejected.')
-      setRejectCompany(null)
-      setRejectionReason('')
-      await fetchCompanies(true)
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to reject company request.')
-    } finally {
-      setProcessingId('')
-    }
+    setRejectingCompany(null)
+    setRejectionReason('')
+    setActionError('')
   }
 
-  const deactivateCompany = async (company) => {
-    const confirmed = window.confirm(`Deactivate ${company.companyName}?\n\nUsers of this company will no longer be able to access the ERP.`)
-
-    if (!confirmed) return
-
-    setProcessingId(company._id)
-    setError('')
-    setNotice('')
-
-    try {
-      const response = await axiosInstance.patch(`/companies/${company._id}/status`, {
-        status: 'Inactive',
-      })
-
-      setNotice(response.data?.message || 'Company deactivated successfully.')
-      await fetchCompanies(true)
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to deactivate company.')
-    } finally {
-      setProcessingId('')
-    }
-  }
-
-  const statusClass = (status) => {
-    switch (status) {
-      case 'Active':
-        return 'bg-erp-success/10 text-erp-success'
-      case 'Pending':
-        return 'bg-erp-warning/10 text-erp-warning'
-      case 'Rejected':
-        return 'bg-erp-danger/10 text-erp-danger'
-      case 'Inactive':
-        return 'bg-erp-surface-secondary text-erp-text-secondary'
-      default:
-        return 'bg-erp-surface-secondary text-erp-text-secondary'
-    }
-  }
+  const summaryCards = [
+    {
+      label: 'Pending Review',
+      value: companies.length,
+      description: 'Companies awaiting approval',
+      icon: Clock3,
+      iconClass: 'text-erp-warning',
+      iconBg: 'bg-erp-warning-light',
+    },
+    {
+      label: 'Matched Results',
+      value: filteredCompanies.length,
+      description: 'Companies matching your search',
+      icon: Search,
+      iconClass: 'text-erp-primary',
+      iconBg: 'bg-erp-primary-light',
+    },
+    {
+      label: 'Review Access',
+      value: 'SuperAdmin',
+      description: 'Authorized company reviewer',
+      icon: CheckCircle2,
+      iconClass: 'text-erp-success',
+      iconBg: 'bg-erp-success-light',
+    },
+  ]
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h2 className="text-xl font-bold text-erp-text sm:text-2xl">Companies</h2>
-          <p className="mt-1 text-sm text-erp-text-secondary">Review registration requests and manage company access.</p>
+          <div className="flex items-center gap-2">
+            <Building2 size={25} className="text-erp-primary" />
+            <h2 className="text-2xl font-bold text-erp-text">Company Registrations</h2>
+          </div>
+          <p className="mt-2 text-sm text-erp-text-secondary">Review registrations and manage company approval requests.</p>
         </div>
 
         <button
           type="button"
-          onClick={() => fetchCompanies(true)}
-          disabled={loading || refreshing}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-4 py-3 text-sm font-semibold text-erp-text transition hover:bg-erp-hover disabled:opacity-60"
+          onClick={fetchCompanies}
+          disabled={loading || Boolean(actionLoading)}
+          className="inline-flex items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-4 py-2.5 text-sm font-semibold text-erp-text transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <RefreshCw size={17} className={refreshing ? 'animate-spin' : ''} />
+          <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           Refresh
         </button>
       </div>
 
-      {error && (
-        <div role="alert" className="flex items-start gap-2 rounded-xl border border-erp-danger/20 bg-erp-danger/10 p-3 text-sm text-erp-danger">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
-          <button type="button" onClick={() => setError('')} className="ml-auto" aria-label="Dismiss error">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      {notice && (
-        <div role="status" className="flex items-start gap-2 rounded-xl border border-erp-success/20 bg-erp-success/10 p-3 text-sm text-erp-success">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
-          <span>{notice}</span>
-          <button type="button" onClick={() => setNotice('')} className="ml-auto" aria-label="Dismiss message">
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          { label: 'Total Companies', value: counts.total, icon: Building2, color: 'text-erp-primary' },
-          { label: 'Pending Requests', value: counts.pending, icon: Clock3, color: 'text-erp-warning' },
-          { label: 'Active Companies', value: counts.active, icon: CheckCircle2, color: 'text-erp-success' },
-          { label: 'Rejected Requests', value: counts.rejected, icon: XCircle, color: 'text-erp-danger' },
-        ].map((item) => {
-          const Icon = item.icon
+      {/* <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        {summaryCards.map((card) => {
+          const Icon = card.icon
 
           return (
-            <div key={item.label} className="rounded-2xl border border-erp-border bg-erp-surface p-4 sm:p-5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-erp-text-secondary sm:text-sm">{item.label}</p>
-                <Icon size={19} className={item.color} />
+            <div key={card.label} className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-erp-card">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-erp-text-secondary">{card.label}</p>
+                  <p className="mt-3 text-2xl font-bold text-erp-text">{loading && typeof card.value === 'number' ? '—' : card.value}</p>
+                  <p className="mt-1 text-xs text-erp-text-muted">{card.description}</p>
+                </div>
+
+                <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${card.iconBg} ${card.iconClass}`}>
+                  <Icon size={21} />
+                </div>
               </div>
-              <p className="mt-3 text-2xl font-bold text-erp-text sm:text-3xl">{item.value}</p>
             </div>
           )
         })}
-      </div>
+      </div> */}
 
-      <div className="rounded-2xl border border-erp-border bg-erp-surface">
-        <div className="flex flex-col gap-3 border-b border-erp-border p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+      {message && (
+        <div className="flex items-start gap-2 rounded-xl border border-erp-success-border bg-erp-success-light p-4 text-sm text-erp-success">
+          <CheckCircle2 size={18} className="shrink-0" />
+          <span>{message}</span>
+          <button type="button" onClick={() => setMessage('')} className="ml-auto" aria-label="Dismiss success message">
+            <X size={17} />
+          </button>
+        </div>
+      )}
+
+      {actionError && !rejectingCompany && (
+        <div className="flex items-start gap-2 rounded-xl border border-erp-danger-border bg-erp-danger-light p-4 text-sm text-erp-danger">
+          <AlertCircle size={18} className="shrink-0" />
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError('')} className="ml-auto" aria-label="Dismiss error">
+            <X size={17} />
+          </button>
+        </div>
+      )}
+
+      <section className="overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="flex flex-col gap-4 border-b border-erp-border p-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h3 className="font-bold text-erp-text">Company Requests</h3>
-            <p className="mt-1 text-xs text-erp-text-secondary">{filteredCompanies.length} companies found</p>
+            <h3 className="text-lg font-bold text-erp-text">Pending Companies</h3>
+            <p className="mt-1 text-sm text-erp-text-secondary">View full details or review a registration from the table.</p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative">
-              <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-muted" />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search companies..."
-                className="w-full rounded-xl border border-erp-border bg-erp-surface py-2.5 pl-9 pr-3 text-sm text-erp-text outline-none placeholder:text-erp-text-muted focus:border-erp-focus sm:w-60"
-              />
-            </div>
-
-            <div className="relative">
-              <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-secondary" />
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value)}
-                className="w-full appearance-none rounded-xl border border-erp-border bg-erp-surface py-2.5 pl-9 pr-8 text-sm text-erp-text outline-none focus:border-erp-focus sm:w-44"
-              >
-                <option value="All">All Statuses</option>
-                <option value="Pending">Pending</option>
-                <option value="Active">Active</option>
-                <option value="Rejected">Rejected</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            </div>
+          <div className="relative w-full sm:max-w-xs">
+            <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-muted" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search companies..."
+              className="w-full rounded-xl border border-erp-border bg-erp-surface py-2.5 pl-10 pr-4 text-sm text-erp-text outline-none placeholder:text-erp-text-muted focus:border-erp-focus focus:ring-2 focus:ring-erp-ring"
+            />
           </div>
+
+          
         </div>
 
+        {error && (
+          <div className="m-5 flex items-start gap-3 rounded-xl border border-erp-danger-border bg-erp-danger-light p-4 text-sm text-erp-danger">
+            <AlertCircle size={18} className="shrink-0" />
+            <span className="flex-1">{error}</span>
+            <button type="button" onClick={fetchCompanies} className="font-semibold underline">
+              Retry
+            </button>
+          </div>
+        )}
+
         {loading ? (
-          <div className="flex items-center justify-center gap-3 px-5 py-16 text-sm text-erp-text-secondary">
+          <div className="flex items-center justify-center gap-3 p-12 text-sm text-erp-text-secondary">
             <RefreshCw size={18} className="animate-spin" />
             Loading companies...
           </div>
         ) : filteredCompanies.length === 0 ? (
           <div className="flex flex-col items-center px-5 py-14 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-erp-primary-light text-erp-primary">
-              <Building2 size={26} />
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-erp-primary-light text-erp-primary">
+              <Building2 size={27} />
             </div>
-            <h3 className="mt-4 font-semibold text-erp-text">{search || statusFilter !== 'All' ? 'No companies found' : 'No company requests yet'}</h3>
-            <p className="mt-1 max-w-sm text-sm leading-6 text-erp-text-secondary">{search || statusFilter !== 'All' ? 'Try changing your search or status filter.' : 'Public company registration requests will appear here.'}</p>
+            <h3 className="mt-4 font-semibold text-erp-text">{companies.length === 0 ? 'No pending companies' : 'No matching companies'}</h3>
+            <p className="mt-1 text-sm text-erp-text-secondary">{companies.length === 0 ? 'New registrations will appear here.' : 'Try another company name, email, or location.'}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left">
+            <table className="w-full min-w-212.5 text-left">
               <thead className="bg-erp-surface-secondary">
-                <tr className="text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">
-                  <th className="px-5 py-4">Company</th>
-                  <th className="px-5 py-4">Owner</th>
-                  <th className="px-5 py-4">Business Type</th>
-                  <th className="px-5 py-4">Status</th>
-                  <th className="px-5 py-4">Registered</th>
-                  <th className="px-5 py-4 text-right">Actions</th>
+                <tr className="border-b border-erp-border">
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Company</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Owner</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Contact</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Registered</th>
+                  <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Status</th>
+                  <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Actions</th>
                 </tr>
               </thead>
-              <tbody>
+
+              <tbody className="divide-y divide-erp-border">
                 {filteredCompanies.map((company) => (
-                  <tr key={company._id} className="border-t border-erp-border transition hover:bg-erp-hover">
+                  <tr key={company._id} className="transition hover:bg-erp-surface-hover">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
                           <Building2 size={19} />
                         </div>
-                        <div>
-                          <p className="font-semibold text-erp-text">{company.companyName}</p>
-                          <p className="mt-1 text-xs text-erp-text-secondary">{company.email}</p>
-                          <p className="mt-1 text-[11px] text-erp-text-muted">{company.companyCode}</p>
+                        <div className="min-w-0 max-w-56">
+                          <p className="truncate text-sm font-semibold text-erp-text">{company.companyName || 'Unnamed Company'}</p>
+                          <p className="mt-1 truncate text-xs text-erp-text-secondary">{company.businessType || 'Business type not provided'}</p>
                         </div>
                       </div>
                     </td>
+
                     <td className="px-5 py-4">
-                      <p className="text-sm font-medium text-erp-text">{company.ownerName || '—'}</p>
-                      <p className="mt-1 text-xs text-erp-text-secondary">{company.phone || 'No phone'}</p>
+                      <p className="max-w-44 truncate text-sm font-medium text-erp-text">{company.owner?.name || 'Not available'}</p>
+                      <p className="mt-1 max-w-44 truncate text-xs text-erp-text-secondary">{company.owner?.email || 'No owner email'}</p>
                     </td>
-                    <td className="px-5 py-4 text-sm text-erp-text-secondary">{company.businessType || '—'}</td>
+
                     <td className="px-5 py-4">
-                      <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${statusClass(company.status)}`}>{company.status}</span>
+                      <p className="max-w-48 truncate text-sm text-erp-text">{company.companyEmail || 'No email'}</p>
+                      <p className="mt-1 text-xs text-erp-text-secondary">{company.companyPhone || 'No phone'}</p>
                     </td>
-                    <td className="px-5 py-4 text-sm text-erp-text-secondary">{company.createdAt ? new Date(company.createdAt).toLocaleDateString() : '—'}</td>
+
+                    <td className="whitespace-nowrap px-5 py-4 text-sm text-erp-text-secondary">{formatDate(company.createdAt)}</td>
+
                     <td className="px-5 py-4">
-                      <div className="flex justify-end gap-2">
-                        <button type="button" title="View company details" onClick={() => setSelectedCompany(company)} className="rounded-lg border border-erp-border p-2 text-erp-text-secondary hover:bg-erp-hover hover:text-erp-primary">
-                          <Eye size={16} />
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-erp-warning-border bg-erp-warning-light px-2.5 py-1 text-xs font-semibold text-erp-warning">
+                        <Clock3 size={13} />
+                        Pending
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setViewCompany(company)
+                            setActionError('')
+                            setMessage('')
+                          }}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-erp-border px-3 py-2 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary-light"
+                        >
+                          <Eye size={15} />
+                          View
                         </button>
 
-                        {company.status === 'Pending' && (
-                          <>
-                            <button
-                              type="button"
-                              title="Approve company"
-                              disabled={processingId === company._id}
-                              onClick={() => approveCompany(company)}
-                              className="rounded-lg border border-erp-success/20 p-2 text-erp-success hover:bg-erp-success/10 disabled:opacity-50"
-                            >
-                              <Check size={16} />
-                            </button>
-                            <button
-                              type="button"
-                              title="Reject company"
-                              disabled={processingId === company._id}
-                              onClick={() => openRejectDialog(company)}
-                              className="rounded-lg border border-erp-danger/20 p-2 text-erp-danger hover:bg-erp-danger/10 disabled:opacity-50"
-                            >
-                              <Ban size={16} />
-                            </button>
-                          </>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleApprove(company)}
+                          disabled={Boolean(actionLoading)}
+                          title="Approve company"
+                          aria-label={`Approve ${company.companyName}`}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-erp-success-light text-erp-success transition hover:opacity-80 disabled:opacity-50"
+                        >
+                          {actionLoading === company._id ? <RefreshCw size={16} className="animate-spin" /> : <CheckCircle2 size={17} />}
+                        </button>
 
-                        {company.status === 'Active' && (
-                          <button
-                            type="button"
-                            title="Deactivate company"
-                            disabled={processingId === company._id}
-                            onClick={() => deactivateCompany(company)}
-                            className="rounded-lg border border-erp-warning/20 p-2 text-erp-warning hover:bg-erp-warning/10 disabled:opacity-50"
-                          >
-                            <XCircle size={16} />
-                          </button>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => openRejectDialog(company)}
+                          disabled={Boolean(actionLoading)}
+                          title="Reject company"
+                          aria-label={`Reject ${company.companyName}`}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-erp-danger-light text-erp-danger transition hover:opacity-80 disabled:opacity-50"
+                        >
+                          <XCircle size={17} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -358,104 +364,206 @@ export default function SuperAdminCompanies() {
             </table>
           </div>
         )}
-      </div>
 
-      {selectedCompany && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-          <div className="my-auto max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-erp-border bg-erp-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-erp-border px-5 py-4">
-              <div>
-                <h3 className="font-bold text-erp-text">Company Details</h3>
-                <p className="mt-1 text-xs text-erp-text-secondary">{selectedCompany.companyName}</p>
+        {!loading && filteredCompanies.length > 0 && (
+          <div className="flex flex-col gap-2 border-t border-erp-border px-5 py-3 text-xs text-erp-text-secondary sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              Showing {filteredCompanies.length} of {companies.length} pending companies
+            </span>
+            <span>Use View to see complete registration details.</span>
+          </div>
+        )}
+      </section>
+
+      {viewCompany && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-erp-overlay/50 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setViewCompany(null)
+          }}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="company-details-title" className="my-auto max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl border border-erp-border bg-erp-surface shadow-erp-modal">
+            <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-erp-border bg-erp-surface p-5 sm:p-6">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
+                  <Building2 size={24} />
+                </div>
+                <div className="min-w-0">
+                  <h2 id="company-details-title" className="wrap-break-word text-xl font-bold text-erp-text">
+                    {viewCompany.companyName || 'Company Details'}
+                  </h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-sm text-erp-text-secondary">{viewCompany.businessType || 'Business type not provided'}</span>
+                    <span className="rounded-full border border-erp-warning-border bg-erp-warning-light px-2 py-0.5 text-xs font-semibold text-erp-warning">Pending</span>
+                  </div>
+                </div>
               </div>
-              <button type="button" onClick={() => setSelectedCompany(null)} className="rounded-lg p-2 text-erp-text-secondary hover:bg-erp-hover" aria-label="Close details">
-                <X size={19} />
+
+              <button type="button" onClick={() => setViewCompany(null)} className="shrink-0 rounded-lg p-2 text-erp-text-secondary transition hover:bg-erp-hover" aria-label="Close company details">
+                <X size={20} />
               </button>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-              {[
-                ['Company Name', selectedCompany.companyName],
-                ['Company Code', selectedCompany.companyCode],
-                ['Company Email', selectedCompany.email],
-                ['Phone', selectedCompany.phone],
-                ['Owner Name', selectedCompany.ownerName],
-                ['Business Type', selectedCompany.businessType],
-                ['GSTIN', selectedCompany.gstin],
-                ['Address', selectedCompany.address],
-                ['Registered On', selectedCompany.createdAt ? new Date(selectedCompany.createdAt).toLocaleString() : '—'],
-                ['Approved On', selectedCompany.approvedAt ? new Date(selectedCompany.approvedAt).toLocaleString() : '—'],
-                ['Rejected On', selectedCompany.rejectedAt ? new Date(selectedCompany.rejectedAt).toLocaleString() : '—'],
-              ].map(([label, value]) => (
-                <div key={label} className="min-w-0">
-                  <p className="text-xs font-medium text-erp-text-secondary">{label}</p>
-                  <p className="mt-1 break-words text-sm text-erp-text">{value || '—'}</p>
+            <div className="space-y-6 p-5 sm:p-6">
+              <section>
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-erp-text">
+                  <BriefcaseBusiness size={17} className="text-erp-primary" />
+                  Business Information
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <DetailItem icon={Building2} label="Company Name" value={viewCompany.companyName} />
+                  <DetailItem icon={BriefcaseBusiness} label="Business Type" value={viewCompany.businessType} />
+                  <DetailItem icon={FileText} label="Business Category" value={viewCompany.businessCategory} />
+                  <DetailItem icon={Mail} label="Company Email" value={viewCompany.companyEmail} />
+                  <DetailItem icon={Phone} label="Company Phone" value={viewCompany.companyPhone} />
+                  <DetailItem icon={Globe} label="Website" value={viewCompany.website} />
                 </div>
-              ))}
+              </section>
 
-              {selectedCompany.rejectionReason && (
-                <div className="sm:col-span-2">
-                  <p className="text-xs font-medium text-erp-text-secondary">Rejection Reason</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-erp-danger">{selectedCompany.rejectionReason}</p>
+              <section>
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-erp-text">
+                  <UserRound size={17} className="text-erp-primary" />
+                  Owner Information
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <DetailItem icon={UserRound} label="Owner Name" value={viewCompany.owner?.name} />
+                  <DetailItem icon={Mail} label="Owner Email" value={viewCompany.owner?.email} />
+                  <DetailItem icon={Phone} label="Owner Phone" value={viewCompany.owner?.phone} />
+                </div>
+              </section>
+
+              <section>
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-erp-text">
+                  <MapPin size={17} className="text-erp-primary" />
+                  Registered Address
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <DetailItem icon={MapPin} label="Address Line 1" value={viewCompany.addressLine1} />
+                  <DetailItem icon={MapPin} label="Address Line 2" value={viewCompany.addressLine2} />
+                  <DetailItem icon={Building2} label="City" value={viewCompany.city} />
+                  <DetailItem icon={MapPin} label="State" value={viewCompany.state} />
+                  <DetailItem icon={Globe} label="Country" value={viewCompany.country} />
+                  <DetailItem icon={Hash} label="Postal Code" value={viewCompany.postalCode} />
+                </div>
+              </section>
+
+              <section>
+                <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-erp-text">
+                  <FileText size={17} className="text-erp-primary" />
+                  Tax & Registration
+                </h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <DetailItem icon={FileText} label="GST Number" value={viewCompany.gstNumber} />
+                  <DetailItem icon={FileText} label="PAN Number" value={viewCompany.panNumber} />
+                  <DetailItem icon={Hash} label="Currency" value={viewCompany.currency} />
+                  <DetailItem icon={CalendarDays} label="Registration Date" value={formatDate(viewCompany.createdAt)} />
+                  <DetailItem icon={CalendarDays} label="Last Updated" value={formatDate(viewCompany.updatedAt)} />
+                  <DetailItem icon={Clock3} label="Application Status" value={viewCompany.status || 'Pending'} />
+                </div>
+              </section>
+
+              {/* <div className="break-all rounded-xl border border-erp-border bg-erp-surface-secondary p-3">
+                <p className="text-xs font-medium text-erp-text-muted">Company Record ID</p>
+                <p className="mt-1 text-sm text-erp-text">{viewCompany._id}</p>
+              </div> */}
+
+              {actionError && (
+                <div className="flex items-start gap-2 rounded-xl border border-erp-danger-border bg-erp-danger-light p-3 text-sm text-erp-danger">
+                  <AlertCircle size={17} className="mt-0.5 shrink-0" />
+                  <span>{actionError}</span>
                 </div>
               )}
-            </div>
 
-            <div className="flex justify-end border-t border-erp-border p-4">
-              <button type="button" onClick={() => setSelectedCompany(null)} className="rounded-xl bg-erp-primary px-4 py-2.5 text-sm font-semibold text-erp-text-inverse hover:bg-erp-primary-hover">
-                Close
-              </button>
+              <div className="flex flex-col-reverse justify-between gap-3 border-t border-erp-border pt-5 sm:flex-row">
+                <button type="button" onClick={() => setViewCompany(null)} className="rounded-xl border border-erp-border px-4 py-2.5 text-sm font-semibold text-erp-text transition hover:bg-erp-hover">
+                  Close Details
+                </button>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => openRejectDialog(viewCompany)}
+                    disabled={Boolean(actionLoading)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-erp-danger-border px-4 py-2.5 text-sm font-semibold text-erp-danger transition hover:bg-erp-danger-light disabled:opacity-60"
+                  >
+                    <XCircle size={17} />
+                    Reject
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleApprove(viewCompany)}
+                    disabled={Boolean(actionLoading)}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-erp-primary-hover disabled:opacity-60"
+                  >
+                    {actionLoading === viewCompany._id ? <RefreshCw size={17} className="animate-spin" /> : <CheckCircle2 size={17} />}
+                    Approve Company
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {rejectCompany && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center overflow-y-auto bg-black/50 p-4">
-          <div className="my-auto w-full max-w-md overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-erp-border px-5 py-4">
+      {rejectingCompany && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-erp-overlay/50 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeRejectDialog()
+          }}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="reject-company-title" className="my-auto w-full max-w-lg rounded-2xl border border-erp-border bg-erp-surface p-6 shadow-erp-modal">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="font-bold text-erp-text">Reject Company Request</h3>
-                <p className="mt-1 text-xs text-erp-text-secondary">{rejectCompany.companyName}</p>
+                <h2 id="reject-company-title" className="text-xl font-bold text-erp-text">
+                  Reject Company
+                </h2>
+                <p className="mt-1 text-sm text-erp-text-secondary">{rejectingCompany.companyName}</p>
               </div>
-              <button type="button" disabled={processingId === rejectCompany._id} onClick={() => setRejectCompany(null)} className="rounded-lg p-2 text-erp-text-secondary hover:bg-erp-hover" aria-label="Close rejection dialog">
-                <X size={19} />
+
+              <button type="button" onClick={closeRejectDialog} disabled={Boolean(actionLoading)} className="rounded-lg p-2 text-erp-text-secondary hover:bg-erp-hover disabled:opacity-50" aria-label="Close rejection dialog">
+                <X size={20} />
               </button>
             </div>
 
-            <form onSubmit={rejectSelectedCompany} className="space-y-4 p-5">
+            <form onSubmit={handleReject} className="mt-5 space-y-4">
               <div>
-                <label htmlFor="rejectionReason" className="mb-1.5 block text-sm font-medium text-erp-text">
-                  Reason for rejection *
+                <label htmlFor="rejectionReason" className="mb-2 block text-sm font-semibold text-erp-text">
+                  Rejection Reason <span className="text-erp-danger">*</span>
                 </label>
                 <textarea
                   id="rejectionReason"
-                  required
-                  maxLength={500}
-                  rows={4}
                   value={rejectionReason}
                   onChange={(event) => setRejectionReason(event.target.value)}
-                  placeholder="Explain why this registration request is being rejected..."
-                  className="w-full resize-y rounded-xl border border-erp-border bg-erp-surface px-3.5 py-3 text-sm text-erp-text outline-none placeholder:text-erp-text-muted focus:border-erp-focus"
+                  rows={4}
+                  maxLength={1000}
+                  required
+                  placeholder="Explain why this company registration is being rejected..."
+                  className="w-full resize-y rounded-xl border border-erp-border bg-erp-surface p-3 text-sm text-erp-text outline-none placeholder:text-erp-text-muted focus:border-erp-focus focus:ring-2 focus:ring-erp-ring"
                 />
-                <p className="mt-1 text-right text-xs text-erp-text-muted">{rejectionReason.length}/500</p>
+                <p className="mt-1 text-right text-xs text-erp-text-muted">{rejectionReason.length}/1000</p>
               </div>
 
-              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  disabled={processingId === rejectCompany._id}
-                  onClick={() => setRejectCompany(null)}
-                  className="rounded-xl border border-erp-border px-4 py-3 text-sm font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-50"
-                >
+              {actionError && (
+                <div className="flex items-start gap-2 rounded-xl border border-erp-danger-border bg-erp-danger-light p-3 text-sm text-erp-danger">
+                  <AlertCircle size={17} className="mt-0.5 shrink-0" />
+                  <span>{actionError}</span>
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
+                <button type="button" onClick={closeRejectDialog} disabled={Boolean(actionLoading)} className="rounded-xl border border-erp-border px-4 py-2.5 text-sm font-semibold text-erp-text hover:bg-erp-hover disabled:opacity-60">
                   Cancel
                 </button>
+
                 <button
                   type="submit"
-                  disabled={processingId === rejectCompany._id || !rejectionReason.trim()}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-erp-danger px-4 py-3 text-sm font-semibold text-erp-text-inverse hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={Boolean(actionLoading) || !rejectionReason.trim()}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-erp-danger px-4 py-2.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {processingId === rejectCompany._id ? 'Rejecting...' : 'Confirm Rejection'}
+                  {actionLoading === rejectingCompany._id && <RefreshCw size={16} className="animate-spin" />}
+                  Confirm Rejection
                 </button>
               </div>
             </form>

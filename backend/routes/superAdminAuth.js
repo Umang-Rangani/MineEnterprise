@@ -2,6 +2,7 @@ const express = require('express')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const User = require('../models/User')
+const Company = require('../models/Company')
 const authMiddleware = require('../middleware/authMiddleware')
 
 const router = express.Router()
@@ -15,7 +16,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         name: req.user.name,
         email: req.user.email,
         role: req.user.role,
-        companyId: req.user.companyId,
+        companyId: req.user.companyId || null,
       },
     })
   } catch (error) {
@@ -31,7 +32,6 @@ router.get('/me', authMiddleware, async (req, res) => {
 router.post('/setup', async (req, res) => {
   try {
     const { name, email, password, phone, setupKey } = req.body
-
     const serverSetupKey = process.env.SUPERADMIN_SETUP_KEY
 
     if (!serverSetupKey) {
@@ -138,10 +138,9 @@ router.post('/login', async (req, res) => {
 
     const user = await User.findOne({
       email: email.trim().toLowerCase(),
-      role: 'SuperAdmin',
     }).select('+password')
 
-    if (!user || user.status !== 'Active') {
+    if (!user || user.status !== 'Active' || !['SuperAdmin', 'CompanyAdmin'].includes(user.role)) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password.',
@@ -157,10 +156,36 @@ router.post('/login', async (req, res) => {
       })
     }
 
+    let companyId = user.companyId || null
+
+    if (user.role === 'CompanyAdmin') {
+      let company = null
+
+      if (companyId) {
+        company = await Company.findById(companyId)
+      }
+
+      if (!company) {
+        company = await Company.findOne({
+          owner: user._id,
+        })
+      }
+
+      if (!company || company.status !== 'Approved') {
+        return res.status(403).json({
+          success: false,
+          message: company?.status === 'Rejected' ? 'Your company registration has been rejected.' : 'Your company is awaiting approval.',
+        })
+      }
+
+      companyId = company._id
+    }
+
     const token = jwt.sign(
       {
         userId: user._id.toString(),
         role: user.role,
+        companyId: companyId ? companyId.toString() : null,
       },
       process.env.JWT_SECRET,
       {
@@ -178,17 +203,18 @@ router.post('/login', async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: 'SuperAdmin login successful.',
+      message: 'Login successful.',
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         status: user.status,
+        companyId,
       },
     })
   } catch (error) {
-    console.error('SuperAdmin login error:', error)
+    console.error('Login error:', error)
 
     return res.status(500).json({
       success: false,
