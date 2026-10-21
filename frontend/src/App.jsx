@@ -8,6 +8,9 @@ import CompanyRegistration from './pages/CompanyRegistration'
 import SuperAdminCompanies from './components/superadmin/SuperAdminCompanies'
 import CompaniesRoute from './components/company/CompaniesRoute'
 import CompanyDashboard from './components/company/CompanyDashboard'
+import CompanyEmployees from './components/company/CompanyEmployees'
+import CompanyRoles from './components/company/CompanyRoles'
+import CompanyEmployeeDetails from './components/company/CompanyEmployeeDetails'
 
 export default function App() {
   return (
@@ -27,6 +30,9 @@ export default function App() {
       <Route element={<ProtectedRoute allowedRoles={['CompanyAdmin']} />}>
         <Route path="/company" element={<CompaniesRoute />}>
           <Route index element={<CompanyDashboard />} />
+          <Route path="employees" element={<CompanyEmployees />} />
+            <Route path="employees/:id" element={<CompanyEmployeeDetails />} />
+          <Route path="roles" element={<CompanyRoles />} />
         </Route>
       </Route>
 

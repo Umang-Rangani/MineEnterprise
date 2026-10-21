@@ -1,30 +1,112 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Package, Boxes, ShoppingCart, Users, BarChart3, Settings, LogOut, Menu, X, Bell, ChevronRight, PanelLeftClose, PanelLeftOpen, Building2, ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, Users, ShieldCheck, LogOut, Menu, X, Bell, ChevronRight, PanelLeftClose, PanelLeftOpen, Building2 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 const navigationItems = [
-  { label: 'Dashboard', path: '/company', icon: LayoutDashboard, end: true },
-  { label: 'Products', path: '/company/products', icon: Package },
-  { label: 'Inventory', path: '/company/inventory', icon: Boxes },
-  { label: 'Sales & Orders', path: '/company/orders', icon: ShoppingCart },
-  { label: 'Employees', path: '/company/employees', icon: Users },
-  { label: 'Reports', path: '/company/reports', icon: BarChart3 },
-  { label: 'Settings', path: '/company/settings', icon: Settings },
+  {
+    label: 'Dashboard',
+    path: '/company',
+    icon: LayoutDashboard,
+    end: true,
+    section: 'Dashboard',
+    actions: ['dashboard:view'],
+    routeAvailable: true,
+  },
+  {
+    label: 'Employees',
+    path: '/company/employees',
+    icon: Users,
+    section: 'Employee',
+    actions: ['employee:list', 'employee:view'],
+    routeAvailable: true,
+  },
+  {
+    label: 'Roles & Permissions',
+    path: '/company/roles',
+    icon: ShieldCheck,
+    section: 'Role',
+    actions: ['role:list', 'role:view'],
+    routeAvailable: true,
+  },
+  {
+    label: 'Products',
+    path: '/company/products',
+    icon: Building2,
+    section: 'Product',
+    actions: ['product:list', 'product:view'],
+    routeAvailable: false,
+  },
+  {
+    label: 'Inventory',
+    path: '/company/inventory',
+    icon: Building2,
+    section: 'Inventory',
+    actions: ['inventory:view', 'inventory:view-stock'],
+    routeAvailable: false,
+  },
+  {
+    label: 'Sales & Orders',
+    path: '/company/orders',
+    icon: Building2,
+    section: 'Sales',
+    actions: ['sales:list', 'sales:view'],
+    routeAvailable: false,
+  },
+  {
+    label: 'Reports',
+    path: '/company/reports',
+    icon: Building2,
+    section: 'Reports',
+    actions: ['reports:view'],
+    routeAvailable: false,
+  },
+  {
+    label: 'Settings',
+    path: '/company/settings',
+    icon: Building2,
+    section: 'Settings',
+    actions: ['settings:view'],
+    routeAvailable: false,
+  },
 ]
 
 const pageTitles = {
   company: 'Dashboard',
+  employees: 'Employees',
+  roles: 'Roles & Permissions',
   products: 'Products',
   inventory: 'Inventory',
   orders: 'Sales & Orders',
-  employees: 'Employees',
   reports: 'Reports',
   settings: 'Settings',
 }
 
+const hasPermission = (permissions, actions) => {
+  if (permissions === null) return true
+
+  if (!permissions || typeof permissions !== 'object') return false
+
+  return actions.some((action) => {
+    const section = action.split(':')[0]
+
+    const sectionKey = {
+      dashboard: 'Dashboard',
+      employee: 'Employee',
+      role: 'Role',
+      product: 'Product',
+      inventory: 'Inventory',
+      sales: 'Sales',
+      reports: 'Reports',
+      settings: 'Settings',
+    }[section]
+
+    return permissions[sectionKey]?.includes(action) || permissions.__customActions?.includes(action)
+  })
+}
+
 export default function CompaniesRoute() {
-  const { user, loading, logout } = useAuth()
+  const { user, permissions, loading, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const notificationRef = useRef(null)
@@ -34,8 +116,12 @@ export default function CompaniesRoute() {
   const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
 
-  const currentPath = location.pathname.split('/').filter(Boolean).pop() || 'company'
-  const pageTitle = pageTitles[currentPath] || 'Dashboard'
+  const pathParts = location.pathname.split('/').filter(Boolean)
+  const currentPath = pathParts[pathParts.length - 1] || 'company'
+
+  const pageTitle = currentPath === 'company' || currentPath === 'company' ? 'Dashboard' : pageTitles[currentPath] || 'Employee Details'
+
+  const visibleNavigationItems = navigationItems.filter((item) => item.routeAvailable && hasPermission(permissions, item.actions))
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(min-width: 1024px)')
@@ -46,7 +132,10 @@ export default function CompaniesRoute() {
     }
 
     mediaQuery.addEventListener('change', handleScreenChange)
-    return () => mediaQuery.removeEventListener('change', handleScreenChange)
+
+    return () => {
+      mediaQuery.removeEventListener('change', handleScreenChange)
+    }
   }, [])
 
   useEffect(() => {
@@ -104,7 +193,7 @@ export default function CompaniesRoute() {
     )
   }
 
-  if (!user || user.role !== 'CompanyAdmin') {
+  if (!user || !['CompanyAdmin', 'Employee'].includes(user.role)) {
     return <Navigate to="/login" replace />
   }
 
@@ -134,7 +223,7 @@ export default function CompaniesRoute() {
           <p className={`mb-3 overflow-hidden whitespace-nowrap px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-erp-sidebar-text-muted ${desktopSidebarOpen ? '' : 'lg:hidden'}`}>Workspace</p>
 
           <nav className="space-y-1">
-            {navigationItems.map(({ label, path, icon: Icon, end }) => (
+            {visibleNavigationItems.map(({ label, path, icon: Icon, end }) => (
               <NavLink
                 key={path}
                 to={path}
@@ -226,13 +315,20 @@ export default function CompaniesRoute() {
               )}
             </div>
 
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-erp-primary-light text-sm font-bold text-erp-primary" title={user?.name || 'Company Admin'}>
-              {(user?.name || 'C').trim().charAt(0).toUpperCase()}
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-erp-primary-light text-sm font-bold text-erp-primary" title={user?.name || 'MineERP User'}>
+              {(user?.name || 'U').trim().charAt(0).toUpperCase()}
             </div>
 
             <div className="hidden min-w-0 text-right sm:block">
-              <p className="max-w-40 truncate text-sm font-semibold text-erp-text">{user?.name || 'Company Admin'}</p>
-              <p className="max-w-40 truncate text-xs text-erp-text-secondary">{user?.email || 'Company Administrator'}</p>
+              <p className="max-w-40 truncate text-sm font-semibold text-erp-text">{user?.name || 'MineERP User'}</p>
+              <p className="max-w-40 truncate text-xs text-erp-text-secondary">
+                {user?.role === 'CompanyAdmin'
+                  ? 'Company Administrator'
+                  : (user?.roles || [])
+                      .map((role) => role.name)
+                      .filter(Boolean)
+                      .join(', ') || 'Employee'}
+              </p>
             </div>
           </div>
         </header>

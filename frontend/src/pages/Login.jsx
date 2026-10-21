@@ -15,8 +15,7 @@ export default function Login() {
   const [submitting, setSubmitting] = useState(false)
 
   if (!loading && user) {
-    const destination = user.role === 'SuperAdmin' ? '/superadmin' : user.role === 'CompanyAdmin' ? '/company' : '/'
-
+    const destination = user.role === 'SuperAdmin' ? '/superadmin' : ['CompanyAdmin', 'Employee'].includes(user.role) ? '/company' : '/'
     return <Navigate to={destination} replace />
   }
 
@@ -29,9 +28,12 @@ export default function Login() {
       const currentUser = await login(email.trim(), password)
       const previousPath = location.state?.from?.pathname
 
-      const roleDestination = currentUser.role === 'SuperAdmin' ? '/superadmin' : currentUser.role === 'CompanyAdmin' ? '/company' : '/'
+      const roleDestination = currentUser.role === 'SuperAdmin' ? '/superadmin' : ['CompanyAdmin', 'Employee'].includes(currentUser.role) ? '/company' : '/'
 
-      const destination = currentUser.role === 'SuperAdmin' || currentUser.role === 'CompanyAdmin' ? roleDestination : previousPath && previousPath !== '/login' ? previousPath : '/'
+      const destination =
+        previousPath && previousPath !== '/login' && (currentUser.role === 'SuperAdmin' ? previousPath.startsWith('/superadmin') : ['CompanyAdmin', 'Employee'].includes(currentUser.role) ? previousPath.startsWith('/company') : true)
+          ? previousPath
+          : roleDestination
 
       navigate(destination, { replace: true })
     } catch (err) {
