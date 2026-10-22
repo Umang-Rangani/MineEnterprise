@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, Users, ShieldCheck, LogOut, Menu, X, Bell, ChevronRight, PanelLeftClose, PanelLeftOpen, Building2 } from 'lucide-react'
+import { LayoutDashboard, Users, ShieldCheck, LogOut, Menu, X, Bell, ChevronRight, PanelLeftClose, PanelLeftOpen, Building2, Tags } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
 const navigationItems = [
@@ -30,12 +30,20 @@ const navigationItems = [
     routeAvailable: true,
   },
   {
+    label: 'Categories',
+    path: '/company/categories',
+    icon: Tags,
+    section: 'Category',
+    actions: ['category:list', 'category:view'],
+    routeAvailable: true,
+  },
+  {
     label: 'Products',
     path: '/company/products',
     icon: Building2,
     section: 'Product',
     actions: ['product:list', 'product:view'],
-    routeAvailable: false,
+    routeAvailable: true,
   },
   {
     label: 'Inventory',
@@ -43,7 +51,7 @@ const navigationItems = [
     icon: Building2,
     section: 'Inventory',
     actions: ['inventory:view', 'inventory:view-stock'],
-    routeAvailable: false,
+    routeAvailable: true,
   },
   {
     label: 'Sales & Orders',
@@ -75,6 +83,7 @@ const pageTitles = {
   company: 'Dashboard',
   employees: 'Employees',
   roles: 'Roles & Permissions',
+  categories: 'Categories',
   products: 'Products',
   inventory: 'Inventory',
   orders: 'Sales & Orders',
@@ -94,6 +103,7 @@ const hasPermission = (permissions, actions) => {
       dashboard: 'Dashboard',
       employee: 'Employee',
       role: 'Role',
+      category: 'Category',
       product: 'Product',
       inventory: 'Inventory',
       sales: 'Sales',

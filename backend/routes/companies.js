@@ -8,44 +8,54 @@
 
   const authMiddleware = require('../middleware/authMiddleware')
 
-  router.get('/me', authMiddleware, async (req, res) => {
-    try {
-      if (req.user.role !== 'CompanyAdmin') {
-        return res.status(403).json({
-          success: false,
-          message: 'Access denied. CompanyAdmin only.',
-        })
-      }
-
-      const company = await Company.findOne({
-        owner: req.user.userId,
-      })
-        .populate('owner', 'name email phone')
-        .lean()
-
-      if (!company) {
-        return res.status(404).json({
-          success: false,
-          message: 'Company details not found.',
-        })
-      }
-
-      return res.status(200).json({
-        success: true,
-        company: {
-          ...company,
-          id: company._id,
-        },
-      })
-    } catch (error) {
-      console.error('Company details error:', error)
-
-      return res.status(500).json({
+ 
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    if (!['CompanyAdmin', 'Employee'].includes(req.user.role)) {
+      return res.status(403).json({
         success: false,
-        message: 'Unable to load company details.',
+        message: 'Access denied. Company workspace users only.',
       })
     }
-  })
+
+    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account is not linked to a valid company.',
+      })
+    }
+
+    const company = await Company.findOne({
+      _id: req.user.companyId,
+      status: 'Approved',
+    })
+      .populate('owner', 'name email phone')
+      .lean()
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: 'Approved company details not found.',
+      })
+    }
+
+    return res.status(200).json({
+      success: true,
+      company: {
+        ...company,
+        id: company._id,
+      },
+    })
+  } catch (error) {
+    console.error('Company details error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load company details.',
+    })
+  }
+})
+
 
   // SuperAdmin: Get all registered companies
   router.get('/pending', authMiddleware, async (req, res) => {

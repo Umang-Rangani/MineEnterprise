@@ -10,10 +10,10 @@ const normalizeSection = (section) => {
 
   const normalized = section.trim().toLowerCase()
 
-  const matchedSection = Object.keys(SECTION_KEYS).find((key) => key.toLowerCase() === normalized)
-
-  return matchedSection || ''
+  return Object.keys(SECTION_KEYS).find((key) => key.toLowerCase() === normalized) || ''
 }
+
+const getValidPermissionKeys = () => new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
 
 const getPredefinedRolePermissions = (roleName) => {
   const role = normalizeRole(roleName)
@@ -28,8 +28,6 @@ const getPredefinedRolePermissions = (roleName) => {
 
   return ROLE_DEFAULT_PERMISSIONS[role] || {}
 }
-
-const getValidPermissionKeys = () => new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
 
 const getCustomRolePermissions = (user, company) => {
   const result = new Set()
@@ -75,6 +73,25 @@ const getEffectivePermissions = (user, company) => {
   }
 
   const effective = {}
+  const validPermissions = getValidPermissionKeys()
+
+  // Individual permission overrides apply only to Employees.
+  // CompanyAdmin and other roles retain their normal role permissions.
+  if (normalizeRole(user.role) === ROLES.EMPLOYEE && Array.isArray(user.permissionOverrides)) {
+    const allowedPermissions = new Set(user.permissionOverrides.filter((permission) => typeof permission === 'string' && validPermissions.has(permission)))
+
+    for (const [section, sectionActions] of Object.entries(ACTIONS)) {
+      const allowedInSection = Object.values(sectionActions).filter((permission) => allowedPermissions.has(permission))
+
+      if (allowedInSection.length > 0) {
+        effective[section] = allowedInSection
+      }
+    }
+
+    effective.__customActions = []
+    return effective
+  }
+
   const assignedRoles = Array.isArray(user.roles) ? user.roles : []
 
   const rolesToCheck = [
@@ -134,9 +151,9 @@ const resolvePermissionKey = (section, action) => {
 
   if (!normalizedSection) return ''
 
-  const sectionActions = ACTIONS[normalizedSection]
+  const sectionActions = ACTIONS[normalizedSection] || {}
 
-  const matchingAction = Object.entries(sectionActions || {}).find(([key]) => key.toLowerCase() === normalizedAction.toLowerCase())
+  const matchingAction = Object.entries(sectionActions).find(([key]) => key.toLowerCase() === normalizedAction.toLowerCase())
 
   if (matchingAction) {
     return matchingAction[1]
@@ -167,9 +184,9 @@ const hasPermission = (user, company, section, action) => {
   }
 
   const normalizedSection = normalizeSection(section)
-  const predefinedPermissions = permissions[normalizedSection] || []
+  const sectionPermissions = permissions[normalizedSection] || []
 
-  if (predefinedPermissions.includes(permissionKey)) {
+  if (sectionPermissions.includes(permissionKey)) {
     return true
   }
 
@@ -197,7 +214,12 @@ const canAssignPermissions = (user, company, requestedPermissions) => {
     return false
   }
 
-  const userPermissions = new Set([...Object.values(effectivePermissions).filter(Array.isArray).flat(), ...(effectivePermissions.__customActions || [])])
+  const userPermissions = new Set([
+    ...Object.entries(effectivePermissions)
+      .filter(([key, value]) => key !== '__customActions' && Array.isArray(value))
+      .flatMap(([, value]) => value),
+    ...(effectivePermissions.__customActions || []),
+  ])
 
   return requestedPermissions.every((permission) => userPermissions.has(permission))
 }

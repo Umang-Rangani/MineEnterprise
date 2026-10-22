@@ -62,6 +62,10 @@ const userSchema = new mongoose.Schema(
       type: [assignedRoleSchema],
       default: [],
     },
+    permissionOverrides: {
+      type: [String],
+      default: undefined,
+    },
 
     companyId: {
       type: mongoose.Schema.Types.ObjectId,

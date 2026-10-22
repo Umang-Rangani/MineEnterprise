@@ -12,7 +12,11 @@ const superAdminAuth = require('./routes/superAdminAuth')
 const superAdminDashboard = require('./routes/superAdminDashboard')
 
 var companiesRouter = require('./routes/companies')
+
 const employeeAuthRouter = require('./routes/employeeAuth')
+const productsRouter = require('./routes/products')
+const categoriesRouter = require('./routes/categories')
+const inventoryRouter = require('./routes/inventory')
 const erpRouter = require('./routes/erp')
 
 var app = express()
@@ -39,9 +43,11 @@ app.use('/', indexRouter)
 
 app.use('/superadmin', superAdminAuth)
 app.use('/superadmin/dashboard', superAdminDashboard)
-
 app.use('/companies', companiesRouter)
 app.use('/erp/auth', employeeAuthRouter)
+app.use('/erp/products', productsRouter)
+app.use('/erp/categories', categoriesRouter)
+app.use('/erp/inventory', inventoryRouter)
 app.use('/erp', erpRouter)
 
 // 404 Handler

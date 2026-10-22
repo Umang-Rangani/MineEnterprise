@@ -11,6 +11,10 @@ import CompanyDashboard from './components/company/CompanyDashboard'
 import CompanyEmployees from './components/company/CompanyEmployees'
 import CompanyRoles from './components/company/CompanyRoles'
 import CompanyEmployeeDetails from './components/company/CompanyEmployeeDetails'
+import CompanyProducts from './components/company/CompanyProducts'
+import CompanyCategories from './components/company/CompanyCategories'
+import CompanyInventory from './components/company/CompanyInventory'
+import EmployeeForm from './components/company/EmployeeForm'
 
 export default function App() {
   return (
@@ -27,11 +31,18 @@ export default function App() {
         </Route>
       </Route>
 
-      <Route element={<ProtectedRoute allowedRoles={['CompanyAdmin']} />}>
+      <Route element={<ProtectedRoute allowedRoles={['CompanyAdmin', 'Employee']} />}>
         <Route path="/company" element={<CompaniesRoute />}>
           <Route index element={<CompanyDashboard />} />
+          <Route path="categories" element={<CompanyCategories />} />
+          <Route path="products" element={<CompanyProducts />} />
+          <Route path="inventory" element={<CompanyInventory />} />
           <Route path="employees" element={<CompanyEmployees />} />
-            <Route path="employees/:id" element={<CompanyEmployeeDetails />} />
+
+          <Route path="/company/employees/new" element={<EmployeeForm />} />
+          <Route path="/company/employees/:id/edit" element={<EmployeeForm />} />
+
+          <Route path="employees/:id" element={<CompanyEmployeeDetails />} />
           <Route path="roles" element={<CompanyRoles />} />
         </Route>
       </Route>

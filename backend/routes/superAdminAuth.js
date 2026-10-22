@@ -16,6 +16,7 @@ router.get('/me', authMiddleware, async (req, res) => {
         name: req.user.name,
         email: req.user.email,
         role: req.user.role,
+        roles: Array.isArray(req.user.roles) ? req.user.roles : [],
         companyId: req.user.companyId || null,
       },
     })
@@ -223,7 +224,6 @@ router.post('/login', async (req, res) => {
   }
 })
 
-
 router.post('/logout', (req, res) => {
   res.clearCookie('token', {
     httpOnly: true,
@@ -237,6 +237,5 @@ router.post('/logout', (req, res) => {
     message: 'Logged out successfully.',
   })
 })
-
 
 module.exports = router
