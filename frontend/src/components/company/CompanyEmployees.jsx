@@ -127,8 +127,8 @@ export default function CompanyEmployees() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/80 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+    <div className="min-h-screen bg-slate-50/80 ">
+      <div className="mx-auto  space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>

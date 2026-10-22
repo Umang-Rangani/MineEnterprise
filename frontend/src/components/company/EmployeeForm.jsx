@@ -123,9 +123,11 @@ function ToggleSwitch({ checked, onChange, disabled = false }) {
       aria-checked={checked}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-erp-primary/30 disabled:cursor-not-allowed disabled:opacity-50 ${checked ? 'bg-erp-primary' : 'bg-slate-300'}`}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+        checked ? 'bg-erp-primary' : 'bg-slate-200'
+      }`}
     >
-      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${checked ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+      <span className={`pointer-events-none block h-5 w-5 shrink-0 rounded-full bg-white shadow-md transition-transform duration-200 ease-in-out ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
     </button>
   )
 }
@@ -361,8 +363,8 @@ export default function EmployeeForm() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50/80 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <div className="min-h-screen bg-slate-50/80 ">
+      <div className="mx-auto space-y-6">
         {/* Page heading */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-start gap-3">

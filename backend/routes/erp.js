@@ -128,10 +128,13 @@ router.get('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'V
       })
     }
 
+    // Load the approved company and its custom roles.
     const company = await Company.findOne({
       _id: req.user.companyId,
       status: 'Approved',
-    }).select('_id')
+    })
+      .select('_id customRoles')
+      .lean()
 
     if (!company) {
       return res.status(403).json({
@@ -140,6 +143,7 @@ router.get('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'V
       })
     }
 
+    // Find the employee within this company only.
     const employee = await User.findOne({
       _id: req.params.id,
       companyId: company._id,
@@ -155,9 +159,15 @@ router.get('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'V
       })
     }
 
+    // Calculate permissions for this employee, not the logged-in user.
+    const permissions = getEffectivePermissions(employee, company)
+
     return res.status(200).json({
       success: true,
-      employee: getSafeEmployee(employee),
+      employee: {
+        ...getSafeEmployee(employee),
+        permissions: permissions || {},
+      },
     })
   } catch (error) {
     return next(error)
@@ -969,6 +979,225 @@ router.post('/roles', authMiddleware, permissionMiddleware('Role', 'CREATE'), as
     })
   } catch (error) {
     return next(error)
+  }
+})
+
+router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'), async (req, res) => {
+  try {
+    if (req.user.role !== ROLES.COMPANY_ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Company Admin can edit custom roles.',
+      })
+    }
+
+    const { id } = req.params
+    const { name, description = '', permissions } = req.body
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role ID.',
+      })
+    }
+
+    if (typeof name !== 'string' || !name.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role name is required.',
+      })
+    }
+
+    if (name.trim().length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role name cannot exceed 100 characters.',
+      })
+    }
+
+    if (typeof description !== 'string' || description.trim().length > 500) {
+      return res.status(400).json({
+        success: false,
+        message: 'Description cannot exceed 500 characters.',
+      })
+    }
+
+    if (!Array.isArray(permissions)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Permissions must be an array.',
+      })
+    }
+
+    const company = await Company.findOne({
+      _id: req.user.companyId,
+      status: 'Approved',
+    })
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: 'Approved company not found.',
+      })
+    }
+
+    const customRole = company.customRoles.id(id)
+
+    if (!customRole || customRole.isSystem) {
+      return res.status(404).json({
+        success: false,
+        message: 'Editable custom role not found.',
+      })
+    }
+
+    const normalizedName = name.trim()
+
+    const duplicateRole = company.customRoles.find((role) => role._id.toString() !== id && role.name.toLowerCase() === normalizedName.toLowerCase())
+
+    if (duplicateRole) {
+      return res.status(409).json({
+        success: false,
+        message: 'A role with this name already exists.',
+      })
+    }
+
+    const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
+
+    const requestedPermissions = [...new Set(permissions)]
+
+    if (requestedPermissions.some((permission) => typeof permission !== 'string' || !validPermissions.has(permission))) {
+      return res.status(400).json({
+        success: false,
+        message: 'One or more permissions are invalid.',
+      })
+    }
+
+    const assignablePermissions = new Set()
+
+    const currentRolePermissions = ROLE_DEFAULT_PERMISSIONS[req.user.role] || {}
+
+    Object.values(currentRolePermissions).forEach((sectionPermissions) => {
+      sectionPermissions.forEach((permission) => assignablePermissions.add(permission))
+    })
+
+    for (const assignedRole of req.user.roles || []) {
+      if (assignedRole.type === 'Predefined') {
+        const rolePermissions = ROLE_DEFAULT_PERMISSIONS[assignedRole.name] || {}
+
+        Object.values(rolePermissions).forEach((sectionPermissions) => {
+          sectionPermissions.forEach((permission) => assignablePermissions.add(permission))
+        })
+      }
+
+      if (assignedRole.type === 'Custom' && assignedRole.customRoleId) {
+        const assignedCustomRole = company.customRoles.id(assignedRole.customRoleId)
+
+        if (assignedCustomRole) {
+          assignedCustomRole.permissions.forEach((permission) => assignablePermissions.add(permission))
+        }
+      }
+    }
+
+    if (requestedPermissions.some((permission) => !assignablePermissions.has(permission))) {
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot assign permissions you do not have.',
+      })
+    }
+
+    customRole.name = normalizedName
+    customRole.description = description.trim()
+    customRole.permissions = requestedPermissions
+
+    await company.save()
+
+    return res.status(200).json({
+      success: true,
+      message: 'Custom role updated successfully.',
+      role: customRole,
+    })
+  } catch (error) {
+    console.error('Update custom role error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update custom role.',
+    })
+  }
+})
+
+router.delete('/roles/:id', authMiddleware, permissionMiddleware('Role', 'DELETE'), async (req, res) => {
+  try {
+    if (req.user.role !== ROLES.COMPANY_ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Company Admin can delete custom roles.',
+      })
+    }
+
+    const { id } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role ID.',
+      })
+    }
+
+    const company = await Company.findOne({
+      _id: req.user.companyId,
+      status: 'Approved',
+    })
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: 'Approved company not found.',
+      })
+    }
+
+    const customRole = company.customRoles.id(id)
+
+    if (!customRole || customRole.isSystem) {
+      return res.status(404).json({
+        success: false,
+        message: 'Deletable custom role not found.',
+      })
+    }
+
+    const roleId = customRole._id
+
+    // Remove this custom role from users in the same company.
+    await User.updateMany(
+      {
+        companyId: company._id,
+        'roles.customRoleId': roleId,
+      },
+      {
+        $pull: {
+          roles: {
+            customRoleId: roleId,
+            type: 'Custom',
+          },
+        },
+      },
+    )
+
+    company.customRoles.pull(roleId)
+    await company.save()
+
+    return res.status(200).json({
+      success: true,
+      message: 'Custom role deleted successfully.',
+      deletedRoleId: id,
+    })
+  } catch (error) {
+    console.error('Delete custom role error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete custom role.',
+    })
   }
 })
 
