@@ -5,7 +5,7 @@ import { ArrowLeft, UserRound, Mail, Phone, LockKeyhole, Eye, EyeOff, ShieldChec
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
-
+import { EmployeeFormShimmer } from './CompanyEmployeeShimmer'
 
 const sectionIcons = {
   Employee: Users,
@@ -357,11 +357,7 @@ export default function EmployeeForm() {
     return (
       <>
         {toast && <Toast toast={toast} onClose={closeToast} />}
-
-        <div className="flex min-h-[40vh] items-center justify-center">
-          <LoaderCircle className="animate-spin text-erp-primary" size={22} />
-          <span className="ml-2 text-sm text-slate-500">Loading employee form...</span>
-        </div>
+        <EmployeeFormShimmer />
       </>
     )
   }

@@ -1265,4 +1265,86 @@ router.delete('/employees/:id', authMiddleware, permissionMiddleware('Employee',
   }
 })
 
+router.delete('/roles/:id', authMiddleware, permissionMiddleware('Role', 'DELETE'), async (req, res, next) => {
+  try {
+    if (req.user.role !== ROLES.COMPANY_ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only CompanyAdmin can delete custom roles.',
+      })
+    }
+
+    const { id } = req.params
+
+    if (!mongoose.isValidObjectId(id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid role ID.',
+      })
+    }
+
+    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company access is required.',
+      })
+    }
+
+    const company = await Company.findOne({
+      _id: req.user.companyId,
+      status: 'Approved',
+    })
+
+    if (!company) {
+      return res.status(403).json({
+        success: false,
+        message: 'Approved company not found.',
+      })
+    }
+
+    const customRole = company.customRoles.id(id)
+
+    if (!customRole) {
+      return res.status(404).json({
+        success: false,
+        message: 'Custom role not found in your company.',
+      })
+    }
+
+    if (customRole.isSystem === true) {
+      return res.status(403).json({
+        success: false,
+        message: 'System roles cannot be deleted.',
+      })
+    }
+
+    const roleId = customRole._id
+
+    const assignedUsers = await User.countDocuments({
+      companyId: company._id,
+      'roles.customRoleId': roleId,
+      'roles.type': 'Custom',
+    })
+
+    if (assignedUsers > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'This role is assigned to employees. Remove the role from employees before deleting it.',
+        assignedUsers,
+      })
+    }
+
+    company.customRoles.pull(roleId)
+    await company.save()
+
+    return res.status(200).json({
+      success: true,
+      message: 'Custom role deleted successfully.',
+      deletedRoleId: String(roleId),
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
 module.exports = router

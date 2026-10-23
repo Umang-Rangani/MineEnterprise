@@ -18,20 +18,15 @@
 
 <TrashBox/>
 
-  document.title = 'Cart | MineKart'
+  document.title = 
+
+E-com size
+
+helper function na bnavao
+
+single line ma header aapo
 
 
-
-
-
-    <BreadCrumb items={items} />
-
-<TrashBox/>
-
-  document.title = 'Cart | MineKart'
-
-aa pn used kro
 
 , 
 
-single line ma header aapo
