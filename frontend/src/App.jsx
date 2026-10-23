@@ -33,6 +33,18 @@ import CompanyExpenses from './components/company/CompanyExpenses'
 import CompanyWarehouses from './components/company/CompanyWarehouses'
 import CompanyReports from './components/company/CompanyReports'
 import CompanySettings from './components/company/CompanySettings'
+import SupplierForm from './components/company/SupplierForm'
+import SupplierDetails from './components/company/SupplierDetails'
+import CustomerForm from './components/company/CustomerForm'
+import CustomerDetails from './components/company/CustomerDetails'
+import PurchaseForm from './components/company/PurchaseForm'
+import PurchaseDetails from './components/company/PurchaseDetails'
+import OrderForm from './components/company/OrderForm'
+import OrderDetails from './components/company/OrderDetails'
+import InvoiceForm from './components/company/InvoiceForm'
+import InvoiceDetails from './components/company/InvoiceDetails'
+import PaymentForm from './components/company/PaymentForm'
+import PaymentDetails from './components/company/PaymentDetails'
 
 export default function App() {
   return (
@@ -74,21 +86,39 @@ export default function App() {
 
           {/* Suppliers */}
           <Route path="suppliers" element={<CompanySuppliers />} />
+          <Route path="suppliers/new" element={<SupplierForm />} />
+          <Route path="suppliers/:id" element={<SupplierDetails />} />
+          <Route path="suppliers/:id/edit" element={<SupplierForm />} />
 
           {/* Customers */}
           <Route path="customers" element={<CompanyCustomers />} />
+          <Route path="customers/new" element={<CustomerForm />} />
+          <Route path="customers/:id" element={<CustomerDetails />} />
+          <Route path="customers/:id/edit" element={<CustomerForm />} />
 
           {/* Purchase Management */}
           <Route path="purchases" element={<CompanyPurchases />} />
+          <Route path="purchases/new" element={<PurchaseForm />} />
+          <Route path="purchases/:id" element={<PurchaseDetails />} />
+          <Route path="purchases/:id/edit" element={<PurchaseForm />} />
 
           {/* Sales & Orders */}
           <Route path="orders" element={<CompanyOrders />} />
+          <Route path="orders/new" element={<OrderForm />} />
+          <Route path="orders/:id" element={<OrderDetails />} />
+          <Route path="orders/:id/edit" element={<OrderForm />} />
 
           {/* Invoices */}
           <Route path="invoices" element={<CompanyInvoices />} />
+          <Route path="invoices/new" element={<InvoiceForm />} />
+          <Route path="invoices/:id" element={<InvoiceDetails />} />
+          <Route path="invoices/:id/edit" element={<InvoiceForm />} />
 
           {/* Payments */}
           <Route path="payments" element={<CompanyPayments />} />
+          <Route path="payments/new" element={<PaymentForm />} />
+          <Route path="payments/:id" element={<PaymentDetails />} />
+          <Route path="payments/:id/edit" element={<PaymentForm />} />
 
           {/* Expenses */}
           <Route path="expenses" element={<CompanyExpenses />} />

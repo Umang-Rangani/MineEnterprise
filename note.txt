@@ -1,18 +1,21 @@
-આગળનું કામ
-હવે આપણે SuperAdmin માટે કંપનીઓનું registration અને approval flow બનાવવાનું શરૂ કરીશું.
+  const items = [
+    {
+      title: 'Products',
+      link: '/products',
+    },
+    {
+      title: product.category?.categoryName,
+      link: `/category/${product.category?._id}/products`,
+    },
+    {
+      title: product.subCategory?.subCategoryName,
+      link: null,
+    },
+  ]
 
-તમારા server/routes ફોલ્ડરમાં અત્યારે superAdminAuth.js છે. તેથી આગળ નવી ફાઇલ બનાવીએ:
 
-server/routes/company.js
-
-આ ફાઇલમાં આગળના તબક્કે:
-- Business owner company registration કરી શકશે.
-- નવી કંપનીનો status Pending રહેશે.
-- SuperAdmin કંપનીની વિગતો જોઈને Approve અથવા Reject કરી શકશે.
-next લખો, તો પહેલાં company registration માટેનો backend code બનાવીએ.
+  <BreadCrumb items={items} />
 
 
 
-
-
-ej che, change nhi kryo
+  document.title = 'Cart | MineKart'
