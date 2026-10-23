@@ -1,763 +1,149 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Activity, ArrowRight, CheckCircle2, ChevronDown, CircleHelp, LayoutDashboard, LogOut, Menu, Settings, ShieldCheck, Users, X, Clock3, LockKeyhole, Building2, RefreshCw, Search, Check, Ban, Eye, XCircle } from 'lucide-react'
-import axiosInstance from '../api/axiosInstance'
-import { useAuth } from '../context/AuthContext'
+# MineERP — UI Standard & Development Rules
 
-const navigationItems = [
-  { label: 'Dashboard', icon: LayoutDashboard },
-  { label: 'Companies', icon: Building2 },
-  { label: 'Users & Access', icon: Users },
-  { label: 'System Activity', icon: Activity },
-  { label: 'Settings', icon: Settings },
+## Project Identity
+- Project name: **MineERP**
+- MineERP એક standalone ERP SaaS project છે.
+- MineKart નો code, branding, theme અથવા project structure reuse કરવો નહીં.
+- Frontend: React + Vite + Tailwind CSS v4.
+- Backend: Express.js + MongoDB/Mongoose.
+- Frontend માં `useCallback` નો ઉપયોગ કરવો નહીં.
+
+## 1. Common Layout
+બધા pages માં એકસરખો common layout રાખવો.
+
+- Common sidebar અને navigation.
+- Consistent content container અને width.
+- Header અને breadcrumb માટે fixed/stable height.
+- બધા pages માં consistent padding અને spacing.
+- Sidebar અને main content વચ્ચે યોગ્ય alignment.
+- Responsive layout: Desktop, tablet અને mobile.
+- Page change વખતે header, content અથવા buttons અચાનક ઉપર-નીચે ખસે નહીં.
+- Loading અને empty states માં પણ શક્ય હોય ત્યાં સુધી layout stability જાળવવી.
+- Scrollbar દેખાવા કે ગાયબ થવાથી થતા layout shift ને પણ તપાસવો.
+
+## 2. Reusable UI Components
+શક્ય હોય ત્યાં reusable components બનાવવાના અને બધા pages માં ઉપયોગ કરવાના.
+
+- `BreadCrumb`
+- `PageHeader`
+- `PageContainer`
+- `StatCard`
+- `FormField`
+- `Button`
+- `DataTable`
+- `Pagination`
+- `Loader`
+- `EmptyState`
+- `ErrorMessage`
+- `ConfirmModal`
+
+Components પહેલેથી project માં હોય તો પહેલાં તેને તપાસવા; duplicate component બનાવવો નહીં.
+
+## 3. Breadcrumb Standard
+Breadcrumb માં હંમેશાં `title` અને `link` properties વાપરવી.
+
+Example:
+
+```jsx
+const items = [
+  {
+    title: 'Employees',
+    link: '/company/employees',
+  },
+  {
+    title: 'Add Employee',
+    link: null,
+  },
 ]
-
-const statusStyles = {
-  Pending: 'bg-erp-warning/10 text-erp-warning border-erp-warning/30',
-  Active: 'bg-erp-success/10 text-erp-success border-erp-success/30',
-  Rejected: 'bg-erp-danger/10 text-erp-danger border-erp-danger/30',
-  Inactive: 'bg-erp-surface-secondary text-erp-text-secondary border-erp-border',
-}
-
-function StatusBadge({ status }) {
-  return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${statusStyles[status] || statusStyles.Inactive}`}>{status}</span>
-}
-
-function StatCard({ title, value, description, icon: Icon, loading }) {
-  return (
-    <div className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-erp-primary">{title}</p>
-          <p className="mt-3 text-3xl font-semibold text-erp-text">{loading ? '...' : value}</p>
-        </div>
-
-        <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-          <Icon size={21} />
-        </div>
-      </div>
-
-      <p className="mt-3 text-xs text-erp-text-secondary">{description}</p>
-    </div>
-  )
-}
-
-function EmptyState({ icon: Icon, title, description }) {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-erp-border bg-erp-surface px-6 py-14 text-center">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-erp-primary-light text-erp-primary">
-        <Icon size={25} />
-      </div>
-
-      <h3 className="mt-4 text-base font-semibold text-erp-text">{title}</h3>
-
-      <p className="mt-2 max-w-md text-sm leading-6 text-erp-text-secondary">{description}</p>
-    </div>
-  )
-}
-
-function CompanyTable({ companies, loading, actionId, onApprove, onReject, onView }) {
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 rounded-2xl border border-erp-border bg-erp-surface p-12 text-sm text-erp-text-secondary">
-        <RefreshCw size={17} className="animate-spin" />
-        Loading companies...
-      </div>
-    )
-  }
-
-  if (companies.length === 0) {
-    return <EmptyState icon={Building2} title="No companies found" description="Companies matching your search or selected status will appear here." />
-  }
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-erp-border bg-erp-surface">
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-212.5 text-left">
-          <thead className="bg-erp-surface-secondary">
-            <tr className="border-b border-erp-border">
-              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Company</th>
-              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Owner</th>
-              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Business type</th>
-              <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Status</th>
-              <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Actions</th>
-            </tr>
-          </thead>
-
-          <tbody className="divide-y divide-erp-border">
-            {companies.map((company) => (
-              <tr key={company._id} className="transition hover:bg-erp-hover">
-                <td className="px-5 py-4">
-                  <p className="font-semibold text-erp-text">{company.companyName || 'Unnamed company'}</p>
-                  <p className="mt-1 text-xs text-erp-text-secondary">
-                    {company.companyCode || 'No code'} · {company.email || 'No email'}
-                  </p>
-                </td>
-
-                <td className="px-5 py-4">
-                  <p className="text-sm font-medium text-erp-text">{company.ownerName || '—'}</p>
-                  <p className="mt-1 text-xs text-erp-text-secondary">{company.phone || 'No phone'}</p>
-                </td>
-
-                <td className="px-5 py-4 text-sm text-erp-text-secondary">{company.businessType || '—'}</td>
-
-                <td className="px-5 py-4">
-                  <StatusBadge status={company.status} />
-                </td>
-
-                <td className="px-5 py-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <button type="button" onClick={() => onView(company)} title="View company" className="rounded-lg border border-erp-border p-2 text-erp-primary transition hover:bg-erp-hover">
-                      <Eye size={16} />
-                    </button>
-
-                    {company.status === 'Pending' && (
-                      <>
-                        <button
-                          type="button"
-                          disabled={Boolean(actionId)}
-                          onClick={() => onApprove(company)}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-erp-success px-3 py-2 text-xs font-semibold text-erp-text-inverse transition hover:bg-erp-success/90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {actionId === company._id ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-                          Approve
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={Boolean(actionId)}
-                          onClick={() => onReject(company)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-erp-danger/30 px-3 py-2 text-xs font-semibold text-erp-danger transition hover:bg-erp-danger/10 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <Ban size={14} />
-                          Reject
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-export default function SuperAdminDashboard() {
-  const navigate = useNavigate()
-  const { user, logout } = useAuth()
-
-  const [activePage, setActivePage] = useState('Dashboard')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-
-  const [companies, setCompanies] = useState([])
-  const [companiesLoading, setCompaniesLoading] = useState(true)
-  const [companiesError, setCompaniesError] = useState('')
-  const [companySearch, setCompanySearch] = useState('')
-  const [companyFilter, setCompanyFilter] = useState('All')
-  const [companyActionId, setCompanyActionId] = useState('')
-  const [selectedCompany, setSelectedCompany] = useState(null)
-  const [rejectionReason, setRejectionReason] = useState('')
-  const [companyMessage, setCompanyMessage] = useState('')
-  const [showRejectModal, setShowRejectModal] = useState(false)
-
-  const fetchCompanies = useCallback(async () => {
-    setCompaniesLoading(true)
-    setCompaniesError('')
-
-    try {
-      const response = await axiosInstance.get('/companies')
-
-      if (!response.data?.success || !Array.isArray(response.data.data)) {
-        throw new Error('Invalid company data received from server')
-      }
-
-      setCompanies(response.data.data)
-    } catch (error) {
-      setCompaniesError(error.response?.data?.message || error.message || 'Unable to load companies')
-    } finally {
-      setCompaniesLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    fetchCompanies()
-  }, [fetchCompanies])
-
-  const companyStats = useMemo(
-    () => ({
-      total: companies.length,
-      pending: companies.filter((company) => company.status === 'Pending').length,
-      active: companies.filter((company) => company.status === 'Active').length,
-      rejected: companies.filter((company) => company.status === 'Rejected').length,
-      inactive: companies.filter((company) => company.status === 'Inactive').length,
-    }),
-    [companies],
-  )
-
-  const filteredCompanies = useMemo(() => {
-    const search = companySearch.trim().toLowerCase()
-
-    return companies.filter((company) => {
-      const matchesStatus = companyFilter === 'All' || company.status === companyFilter
-
-      const matchesSearch =
-        !search ||
-        [company.companyName, company.companyCode, company.email, company.ownerName].some((value) =>
-          String(value || '')
-            .toLowerCase()
-            .includes(search),
-        )
-
-      return matchesStatus && matchesSearch
-    })
-  }, [companies, companyFilter, companySearch])
-
-  const pendingCompanies = useMemo(() => companies.filter((company) => company.status === 'Pending'), [companies])
-
-  const handleApproveCompany = async (company) => {
-    if (companyActionId) return
-
-    const confirmed = window.confirm(`Approve "${company.companyName}"? This will activate the company and its owner account.`)
-
-    if (!confirmed) return
-
-    setCompanyActionId(company._id)
-    setCompanyMessage('')
-    setCompaniesError('')
-
-    try {
-      const response = await axiosInstance.post(`/companies/${company._id}/approve`)
-
-      setCompanyMessage(response.data?.message || 'Company approved successfully')
-
-      await fetchCompanies()
-    } catch (error) {
-      setCompaniesError(error.response?.data?.message || 'Unable to approve company')
-    } finally {
-      setCompanyActionId('')
-    }
-  }
-
-  const openRejectModal = (company) => {
-    setSelectedCompany(company)
-    setRejectionReason('')
-    setCompaniesError('')
-    setCompanyMessage('')
-    setShowRejectModal(true)
-  }
-
-  const handleRejectCompany = async (event) => {
-    event.preventDefault()
-
-    const reason = rejectionReason.trim()
-
-    if (!selectedCompany) return
-
-    if (!reason) {
-      setCompaniesError('Please enter a rejection reason')
-      return
-    }
-
-    if (reason.length > 500) {
-      setCompaniesError('Rejection reason must be 500 characters or fewer')
-      return
-    }
-
-    if (companyActionId) return
-
-    setCompanyActionId(selectedCompany._id)
-    setCompaniesError('')
-    setCompanyMessage('')
-
-    try {
-      const response = await axiosInstance.post(`/companies/${selectedCompany._id}/reject`, { reason })
-
-      setCompanyMessage(response.data?.message || 'Company rejected successfully')
-      setShowRejectModal(false)
-      setSelectedCompany(null)
-      setRejectionReason('')
-
-      await fetchCompanies()
-    } catch (error) {
-      setCompaniesError(error.response?.data?.message || 'Unable to reject company')
-    } finally {
-      setCompanyActionId('')
-    }
-  }
-
-  const handleLogout = async () => {
-    try {
-      await logout()
-    } finally {
-      navigate('/login', { replace: true })
-    }
-  }
-
-  const pageDescriptions = {
-    Dashboard: 'Overview of your ERP platform and company registrations.',
-    Companies: 'Review company registrations and manage their approval status.',
-    'Users & Access': 'Manage ERP users, roles, and permissions.',
-    'System Activity': 'Review important activity across the ERP platform.',
-    Settings: 'Manage your account and platform settings.',
-  }
-
-  const renderDashboard = () => (
-    <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Total Companies" value={companiesError ? '—' : companyStats.total} description="All registered companies" icon={Building2} loading={companiesLoading} />
-        <StatCard title="Pending Approvals" value={companiesError ? '—' : companyStats.pending} description="Companies waiting for review" icon={Clock3} loading={companiesLoading} />
-        <StatCard title="Active Companies" value={companiesError ? '—' : companyStats.active} description="Approved and active companies" icon={CheckCircle2} loading={companiesLoading} />
-        <StatCard title="Rejected Companies" value={companiesError ? '—' : companyStats.rejected} description="Company registrations rejected" icon={XCircle} loading={companiesLoading} />
-      </div>
-
-      {companiesError && (
-        <div className="mt-5 flex flex-col gap-3 rounded-xl border border-erp-danger/30 bg-erp-danger/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-erp-danger">{companiesError}</p>
-          <button type="button" onClick={fetchCompanies} className="inline-flex items-center justify-center gap-2 rounded-lg border border-erp-border bg-erp-surface px-3 py-2 text-sm font-medium text-erp-danger hover:bg-erp-danger/10">
-            <RefreshCw size={15} />
-            Retry
-          </button>
-        </div>
-      )}
-
-      {companyMessage && (
-        <div className="mt-5 flex items-start gap-2 rounded-xl border border-erp-success/30 bg-erp-success/10 p-4 text-sm text-erp-success">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
-          {companyMessage}
-        </div>
-      )}
-
-      <section className="mt-7">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-erp-text">Pending Company Approvals</h2>
-            <p className="mt-1 text-sm text-erp-text-secondary">Review new registrations before granting access.</p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => {
-              setCompanyFilter('Pending')
-              setActivePage('Companies')
-            }}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-4 py-2.5 text-sm font-semibold text-erp-text transition hover:bg-erp-hover"
-          >
-            View all companies
-            <ArrowRight size={16} />
-          </button>
-        </div>
-
-        <CompanyTable companies={pendingCompanies} loading={companiesLoading} actionId={companyActionId} onApprove={handleApproveCompany} onReject={openRejectModal} onView={setSelectedCompany} />
-
-        {!companiesLoading && !companiesError && pendingCompanies.length === 0 && <p className="mt-3 text-xs text-erp-text-secondary">No pending approvals. Your company registrations are up to date.</p>}
-      </section>
-
-      <section className="mt-7 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-erp-border bg-erp-surface p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-              <ShieldCheck size={20} />
-            </div>
-            <div>
-              <h3 className="font-semibold text-erp-text">Security overview</h3>
-              <p className="text-xs text-erp-text-secondary">Your platform access</p>
-            </div>
-          </div>
-
-          <div className="mt-5 flex items-center justify-between border-t border-erp-border pt-4">
-            <div>
-              <p className="text-sm font-medium text-erp-text">SuperAdmin access</p>
-              <p className="mt-1 text-xs text-erp-text-secondary">Full platform administration</p>
-            </div>
-            <span className="rounded-full bg-erp-success/10 px-3 py-1 text-xs font-semibold text-erp-success">Active</span>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-erp-border bg-erp-surface p-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-              <Activity size={20} />
-            </div>
-            <div>
-              <h3 className="font-semibold text-erp-text">Company summary</h3>
-              <p className="text-xs text-erp-text-secondary">Current registration status</p>
-            </div>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {[
-              ['Active', companyStats.active],
-              ['Pending', companyStats.pending],
-              ['Rejected', companyStats.rejected],
-              ['Inactive', companyStats.inactive],
-            ].map(([status, count]) => (
-              <div key={status} className="flex items-center justify-between">
-                <StatusBadge status={status} />
-                <span className="text-sm font-semibold text-erp-text">{companiesLoading || companiesError ? '—' : count}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-    </>
-  )
-
-  const renderCompanies = () => (
-    <>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        {[
-          ['All', companyStats.total],
-          ['Pending', companyStats.pending],
-          ['Active', companyStats.active],
-          ['Rejected', companyStats.rejected],
-          ['Inactive', companyStats.inactive],
-        ].map(([status, count]) => (
-          <button
-            key={status}
-            type="button"
-            onClick={() => setCompanyFilter(status)}
-            className={`rounded-xl border p-4 text-left transition ${companyFilter === status ? 'border-erp-primary bg-erp-primary-light' : 'border-erp-border bg-erp-surface hover:bg-erp-hover'}`}
-          >
-            <p className="text-xs font-medium text-erp-text-secondary">{status}</p>
-            <p className="mt-2 text-2xl font-semibold text-erp-text">{companiesLoading || companiesError ? '—' : count}</p>
-          </button>
-        ))}
-      </div>
-
-      {companyMessage && (
-        <div className="mt-5 flex items-start gap-2 rounded-xl border border-erp-success/30 bg-erp-success/10 p-4 text-sm text-erp-success">
-          <CheckCircle2 size={18} className="mt-0.5 shrink-0" />
-          {companyMessage}
-        </div>
-      )}
-
-      {companiesError && (
-        <div className="mt-5 flex flex-col gap-3 rounded-xl border border-erp-danger/30 bg-erp-danger/10 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-erp-danger">{companiesError}</p>
-          <button type="button" onClick={fetchCompanies} className="inline-flex items-center justify-center gap-2 rounded-lg border border-erp-border bg-erp-surface px-3 py-2 text-sm font-medium text-erp-danger hover:bg-erp-danger/10">
-            <RefreshCw size={15} />
-            Retry
-          </button>
-        </div>
-      )}
-
-      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-        <div className="relative flex-1">
-          <Search size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-secondary" />
-          <input
-            type="text"
-            value={companySearch}
-            onChange={(event) => setCompanySearch(event.target.value)}
-            placeholder="Search company, code, owner or email..."
-            className="w-full rounded-xl border border-erp-border bg-erp-surface py-3 pl-10 pr-4 text-sm text-erp-text outline-none transition placeholder:text-erp-text-muted focus:border-erp-focus"
-          />
-        </div>
-
-        <div className="relative sm:w-52">
-          <select
-            value={companyFilter}
-            onChange={(event) => setCompanyFilter(event.target.value)}
-            className="w-full appearance-none rounded-xl border border-erp-border bg-erp-surface px-4 py-3 pr-10 text-sm text-erp-text outline-none focus:border-erp-focus"
-          >
-            {['All', 'Pending', 'Active', 'Rejected', 'Inactive'].map((status) => (
-              <option key={status} value={status}>
-                {status === 'All' ? 'All statuses' : status}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-erp-text-secondary" />
-        </div>
-
-        <button
-          type="button"
-          onClick={fetchCompanies}
-          disabled={companiesLoading}
-          className="inline-flex items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-4 py-3 text-sm font-semibold text-erp-text transition hover:bg-erp-hover disabled:opacity-50"
-        >
-          <RefreshCw size={16} className={companiesLoading ? 'animate-spin' : ''} />
-          Refresh
-        </button>
-      </div>
-
-      <div className="mt-5">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="text-sm text-erp-text-secondary">{companiesLoading ? 'Loading company records...' : `${filteredCompanies.length} company record(s)`}</p>
-        </div>
-
-        <CompanyTable companies={filteredCompanies} loading={companiesLoading} actionId={companyActionId} onApprove={handleApproveCompany} onReject={openRejectModal} onView={setSelectedCompany} />
-      </div>
-    </>
-  )
-
-  const renderContent = () => {
-    if (activePage === 'Dashboard') return renderDashboard()
-    if (activePage === 'Companies') return renderCompanies()
-
-    if (activePage === 'Users & Access') {
-      return <EmptyState icon={Users} title="Users & Access" description="ERP user management, role assignment, and permission controls will be connected in the next step." />
-    }
-
-    if (activePage === 'System Activity') {
-      return <EmptyState icon={Activity} title="System activity" description="Platform activity logs will appear here once the activity API is connected." />
-    }
-
-    return <EmptyState icon={Settings} title="Settings" description="SuperAdmin account and platform settings will be added here." />
-  }
-
-  return (
-    <div className="min-h-screen bg-erp-bg text-erp-text">
-      {sidebarOpen && <button type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-40 bg-black/30 lg:hidden" />}
-
-      <aside className={`fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-erp-sidebar-border bg-erp-sidebar-bg transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="flex h-17 items-center justify-between border-b border-erp-sidebar-border px-5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-erp-primary text-erp-text-inverse">
-              <ShieldCheck size={20} />
-            </div>
-            <div>
-              <p className="text-base font-bold tracking-tight text-erp-text-inverse">MineERP</p>
-              <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-erp-sidebar-text-muted">SuperAdmin</p>
-            </div>
-          </div>
-
-          <button type="button" onClick={() => setSidebarOpen(false)} className="rounded-lg p-2 text-erp-sidebar-text hover:bg-erp-sidebar-hover lg:hidden">
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="px-4 pt-6">
-          <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-erp-sidebar-text-muted">Platform</p>
-
-          <nav className="mt-3 space-y-1">
-            {navigationItems.map(({ label, icon: Icon }) => {
-              const active = activePage === label
-
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => {
-                    setActivePage(label)
-                    setSidebarOpen(false)
-                    setCompanyMessage('')
-                    setCompaniesError('')
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition ${
-                    active ? 'bg-erp-sidebar-active text-erp-text-inverse shadow-sm' : 'text-erp-sidebar-text hover:bg-erp-sidebar-hover hover:text-erp-text-inverse'
-                  }`}
-                >
-                  <Icon size={18} />
-                  <span>{label}</span>
-
-                  {label === 'Companies' && companyStats.pending > 0 && (
-                    <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold ${active ? 'bg-white/20 text-white' : 'bg-erp-warning/10 text-erp-sidebar-text'}`}>{companyStats.pending}</span>
-                  )}
-                </button>
-              )
-            })}
-          </nav>
-        </div>
-
-        <div className="mt-auto p-4">
-          <div className="rounded-2xl border border-erp-sidebar-border bg-erp-sidebar-hover p-4">
-            <div className="flex items-center gap-2">
-              <LockKeyhole size={16} className="text-erp-sidebar-text" />
-              <p className="text-xs font-semibold text-erp-text-inverse">Secure access</p>
-            </div>
-            <p className="mt-2 text-xs leading-5 text-erp-sidebar-text-muted">Platform administration is restricted to authorized SuperAdmins.</p>
-          </div>
-
-          <button type="button" onClick={handleLogout} className="mt-3 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium text-erp-sidebar-text transition hover:bg-erp-danger/10 hover:text-erp-text-inverse">
-            <LogOut size={18} />
-            Sign out
-          </button>
-        </div>
-      </aside>
-
-      <div className="min-h-screen lg:pl-64">
-        <header className="sticky top-0 z-30 flex h-17 items-center justify-between border-b border-erp-border bg-erp-surface px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={() => setSidebarOpen(true)} className="rounded-lg p-2 text-erp-primary hover:bg-erp-hover lg:hidden">
-              <Menu size={20} />
-            </button>
-
-            <div>
-              <h1 className="text-base font-semibold text-erp-text sm:text-lg">{activePage}</h1>
-              <p className="hidden text-xs text-erp-text-secondary sm:block">{pageDescriptions[activePage]}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-sm font-semibold text-erp-text">{user?.name || 'SuperAdmin'}</p>
-              <p className="text-xs text-erp-text-secondary">{user?.email || 'Platform administrator'}</p>
-            </div>
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-erp-primary-light text-sm font-bold text-erp-primary">{(user?.name || 'S').trim().charAt(0).toUpperCase()}</div>
-          </div>
-        </header>
-
-        <main className="mx-auto max-w-[1600px] p-4 sm:p-6 lg:p-8">
-          <div className="mb-7 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-erp-text-secondary">MineERP Control Center</p>
-              <h2 className="mt-2 text-2xl font-bold tracking-tight text-erp-text sm:text-3xl">{activePage === 'Dashboard' ? 'Welcome back' : activePage}</h2>
-              <p className="mt-2 max-w-2xl text-sm leading-6 text-erp-text-secondary">{pageDescriptions[activePage]}</p>
-            </div>
-
-            {activePage === 'Dashboard' && (
-              <button
-                type="button"
-                onClick={() => setActivePage('Companies')}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-erp-primary px-4 py-3 text-sm font-semibold text-erp-text-inverse shadow-sm transition hover:bg-erp-primary-hover"
-              >
-                <Building2 size={17} />
-                Manage companies
-                <ArrowRight size={16} />
-              </button>
-            )}
-          </div>
-
-          {renderContent()}
-        </main>
-      </div>
-
-      {selectedCompany && !showRejectModal && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedCompany(null)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="company-details-title" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-erp-surface p-5 shadow-xl sm:p-6" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-erp-text-secondary">Company details</p>
-                <h2 id="company-details-title" className="mt-1 text-xl font-bold text-erp-text">
-                  {selectedCompany.companyName}
-                </h2>
-              </div>
-
-              <button type="button" onClick={() => setSelectedCompany(null)} className="rounded-lg p-2 text-erp-primary hover:bg-erp-hover">
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="mt-5">
-              <StatusBadge status={selectedCompany.status} />
-            </div>
-
-            <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {[
-                ['Company code', selectedCompany.companyCode],
-                ['Email', selectedCompany.email],
-                ['Owner name', selectedCompany.ownerName],
-                ['Phone', selectedCompany.phone],
-                ['Business type', selectedCompany.businessType],
-                ['GSTIN', selectedCompany.gstin],
-                ['Address', selectedCompany.address],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl bg-erp-surface-secondary p-3">
-                  <p className="text-xs text-erp-text-secondary">{label}</p>
-                  <p className="mt-1 wrap-break-word text-sm font-medium text-erp-text">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-
-            {selectedCompany.status === 'Pending' && (
-              <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-erp-border pt-4">
-                <button type="button" onClick={() => openRejectModal(selectedCompany)} className="rounded-xl border border-erp-danger/30 px-4 py-2.5 text-sm font-semibold text-erp-danger hover:bg-erp-danger/10">
-                  Reject
-                </button>
-
-                <button
-                  type="button"
-                  disabled={Boolean(companyActionId)}
-                  onClick={() => {
-                    const company = selectedCompany
-                    setSelectedCompany(null)
-                    handleApproveCompany(company)
-                  }}
-                  className="rounded-xl bg-erp-success px-4 py-2.5 text-sm font-semibold text-erp-text-inverse hover:bg-erp-success/90 disabled:opacity-50"
-                >
-                  Approve company
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showRejectModal && selectedCompany && (
-        <div
-          className="fixed inset-0 z-70 flex items-center justify-center bg-black/40 p-4"
-          onClick={() => {
-            if (!companyActionId) setShowRejectModal(false)
-          }}
-        >
-          <form onSubmit={handleRejectCompany} role="dialog" aria-modal="true" aria-labelledby="reject-company-title" className="w-full max-w-lg rounded-2xl bg-erp-surface p-5 shadow-xl sm:p-6" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-erp-danger">Company rejection</p>
-                <h2 id="reject-company-title" className="mt-1 text-xl font-bold text-erp-text">
-                  Reject {selectedCompany.companyName}?
-                </h2>
-              </div>
-
-              <button type="button" disabled={Boolean(companyActionId)} onClick={() => setShowRejectModal(false)} className="rounded-lg p-2 text-erp-primary hover:bg-erp-hover disabled:opacity-50">
-                <X size={18} />
-              </button>
-            </div>
-
-            <p className="mt-3 text-sm leading-6 text-erp-text-secondary">Enter a reason for rejecting this registration. This reason will be sent to the backend.</p>
-
-            <label htmlFor="rejectionReason" className="mt-5 block text-sm font-semibold text-erp-text">
-              Rejection reason
-            </label>
-
-            <textarea
-              id="rejectionReason"
-              rows={4}
-              maxLength={500}
-              required
-              value={rejectionReason}
-              onChange={(event) => {
-                setRejectionReason(event.target.value)
-                setCompaniesError('')
-              }}
-              placeholder="Explain why this company registration is being rejected..."
-              className="mt-2 w-full resize-y rounded-xl border border-erp-border bg-erp-surface px-4 py-3 text-sm text-erp-text outline-none placeholder:text-erp-text-muted focus:border-erp-focus"
-            />
-
-            <div className="mt-1 flex justify-end text-xs text-erp-text-secondary">{rejectionReason.length}/500</div>
-
-            {companiesError && <p className="mt-3 rounded-lg bg-erp-danger/10 p-3 text-sm text-erp-danger">{companiesError}</p>}
-
-            <div className="mt-5 flex justify-end gap-3">
-              <button
-                type="button"
-                disabled={Boolean(companyActionId)}
-                onClick={() => setShowRejectModal(false)}
-                className="rounded-xl border border-erp-border px-4 py-2.5 text-sm font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="submit"
-                disabled={Boolean(companyActionId) || !rejectionReason.trim()}
-                className="inline-flex items-center gap-2 rounded-xl bg-erp-danger px-4 py-2.5 text-sm font-semibold text-erp-text-inverse hover:bg-erp-danger/90 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {companyActionId ? <RefreshCw size={15} className="animate-spin" /> : <XCircle size={15} />}
-                Confirm rejection
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      <div className="fixed bottom-4 right-4 hidden items-center gap-2 rounded-full border border-erp-border bg-erp-surface px-3 py-2 text-xs text-erp-text-secondary shadow-sm xl:flex">
-        <CircleHelp size={14} />
-        MineERP Administration
-      </div>
-    </div>
-  )
-}
+```
+
+- Current page માટે `link: null`.
+- Parent page માટે યોગ્ય route.
+- Breadcrumb ની height અને spacing consistent.
+- લાંબું text હોય તો layout તૂટવો કે header jump થવો નહીં.
+
+## 4. Page Header Standard
+બધા pages માં title, subtitle અને action buttons માટે એકસરખું structure રાખવું.
+
+- Breadcrumb અને page title વચ્ચે consistent spacing.
+- Title અને subtitle માટે stable height અથવા minimum height.
+- Action buttons જમણી બાજુ રાખવા.
+- Page title common layout માં પહેલેથી હોય તો child page માં duplicate title ન બતાવવો.
+- Add/Edit જેવા pages માં જરૂરી title રાખવો, પરંતુ layout shift ન થાય તે રીતે.
+
+## 5. Cards, Forms & Tables
+### Cards
+- Consistent border, radius, padding અને heading style.
+- Compact design; બિનજરૂરી whitespace નહીં.
+
+### Forms
+- બધા inputs ની height અને label style consistent.
+- Field spacing અને validation messages માટે એકસરખી જગ્યા.
+- Save અને Cancel buttons જમણી બાજુ.
+- Loading વખતે buttons અને fields અનાવશ્યક રીતે ખસે નહીં.
+
+### Tables
+- Consistent header height અને row padding.
+- Action buttons માટે એકસરખું alignment.
+- Search, filters, pagination અને empty states માટે common style.
+- લાંબા data થી આખું layout તૂટી ન જાય.
+
+## 6. Buttons & Feedback
+- Primary, secondary, cancel, save, refresh અને delete buttons માટે consistent styles.
+- બધા buttons ની height, icon size અને spacing સમાન.
+- Loading, success અને error feedback માટે consistent UI.
+- Disabled state સ્પષ્ટ હોવી જોઈએ.
+
+## 7. Layout Shift Prevention
+દરેક page બનાવતી વખતે આ બાબતો તપાસવી:
+
+- Parent layout માં header height બદલાય છે કે નહીં.
+- Breadcrumb અથવા title wrap થવાથી height બદલાય છે કે નહીં.
+- Loading state અને loaded content ની height માં મોટો ફેરફાર છે કે નહીં.
+- Conditional elements આવવાથી buttons ખસે છે કે નહીં.
+- Scrollbar આવવાથી અથવા જવાથી content width બદલાય છે કે નહીં.
+- Table, modal અથવા form ના કારણે અનિચ્છિત page movement થાય છે કે નહીં.
+
+જ્યાં જરૂરી હોય ત્યાં fixed height, `min-height`, reserved space, consistent flex/grid layout અને stable loading placeholders વાપરવા. દરેક જગ્યાએ fixed height બળજબરીથી ન લગાવવી; content અને responsive design મુજબ યોગ્ય રીત પસંદ કરવી.
+
+## 8. Apply to All Modules
+આ standard બધા MineERP modules માં લાગુ કરવો:
+
+- SuperAdmin Dashboard
+- Companies
+- Company Dashboard
+- Employees
+- Roles & Permissions
+- Products
+- Categories
+- Inventory
+- Warehouses
+- Suppliers
+- Customers
+- Purchases
+- Sales & Orders
+- Invoices
+- Payments
+- Expenses
+- Accounting
+- Reports
+- Settings
+
+## 9. Code Delivery Rules
+જ્યારે હું કોઈ page નો code માગું:
+
+1. પહેલાં હાલના project structure અને reusable components તપાસવા.
+2. હાલના API endpoints, authentication અને permission logic જાળવવા.
+3. Existing theme અને Tailwind v4 conventions follow કરવી.
+4. `useCallback` વાપરવો નહીં.
+5. બિનજરૂરી comments અને duplicate components ટાળવા.
+6. Code ને હાલના project સાથે compatible રાખવો.
+7. જરૂરી હોય ત્યારે complete file આપવી, માત્ર અધૂરો snippet નહીં.
+8. કોઈ existing functionality દૂર કરતા પહેલાં કારણ સમજાવવું.
+9. નવા page માટે નવો UI pattern બનાવવાને બદલે existing common components reuse કરવા.
+10. UI માં ફેરફાર કરતી વખતે functionality અને permission checks તૂટે નહીં તેની ખાતરી કરવી.
+
+## 10. Reminder Prompt
+જ્યારે હું આ document અથવા આ rules તને મોકલું, ત્યારે તેનો અર્થ:
+
+**“MineERP માટે આ UI Standard અનુસર. હાલના project ના components અને structure તપાસીને code આપ. બધા pages ની UI consistent રાખ. Breadcrumb, header અને content માં page change વખતે jump ન થાય તેનું ધ્યાન રાખ. `useCallback` ન વાપર. Existing functionality, APIs અને permissions જાળવીને જરૂરી હોય ત્યારે complete code આપ.”**

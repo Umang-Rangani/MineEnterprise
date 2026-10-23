@@ -3,7 +3,7 @@ import { ChevronRight, Home } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
 export default function BreadCrumb({ items, className = '' }) {
-  const breadcrumbItems = [{ title: 'Home', link: '/company', isHome: true }, ...items]
+  const breadcrumbItems = [{ title: 'Dashboard', link: '/company', isHome: true }, ...items]
 
   return (
     <nav className={`w-full ${className}`} aria-label="Breadcrumb">

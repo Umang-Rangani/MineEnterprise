@@ -1,21 +1,37 @@
-  const items = [
-    {
-      title: 'Products',
-      link: '/products',
-    },
-    {
-      title: product.category?.categoryName,
-      link: `/category/${product.category?._id}/products`,
-    },
-    {
-      title: product.subCategory?.subCategoryName,
-      link: null,
-    },
-  ]
+    const items = [
+      {
+        title: 'Products',
+        link: '/products',
+      },
+      {
+        title: product.category?.categoryName,
+        link: `/category/${product.category?._id}/products`,
+      },
+      {
+        title: product.subCategory?.subCategoryName,
+        link: null,
+      },
+    ]
 
 
   <BreadCrumb items={items} />
 
-
+<TrashBox/>
 
   document.title = 'Cart | MineKart'
+
+
+
+
+
+    <BreadCrumb items={items} />
+
+<TrashBox/>
+
+  document.title = 'Cart | MineKart'
+
+aa pn used kro
+
+, 
+
+single line ma header aapo

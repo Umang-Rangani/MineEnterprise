@@ -45,6 +45,10 @@ import InvoiceForm from './components/company/InvoiceForm'
 import InvoiceDetails from './components/company/InvoiceDetails'
 import PaymentForm from './components/company/PaymentForm'
 import PaymentDetails from './components/company/PaymentDetails'
+import ExpenseForm from './components/company/ExpenseForm'
+import ExpenseDetails from './components/company/ExpenseDetails'
+import WarehouseForm from './components/company/WarehouseForm'
+import WarehouseDetails from './components/company/WarehouseDetails'
 
 export default function App() {
   return (
@@ -68,11 +72,6 @@ export default function App() {
           {/* Dashboard */}
           <Route index element={<CompanyDashboard />} />
 
-          {/* Products & Inventory */}
-          <Route path="products" element={<CompanyProducts />} />
-          <Route path="categories" element={<CompanyCategories />} />
-          <Route path="inventory" element={<CompanyInventory />} />
-
           {/* Employees */}
           <Route path="employees" element={<CompanyEmployees />} />
           <Route path="employees/new" element={<EmployeeForm />} />
@@ -83,6 +82,11 @@ export default function App() {
           <Route path="roles" element={<CompanyRoles />} />
           <Route path="roles/new" element={<RoleForm />} />
           <Route path="roles/:id/edit" element={<RoleForm />} />
+
+          {/* Products & Inventory */}
+          <Route path="products" element={<CompanyProducts />} />
+          <Route path="categories" element={<CompanyCategories />} />
+          <Route path="inventory" element={<CompanyInventory />} />
 
           {/* Suppliers */}
           <Route path="suppliers" element={<CompanySuppliers />} />
@@ -122,15 +126,21 @@ export default function App() {
 
           {/* Expenses */}
           <Route path="expenses" element={<CompanyExpenses />} />
+          <Route path="expenses/new" element={<ExpenseForm />} />
+          <Route path="expenses/:id" element={<ExpenseDetails />} />
+          <Route path="expenses/:id/edit" element={<ExpenseForm />} />
 
-          {/* Warehouse */}
+          {/* Warehouses */}
           <Route path="warehouses" element={<CompanyWarehouses />} />
+          <Route path="warehouses/new" element={<WarehouseForm />} />
+          <Route path="warehouses/:id" element={<WarehouseDetails />} />
+          <Route path="warehouses/:id/edit" element={<WarehouseForm />} />
 
           {/* Reports */}
-          <Route path="reports" element={<CompanyReports />} />
+          {/* <Route path="reports" element={<CompanyReports />} /> */}
 
           {/* Company Settings */}
-          <Route path="settings" element={<CompanySettings />} />
+          {/* <Route path="settings" element={<CompanySettings />} /> */}
         </Route>
       </Route>
 

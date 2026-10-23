@@ -2,6 +2,69 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ArrowLeft, UserRound, Mail, Phone, ShieldCheck, RefreshCw, CalendarDays, Building2, AlertCircle, Pencil, CheckCircle2, BriefcaseBusiness, UserCheck, UserX, LockKeyhole, Users, X } from 'lucide-react'
 import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+
+const buttonBase = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+
+function formatDate(date) {
+  if (!date) return 'Not available'
+
+  const parsedDate = new Date(date)
+
+  if (Number.isNaN(parsedDate.getTime())) return 'Not available'
+
+  return parsedDate.toLocaleString()
+}
+
+function DetailItem({ label, value, icon: Icon, breakAll = false }) {
+  return (
+    <div className="min-w-0">
+      <p className="mb-1.5 text-xs font-semibold text-erp-text-secondary">{label}</p>
+
+      <div className="flex min-h-10 min-w-0 items-center gap-2 rounded-lg border border-erp-border bg-erp-surface-secondary/40 px-3 py-2">
+        {Icon && <Icon size={15} className="shrink-0 text-erp-text-muted" />}
+
+        <span className={`min-w-0 text-sm font-medium ${breakAll ? 'break-all' : 'break-words'}`}>{value || 'Not provided'}</span>
+      </div>
+    </div>
+  )
+}
+
+function SectionCard({ icon: Icon, title, description, action, children }) {
+  return (
+    <section className="min-w-0 rounded-xl border border-erp-border bg-erp-surface p-3 shadow-erp-card sm:p-4">
+      <div className="mb-3 flex min-w-0 items-center gap-2.5">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
+          <Icon size={18} />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h2 className="text-sm font-bold text-erp-text">{title}</h2>
+          <p className="mt-0.5 text-xs text-erp-text-secondary">{description}</p>
+        </div>
+
+        {action}
+      </div>
+
+      {children}
+    </section>
+  )
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-3" aria-label="Loading employee details">
+      <div className="h-32 animate-pulse rounded-xl border border-erp-border bg-erp-surface-secondary/70" />
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <div className="h-44 animate-pulse rounded-xl border border-erp-border bg-erp-surface-secondary/70" />
+        <div className="h-44 animate-pulse rounded-xl border border-erp-border bg-erp-surface-secondary/70" />
+        <div className="h-36 animate-pulse rounded-xl border border-erp-border bg-erp-surface-secondary/70" />
+        <div className="h-36 animate-pulse rounded-xl border border-erp-border bg-erp-surface-secondary/70" />
+      </div>
+    </div>
+  )
+}
 
 export default function CompanyEmployeeDetails() {
   const { id } = useParams()
@@ -9,12 +72,17 @@ export default function CompanyEmployeeDetails() {
 
   const [employee, setEmployee] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
 
-  const buttonClass = 'inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50'
+  const items = [
+    { title: 'Employees', link: '/company/employees' },
+    { title: 'Employee Details', link: null },
+  ]
 
   async function fetchEmployee(showLoader = true) {
     if (showLoader) setLoading(true)
+    else setRefreshing(true)
 
     setError('')
 
@@ -29,249 +97,196 @@ export default function CompanyEmployeeDetails() {
       setEmployee(data.employee)
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Unable to load employee details.')
-      setEmployee(null)
+
+      if (showLoader) setEmployee(null)
     } finally {
-      if (showLoader) setLoading(false)
+      setLoading(false)
+      setRefreshing(false)
     }
   }
 
   useEffect(() => {
+    document.title = 'Employee Details | MineERP'
     fetchEmployee()
+
+    // The employee is reloaded when the route ID changes.
   }, [id])
 
   function handleEdit() {
     navigate(`/company/employees/${id}/edit`)
   }
 
-  function formatDate(date) {
-    if (!date) return 'Not available'
+  const roles = Array.isArray(employee?.roles) ? employee.roles : []
+  const permissions = employee?.permissions && typeof employee.permissions === 'object' ? employee.permissions : {}
 
-    const parsedDate = new Date(date)
-
-    if (Number.isNaN(parsedDate.getTime())) {
-      return 'Not available'
-    }
-
-    return parsedDate.toLocaleString()
-  }
-
-  function DetailItem({ label, value, icon: Icon, breakAll = false }) {
-    return (
-      <div>
-        <p className="text-sm font-semibold">{label}</p>
-
-        <div className="mt-2 flex min-h-12 items-center gap-3 rounded-xl border border-erp-border bg-erp-surface-secondary/50 px-4 py-3">
-          {Icon && <Icon size={17} className="shrink-0 text-erp-text-muted" />}
-
-          <span className={`text-sm font-medium ${breakAll ? 'break-all' : 'break-words'}`}>{value || 'Not provided'}</span>
-        </div>
-      </div>
-    )
-  }
+  const permissionEntries = Object.entries(permissions).filter(([, actions]) => Array.isArray(actions) && actions.length > 0)
 
   return (
-    <div className="min-h-screen bg-erp-bg text-erp-text">
-      <div className="mx-auto max-w-7xl space-y-6 pb-10">
-        {/* Page Header */}
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div className="flex items-start gap-3">
-            <button type="button" onClick={() => navigate('/company/employees')} className={`${buttonClass} border border-erp-border bg-erp-surface px-3`} aria-label="Back to employees">
-              <ArrowLeft size={18} />
-            </button>
-
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wider text-erp-primary">Workforce Management</p>
-
-              <h1 className="mt-1 text-2xl font-bold sm:text-3xl">Employee Profile</h1>
-
-              <p className="mt-1 text-sm text-erp-text-secondary">View employee information, assigned roles and account status.</p>
-            </div>
-          </div>
-
-          <button type="button" onClick={() => fetchEmployee()} disabled={loading} className={`${buttonClass} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+    <div className="min-w-0 space-y-3 text-erp-text">
+      {/* Stable page header */}
+      <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+          <BreadCrumb items={items} />
         </div>
 
-        {/* Error Message */}
-        {error && (
-          <div role="alert" className="flex items-start gap-3 rounded-2xl border border-erp-danger-border bg-erp-danger-light p-4">
-            <AlertCircle size={20} className="mt-0.5 shrink-0 text-erp-danger" />
+        <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-erp-primary/15 bg-erp-primary/5 px-2.5 text-[11px] font-semibold text-erp-primary">
+          <ShieldCheck size={14} />
+          <span>Employee Profile</span>
+        </div>
+      </div>
 
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-erp-danger">Unable to load employee details</p>
+      {/* Page title and actions */}
+      <div className="flex min-h-[54px] flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-lg font-bold leading-6 text-erp-text">Employee Details</h1>
+          <p className="mt-0.5 text-xs text-erp-text-secondary">Employee information, roles and account access.</p>
+        </div>
 
-              <p className="mt-1 break-words text-sm text-erp-danger">{error}</p>
-            </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <button type="button" onClick={() => fetchEmployee(false)} disabled={loading || refreshing} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
+            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+            Refresh
+          </button>
 
-            <button type="button" onClick={() => setError('')} className="rounded-lg p-1 text-erp-danger hover:opacity-70" aria-label="Dismiss error">
-              <X size={17} />
-            </button>
+          <button type="button" onClick={handleEdit} disabled={!employee || loading} className={`${buttonBase} bg-erp-primary text-white hover:bg-erp-primary-hover`}>
+            <Pencil size={14} />
+            Edit
+          </button>
+        </div>
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div role="alert" className="flex min-w-0 items-start gap-2 rounded-lg border border-erp-danger-border bg-erp-danger-light p-3">
+          <AlertCircle size={17} className="mt-0.5 shrink-0 text-erp-danger" />
+
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-erp-danger">Unable to load employee details</p>
+            <p className="mt-1 break-words text-xs text-erp-danger">{error}</p>
           </div>
-        )}
 
-        {/* Loading State */}
-        {loading ? (
-          <div className="space-y-5">
-            <div className="h-52 animate-pulse rounded-2xl bg-erp-surface-secondary" />
-            <div className="h-72 animate-pulse rounded-2xl bg-erp-surface-secondary" />
-          </div>
-        ) : error && !employee ? (
-          <section className="rounded-2xl border border-erp-border bg-erp-surface p-10 text-center shadow-erp-card">
-            <AlertCircle size={38} className="mx-auto text-erp-danger" />
+          <button type="button" onClick={() => setError('')} aria-label="Dismiss error" className="rounded-md p-1 text-erp-danger hover:opacity-70">
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
-            <h2 className="mt-4 text-lg font-bold">Employee details unavailable</h2>
+      {loading ? (
+        <LoadingSkeleton />
+      ) : !employee ? (
+        <section className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-erp-border bg-erp-surface p-5 text-center shadow-erp-card">
+          <AlertCircle size={32} className="text-erp-danger" />
 
-            <p className="mt-2 text-sm text-erp-text-secondary">Check your access or try loading the employee again.</p>
+          <h2 className="mt-3 text-sm font-bold">Employee details unavailable</h2>
 
-            <button type="button" onClick={() => fetchEmployee()} className={`${buttonClass} mt-5 bg-erp-primary text-white hover:bg-erp-primary-hover`}>
-              <RefreshCw size={16} />
-              Try Again
-            </button>
-          </section>
-        ) : employee ? (
-          <>
-            {/* Employee Profile Header */}
-            <section className="overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-erp-card">
-              <div className="h-1.5 bg-erp-primary" />
+          <p className="mt-1 max-w-md text-xs text-erp-text-secondary">Check your access or try loading the employee again.</p>
 
-              <div className="p-5 sm:p-7">
-                <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-center">
-                  <div className="flex min-w-0 items-center gap-4">
-                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl bg-erp-primary-light text-erp-primary sm:h-24 sm:w-24">
-                      <UserRound size={44} strokeWidth={1.5} />
-                    </div>
+          <button type="button" onClick={() => fetchEmployee()} className={`${buttonBase} mt-4 bg-erp-primary text-white hover:bg-erp-primary-hover`}>
+            <RefreshCw size={14} />
+            Try Again
+          </button>
+        </section>
+      ) : (
+        <>
+          {/* Employee profile summary */}
+          <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+            <div className="h-1 bg-erp-primary" />
 
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="break-words text-xl font-bold sm:text-2xl">{employee.name || 'Unnamed Employee'}</h2>
-
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${employee.status === 'Active' ? 'bg-erp-success-light text-erp-success' : 'bg-erp-warning-light text-erp-warning'}`}>{employee.status || 'Unknown'}</span>
-                      </div>
-
-                      <p className="mt-2 break-all text-sm text-erp-text-secondary">{employee.email || 'No email provided'}</p>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-erp-primary-light px-3 py-1.5 text-xs font-semibold text-erp-primary-dark">
-                          <ShieldCheck size={14} />
-                          {employee.role || 'Employee'}
-                        </span>
-
-                        <span className="inline-flex items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface-secondary px-3 py-1.5 text-xs font-medium text-erp-text-secondary">
-                          <BriefcaseBusiness size={14} />
-                          {(employee.roles || []).length} assigned roles
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            {/* Personal Information */}
-            <section className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-erp-card sm:p-7">
-              <div className="mb-6 flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-                  <UserRound size={21} />
-                </div>
-
-                <div>
-                  <h2 className="text-lg font-bold">Personal Information</h2>
-
-                  <p className="mt-1 text-sm text-erp-text-secondary">Basic details associated with this employee account.</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                <DetailItem label="Full Name" value={employee.name} icon={UserRound} />
-
-                <DetailItem label="Email Address" value={employee.email} icon={Mail} breakAll />
-
-                <DetailItem label="Phone Number" value={employee.phone} icon={Phone} />
-
-                <DetailItem label="Account Role" value={employee.role || 'Employee'} icon={ShieldCheck} />
-              </div>
-
-              <p className="mt-4 text-xs text-erp-text-muted">Employee details are read-only on this page. Use Edit Employee to make changes.</p>
-            </section>
-
-            {/* Assigned Roles */}
-            <section className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-erp-card sm:p-7">
-              <div className="mb-6 flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-                  <ShieldCheck size={21} />
+            <div className="flex min-w-0 flex-col justify-between gap-3 p-3 sm:flex-row sm:items-center sm:p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary sm:h-16 sm:w-16">
+                  <UserRound size={30} strokeWidth={1.5} />
                 </div>
 
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-lg font-bold">Role & Access</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="break-words text-base font-bold sm:text-lg">{employee.name || 'Unnamed Employee'}</h2>
 
-                  <p className="mt-1 text-sm text-erp-text-secondary">Roles currently assigned to this employee.</p>
+                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${employee.status === 'Active' ? 'bg-erp-success-light text-erp-success' : 'bg-erp-warning-light text-erp-warning'}`}>{employee.status || 'Unknown'}</span>
+                  </div>
+
+                  <p className="mt-1 break-all text-xs text-erp-text-secondary">{employee.email || 'No email provided'}</p>
+
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-erp-primary-light px-2 py-1 text-[11px] font-semibold text-erp-primary-dark">
+                      <ShieldCheck size={12} />
+                      {employee.role || 'Employee'}
+                    </span>
+
+                    <span className="inline-flex items-center gap-1 rounded-md border border-erp-border bg-erp-surface-secondary px-2 py-1 text-[11px] font-medium text-erp-text-secondary">
+                      <BriefcaseBusiness size={12} />
+                      {roles.length} assigned roles
+                    </span>
+                  </div>
                 </div>
-
-                <span className="shrink-0 rounded-lg bg-erp-primary-light px-3 py-1.5 text-xs font-semibold text-erp-primary-dark">{(employee.roles || []).length} assigned</span>
               </div>
+            </div>
+          </section>
 
-              {(employee.roles || []).length === 0 ? (
-                <div className="rounded-xl border border-dashed border-erp-border p-8 text-center">
-                  <LockKeyhole size={30} className="mx-auto text-erp-text-muted" />
+          <div className="grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-2">
+            {/* Personal information */}
+            <SectionCard icon={UserRound} title="Personal Information" description="Basic employee account details.">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <DetailItem label="Full Name" value={employee.name} icon={UserRound} />
+                <DetailItem label="Email Address" value={employee.email} icon={Mail} breakAll />
+                <DetailItem label="Phone Number" value={employee.phone} icon={Phone} />
+                <DetailItem label="Account Role" value={employee.role || 'Employee'} icon={ShieldCheck} />
+              </div>
+              <p className="mt-3 text-[11px] text-erp-text-muted">Use Edit to update employee information.</p>
+            </SectionCard>
 
-                  <h3 className="mt-3 font-semibold">No roles assigned</h3>
-
-                  <p className="mt-1 text-sm text-erp-text-secondary">This employee does not currently have any assigned roles.</p>
+            {/* Assigned roles */}
+            <SectionCard
+              icon={ShieldCheck}
+              title="Role & Access"
+              description="Roles assigned to this employee."
+              action={<span className="shrink-0 rounded-md bg-erp-primary-light px-2 py-1 text-[10px] font-semibold text-erp-primary-dark">{roles.length} assigned</span>}
+            >
+              {roles.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-erp-border px-3 py-6 text-center">
+                  <LockKeyhole size={25} className="mx-auto text-erp-text-muted" />
+                  <p className="mt-2 text-sm font-semibold">No roles assigned</p>
+                  <p className="mt-1 text-xs text-erp-text-secondary">No roles are currently assigned to this employee.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  {employee.roles.map((role, index) => (
-                    <div key={`${role.type}-${role.customRoleId || role.name}-${index}`} className="flex items-center gap-3 rounded-xl border border-erp-border p-4">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-                        <ShieldCheck size={20} />
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {roles.map((role, index) => (
+                    <div key={`${role.type}-${role.customRoleId || role.name}-${index}`} className="flex min-w-0 items-center gap-2 rounded-lg border border-erp-border p-2.5">
+                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
+                        <ShieldCheck size={16} />
                       </div>
 
                       <div className="min-w-0 flex-1">
-                        <p className="break-words text-sm font-semibold">{role.name || 'Unnamed Role'}</p>
-
-                        <p className="mt-1 text-xs text-erp-text-secondary">{role.type === 'Custom' ? 'Custom role' : 'Predefined role'}</p>
+                        <p className="break-words text-xs font-semibold">{role.name || 'Unnamed Role'}</p>
+                        <p className="mt-0.5 text-[11px] text-erp-text-secondary">{role.type === 'Custom' ? 'Custom role' : 'Predefined role'}</p>
                       </div>
 
-                      <CheckCircle2 size={18} className="shrink-0 text-erp-success" />
+                      <CheckCircle2 size={16} className="shrink-0 text-erp-success" />
                     </div>
                   ))}
                 </div>
               )}
 
-              <div className="mt-5 rounded-xl border border-erp-border bg-erp-surface-secondary/50 p-4">
-                <div className="flex items-start gap-3">
-                  <ShieldCheck size={18} className="mt-0.5 shrink-0 text-erp-text-muted" />
-
-                  <p className="text-sm text-erp-text-secondary">To change assigned roles or permissions, open the Edit Employee page.</p>
-                </div>
+              <div className="mt-3 rounded-lg bg-erp-surface-secondary/60 p-2.5">
+                <p className="text-xs text-erp-text-secondary">
+                  <ShieldCheck size={14} className="mr-1 inline text-erp-text-muted" />
+                  Edit employee access to change roles and permissions.
+                </p>
               </div>
-            </section>
+            </SectionCard>
 
-            {/* Permissions Overview */}
-            <section className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-erp-card sm:p-7">
-              <div className="mb-6 flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-                  <ShieldCheck size={21} />
-                </div>
+            {/* Permissions */}
+            <SectionCard icon={LockKeyhole} title="Permissions Overview" description="Effective permissions returned by the API.">
+              {permissionEntries.length > 0 ? (
+                <div className="space-y-2">
+                  {permissionEntries.map(([section, actions]) => (
+                    <div key={section} className="rounded-lg border border-erp-border p-3">
+                      <h3 className="mb-2 text-xs font-bold capitalize">{section.replace(/([A-Z])/g, ' $1').replace(/[-_]/g, ' ')}</h3>
 
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-lg font-bold">Permissions Overview</h2>
-                  <p className="mt-1 text-sm text-erp-text-secondary">View the permissions currently available to this employee.</p>
-                </div>
-              </div>
-
-              {employee.permissions && Object.keys(employee.permissions).length > 0 ? (
-                <div className="space-y-4">
-                  {Object.entries(employee.permissions).map(([section, actions]) => (
-                    <div key={section} className="rounded-xl border border-erp-border p-4">
-                      <h3 className="mb-3 text-sm font-bold capitalize">{section.replace(/([A-Z])/g, ' $1').replace(/[-_]/g, ' ')}</h3>
-
-                      <div className="flex flex-wrap gap-2">
-                        {(Array.isArray(actions) ? actions : []).map((action) => (
-                          <span key={action} className="inline-flex items-center gap-1.5 rounded-lg bg-erp-success-light px-3 py-1.5 text-xs font-semibold text-erp-success">
-                            <CheckCircle2 size={14} />
+                      <div className="flex flex-wrap gap-1.5">
+                        {actions.map((action) => (
+                          <span key={action} className="inline-flex items-center gap-1 rounded-md bg-erp-success-light px-2 py-1 text-[10px] font-semibold text-erp-success">
+                            <CheckCircle2 size={11} />
                             {action}
                           </span>
                         ))}
@@ -280,94 +295,74 @@ export default function CompanyEmployeeDetails() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-erp-border p-7 text-center">
-                  <LockKeyhole size={28} className="mx-auto text-erp-text-muted" />
-                  <h3 className="mt-3 font-semibold">Permission details unavailable</h3>
-                  <p className="mt-1 text-sm text-erp-text-secondary">The employee details API does not currently provide the effective permissions in the expected format.</p>
+                <div className="rounded-lg border border-dashed border-erp-border px-3 py-6 text-center">
+                  <LockKeyhole size={25} className="mx-auto text-erp-text-muted" />
+                  <p className="mt-2 text-sm font-semibold">Permission details unavailable</p>
+                  <p className="mt-1 text-xs text-erp-text-secondary">The API response does not include permissions in the expected section-to-actions format.</p>
                 </div>
               )}
 
-              <p className="mt-4 text-xs leading-5 text-erp-text-muted">Permissions are displayed for reference only. Use Edit Employee to change access.</p>
-            </section>
+              <p className="mt-3 text-[11px] text-erp-text-muted">This section is read-only. Use Edit to change access.</p>
+            </SectionCard>
 
-            {/* Account Status */}
-            <section className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-erp-card sm:p-7">
-              <div className="mb-5 flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-                  <Users size={21} />
-                </div>
+            {/* Account status */}
+            <SectionCard icon={Users} title="Account Status" description="Current state of the employee account.">
+              <div className="flex items-center gap-3 rounded-lg border border-erp-border p-3">
+                {employee.status === 'Active' ? <UserCheck size={22} className="shrink-0 text-erp-success" /> : <UserX size={22} className="shrink-0 text-erp-warning" />}
 
-                <div>
-                  <h2 className="text-lg font-bold">Account Status</h2>
-
-                  <p className="mt-1 text-sm text-erp-text-secondary">Current state of this employee account.</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 rounded-xl border border-erp-border p-4">
-                {employee.status === 'Active' ? <UserCheck size={24} className="text-erp-success" /> : <UserX size={24} className="text-erp-warning" />}
-
-                <div>
+                <div className="min-w-0">
                   <p className="text-sm font-semibold">{employee.status || 'Unknown'}</p>
-
-                  <p className="mt-1 text-xs text-erp-text-secondary">Current employee account status</p>
+                  <p className="mt-0.5 text-xs text-erp-text-secondary">Current employee account status</p>
                 </div>
               </div>
-            </section>
+            </SectionCard>
 
-            {/* Account Information */}
-            <section className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-erp-card sm:p-7">
-              <h2 className="text-lg font-bold">Account Information</h2>
-
-              <p className="mt-1 text-sm text-erp-text-secondary">Reference details for this employee record.</p>
-
-              <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-erp-border p-4">
-                  <div className="flex items-center gap-2 text-sm text-erp-text-secondary">
-                    <CalendarDays size={17} />
+            {/* Account information */}
+            <SectionCard icon={Building2} title="Account Information" description="Reference information for this record.">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="rounded-lg border border-erp-border p-3">
+                  <div className="flex items-center gap-1.5 text-xs text-erp-text-secondary">
+                    <CalendarDays size={14} />
                     Created At
                   </div>
-
-                  <p className="mt-2 text-sm font-semibold">{formatDate(employee.createdAt)}</p>
+                  <p className="mt-2 break-words text-xs font-semibold">{formatDate(employee.createdAt)}</p>
                 </div>
 
-                <div className="rounded-xl border border-erp-border p-4">
-                  <div className="flex items-center gap-2 text-sm text-erp-text-secondary">
-                    <Building2 size={17} />
+                <div className="rounded-lg border border-erp-border p-3">
+                  <div className="flex items-center gap-1.5 text-xs text-erp-text-secondary">
+                    <Building2 size={14} />
                     Company
                   </div>
-
-                  <p className="mt-2 text-sm font-semibold">{employee.companyId ? 'Assigned to your company' : 'Not assigned'}</p>
+                  <p className="mt-2 text-xs font-semibold">{employee.companyId ? 'Assigned to your company' : 'Not assigned'}</p>
                 </div>
 
                 {employee.updatedAt && (
-                  <div className="rounded-xl border border-erp-border p-4">
-                    <div className="flex items-center gap-2 text-sm text-erp-text-secondary">
-                      <RefreshCw size={17} />
+                  <div className="rounded-lg border border-erp-border p-3 sm:col-span-2">
+                    <div className="flex items-center gap-1.5 text-xs text-erp-text-secondary">
+                      <RefreshCw size={14} />
                       Last Updated
                     </div>
-
-                    <p className="mt-2 text-sm font-semibold">{formatDate(employee.updatedAt)}</p>
+                    <p className="mt-2 break-words text-xs font-semibold">{formatDate(employee.updatedAt)}</p>
                   </div>
                 )}
               </div>
-            </section>
+            </SectionCard>
+          </div>
 
-            {/* Bottom Navigation */}
-            <div className="flex flex-col justify-between gap-3 pb-4 sm:flex-row">
-              <button type="button" onClick={() => navigate('/company/employees')} className={`${buttonClass} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
-                <ArrowLeft size={16} />
-                Back to Employees
-              </button>
+          {/* Bottom actions */}
+          <div className="flex min-h-10 flex-wrap items-center justify-end gap-2 pb-1">
+            <button type="button" onClick={() => navigate('/company/employees')} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
+              <ArrowLeft size={14} />
+              Back to Employees
+            </button>
 
-              <button type="button" onClick={handleEdit} className={`${buttonClass} bg-erp-primary text-white hover:bg-erp-primary-hover`}>
-                <Pencil size={16} />
-                Edit Employee
-              </button>
-            </div>
-          </>
-        ) : null}
-      </div>
+            <button type="button" onClick={handleEdit} className={`${buttonBase} bg-erp-primary text-white hover:bg-erp-primary-hover`}>
+              <Pencil size={14} />
+              Edit Employee
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

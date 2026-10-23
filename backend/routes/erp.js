@@ -1201,4 +1201,68 @@ router.delete('/roles/:id', authMiddleware, permissionMiddleware('Role', 'DELETE
   }
 })
 
+// DELETE /erp/employees/:id
+router.delete('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'DELETE'), async (req, res, next) => {
+  try {
+    // Only CompanyAdmin can delete employees.
+    if (req.user.role !== ROLES.COMPANY_ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only CompanyAdmin can delete employees.',
+      })
+    }
+
+    // Validate company access.
+    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company access is required.',
+      })
+    }
+
+    // Validate employee ID.
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid employee ID.',
+      })
+    }
+
+    // Verify the company is approved.
+    const company = await Company.findOne({
+      _id: req.user.companyId,
+      status: 'Approved',
+    }).select('_id')
+
+    if (!company) {
+      return res.status(403).json({
+        success: false,
+        message: 'Approved company not found.',
+      })
+    }
+
+    // Delete only an employee belonging to this company.
+    const employee = await User.findOneAndDelete({
+      _id: req.params.id,
+      companyId: company._id,
+      role: ROLES.EMPLOYEE,
+    })
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found in your company.',
+      })
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Employee deleted successfully.',
+      employeeId: employee._id,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
 module.exports = router
