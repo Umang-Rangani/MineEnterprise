@@ -30,3 +30,12 @@ single line ma header aapo
 
 , 
 
+
+Sales Manager
+
+
+http://localhost:5173/company/employees
+
+
+
+<Forbidden/>

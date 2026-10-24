@@ -50,6 +50,7 @@ import ExpenseDetails from './components/company/ExpenseDetails'
 import WarehouseForm from './components/company/WarehouseForm'
 import WarehouseDetails from './components/company/WarehouseDetails'
 import RoleDetails from './components/company/RoleDetails'
+import Forbidden from './components/company/Forbidden'
 
 export default function App() {
   return (
@@ -78,6 +79,8 @@ export default function App() {
           <Route path="employees/new" element={<EmployeeForm />} />
           <Route path="employees/:id" element={<CompanyEmployeeDetails />} />
           <Route path="employees/:id/edit" element={<EmployeeForm />} />
+
+          
 
           {/* Roles & Permissions */}
           <Route path="roles" element={<CompanyRoles />} />
@@ -148,6 +151,8 @@ export default function App() {
 
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
+
+      <Route path="/forbidden" element={<Forbidden />} />
     </Routes>
   )
 }

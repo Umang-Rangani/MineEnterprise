@@ -264,184 +264,152 @@ export function EmployeeFormShimmer() {
   )
 }
 
+
+
+function DetailsShimmerLine({ className = '' }) {
+  return (
+    <Shimmer
+      className={`bg-slate-200 ${className}`}
+      rounded="rounded-md"
+    />
+  )
+}
+
+function DetailsShimmerField({ wide = false }) {
+  return (
+    <div
+      className={`min-w-0 rounded-lg border border-slate-200 p-3 ${
+        wide ? 'sm:col-span-2' : ''
+      }`}
+    >
+      <DetailsShimmerLine className="mb-3 h-3 w-24" />
+      <DetailsShimmerLine className="h-4 w-full max-w-52" />
+    </div>
+  )
+}
+
+function DetailsShimmerHeading() {
+  return (
+    <div className="mb-4 flex items-center gap-3">
+      <DetailsShimmerLine className="h-10 w-10 shrink-0 rounded-lg" />
+
+      <div className="min-w-0 flex-1 space-y-2">
+        <DetailsShimmerLine className="h-4 w-36 max-w-full" />
+        <DetailsShimmerLine className="h-3 w-48 max-w-full" />
+      </div>
+    </div>
+  )
+}
+
 export function CompanyEmployeeDetailsShimmer() {
   return (
-    <div className="min-w-0 space-y-3 text-sm">
-      {/* Breadcrumb and actions */}
-      <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-between gap-2">
+    <div className="min-w-0 space-y-4 text-sm">
+      {/* Breadcrumb + Actions */}
+      <div className="flex min-h-10 items-center justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Shimmer className="h-3.5 w-20" />
-          <Shimmer className="h-3 w-3" />
-          <Shimmer className="h-3.5 w-28" />
-          <Shimmer className="h-3 w-3" />
-          <Shimmer className="h-3.5 w-24 max-w-full" />
+          <DetailsShimmerLine className="h-3 w-20" />
+          <DetailsShimmerLine className="h-3 w-3" />
+          <DetailsShimmerLine className="h-3 w-28" />
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <Shimmer className="h-9 w-20 rounded-lg" />
-          <Shimmer className="h-9 w-16 rounded-lg" />
+        <div className="flex shrink-0 gap-2">
+          <DetailsShimmerLine className="h-9 w-9 sm:w-24" />
+          <DetailsShimmerLine className="h-9 w-[76px]" />
         </div>
       </div>
 
-      {/* Employee profile summary */}
+      {/* Employee Header */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <Shimmer className="h-1 w-full rounded-none" />
+        <div className="h-1 bg-slate-200" />
 
-        <div className="flex min-w-0 flex-col justify-between gap-3 p-3 sm:flex-row sm:items-center sm:p-4 h-27">
+        <div className="flex min-w-0 flex-col gap-4 px-4 py-3 sm:px-5 lg:min-h-[88px] lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <Shimmer className="h-14 w-14 shrink-0 rounded-xl sm:h-16 sm:w-16" />
+            <DetailsShimmerLine className="h-11 w-11 shrink-0 rounded-xl" />
 
             <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Shimmer className="h-4 w-40 max-w-full" />
-                <Shimmer className="h-5 w-16 rounded-full" />
+              <DetailsShimmerLine className="h-5 w-44 max-w-full" />
+              <DetailsShimmerLine className="h-3 w-28" />
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-5">
+            <div className="min-w-0 space-y-2">
+              <DetailsShimmerLine className="h-3 w-24" />
+              <div className="flex flex-wrap gap-3">
+                <DetailsShimmerLine className="h-4 w-24" />
+                <DetailsShimmerLine className="h-4 w-20" />
               </div>
+            </div>
 
-              <Shimmer className="h-3 w-52 max-w-full" />
+            <div className="hidden h-8 w-px bg-slate-200 sm:block" />
 
-              <div className="flex flex-wrap gap-1.5">
-                <Shimmer className="h-6 w-24 rounded-md" />
-                <Shimmer className="h-6 w-28 rounded-md" />
+            <div className="flex shrink-0 items-center gap-2">
+              <DetailsShimmerLine className="h-2 w-2 rounded-full" />
+              <div className="space-y-2">
+                <DetailsShimmerLine className="h-3 w-24" />
+                <DetailsShimmerLine className="h-4 w-14" />
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Detail sections: same grid as the actual page */}
-      <div className="grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-2">
-        {/* Personal Information */}
-        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="mb-3 flex min-w-0 items-center gap-2.5">
-            <Shimmer className="h-9 w-9 shrink-0 rounded-lg" />
+      {/* Personal + Account Information */}
+      <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <DetailsShimmerHeading />
 
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Shimmer className="h-3.5 w-36 max-w-full" />
-              <Shimmer className="h-3 w-44 max-w-full" />
-            </div>
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <DetailsShimmerField />
+            <DetailsShimmerField />
+            <DetailsShimmerField />
+            <DetailsShimmerField />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {Array.from({ length: 4 }, (_, index) => (
-              <div key={index} className="min-w-0">
-                <Shimmer className="mb-1.5 h-3 w-24 max-w-full" />
-
-                <div className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
-                  <Shimmer className="h-4 w-4 shrink-0 rounded" />
-                  <Shimmer className={`h-3 max-w-full ${index === 1 ? 'w-36' : 'w-28'}`} />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <Shimmer className="mt-3 h-3 w-52 max-w-full" />
+          <DetailsShimmerLine className="mt-4 h-3 w-56 max-w-full" />
         </section>
 
-        {/* Role and Access */}
-        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="mb-3 flex min-w-0 items-center gap-2.5">
-            <Shimmer className="h-9 w-9 shrink-0 rounded-lg" />
+        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <DetailsShimmerHeading />
 
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Shimmer className="h-3.5 w-28 max-w-full" />
-              <Shimmer className="h-3 w-40 max-w-full" />
-            </div>
-
-            <Shimmer className="h-5 w-16 shrink-0 rounded-md" />
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {Array.from({ length: 4 }, (_, index) => (
-              <div key={index} className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-200 p-2.5">
-                <Shimmer className="h-8 w-8 shrink-0 rounded-lg" />
-
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <Shimmer className="h-3 w-24 max-w-full" />
-                  <Shimmer className="h-2.5 w-20 max-w-full" />
-                </div>
-
-                <Shimmer className="h-4 w-4 shrink-0 rounded-full" />
-              </div>
-            ))}
-          </div>
-
-          <Shimmer className="mt-3 h-10 w-full rounded-lg" />
-        </section>
-
-        {/* Permissions Overview */}
-        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="mb-3 flex min-w-0 items-center gap-2.5">
-            <Shimmer className="h-9 w-9 shrink-0 rounded-lg" />
-
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Shimmer className="h-3.5 w-36 max-w-full" />
-              <Shimmer className="h-3 w-48 max-w-full" />
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {Array.from({ length: 3 }, (_, index) => (
-              <div key={index} className="rounded-lg border border-slate-200 p-3">
-                <Shimmer className="mb-2 h-3 w-28 max-w-full" />
-
-                <div className="flex flex-wrap gap-1.5">
-                  <Shimmer className="h-6 w-16 rounded-md" />
-                  <Shimmer className="h-6 w-20 rounded-md" />
-                  {index !== 1 && <Shimmer className="h-6 w-14 rounded-md" />}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <Shimmer className="mt-3 h-3 w-44 max-w-full" />
-        </section>
-
-        {/* Account Status */}
-        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="mb-3 flex min-w-0 items-center gap-2.5">
-            <Shimmer className="h-9 w-9 shrink-0 rounded-lg" />
-
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Shimmer className="h-3.5 w-28 max-w-full" />
-              <Shimmer className="h-3 w-40 max-w-full" />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
-            <Shimmer className="h-6 w-6 shrink-0 rounded-full" />
-
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Shimmer className="h-3.5 w-20" />
-              <Shimmer className="h-3 w-44 max-w-full" />
-            </div>
-          </div>
-        </section>
-
-        {/* Account Information */}
-        <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-          <div className="mb-3 flex min-w-0 items-center gap-2.5">
-            <Shimmer className="h-9 w-9 shrink-0 rounded-lg" />
-
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Shimmer className="h-3.5 w-36 max-w-full" />
-              <Shimmer className="h-3 w-44 max-w-full" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {Array.from({ length: 3 }, (_, index) => (
-              <div key={index} className={`rounded-lg border border-slate-200 p-3 ${index === 2 ? 'sm:col-span-2' : ''}`}>
-                <div className="flex items-center gap-1.5">
-                  <Shimmer className="h-3.5 w-3.5 shrink-0 rounded" />
-                  <Shimmer className="h-3 w-20 max-w-full" />
-                </div>
-
-                <Shimmer className="mt-2 h-3 w-32 max-w-full" />
-              </div>
-            ))}
+          <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+            <DetailsShimmerField />
+            <DetailsShimmerField />
+            <DetailsShimmerField wide />
+            <DetailsShimmerField wide />
           </div>
         </section>
       </div>
+
+      {/* Permissions Overview */}
+      <section className="min-w-0 w-full rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <DetailsShimmerHeading />
+          <DetailsShimmerLine className="h-8 w-28 rounded-lg" />
+        </div>
+
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 6 }, (_, index) => (
+            <div
+              key={index}
+              className="min-w-0 rounded-lg border border-slate-200 p-3"
+            >
+              <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                <DetailsShimmerLine className="h-3 w-28 max-w-full" />
+                <DetailsShimmerLine className="h-5 w-6 rounded-md" />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <DetailsShimmerLine className="h-7 w-16 rounded-md" />
+                <DetailsShimmerLine className="h-7 w-20 rounded-md" />
+                <DetailsShimmerLine className="h-7 w-14 rounded-md" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <DetailsShimmerLine className="mt-4 h-10 w-full rounded-lg" />
+      </section>
     </div>
   )
 }

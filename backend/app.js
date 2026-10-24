@@ -14,6 +14,7 @@ const superAdminDashboard = require('./routes/superAdminDashboard')
 var companiesRouter = require('./routes/companies')
 
 const employeeAuthRouter = require('./routes/employeeAuth')
+const employeesRouter = require('./routes/employees')
 const productsRouter = require('./routes/products')
 const categoriesRouter = require('./routes/categories')
 const inventoryRouter = require('./routes/inventory')
@@ -43,11 +44,16 @@ app.use('/', indexRouter)
 
 app.use('/superadmin', superAdminAuth)
 app.use('/superadmin/dashboard', superAdminDashboard)
+
 app.use('/companies', companiesRouter)
+
 app.use('/erp/auth', employeeAuthRouter)
+app.use('/erp/employees', employeesRouter)
 app.use('/erp/products', productsRouter)
 app.use('/erp/categories', categoriesRouter)
 app.use('/erp/inventory', inventoryRouter)
+
+// Roles and My Permissions remain in erp.js
 app.use('/erp', erpRouter)
 
 // 404 Handler

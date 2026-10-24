@@ -31,22 +31,103 @@ import {
 import { useAuth } from '../../context/AuthContext'
 
 const navigationItems = [
-  { label: 'Dashboard', path: '/company', icon: LayoutDashboard, end: true, actions: ['dashboard:view'] },
-  { label: 'Employees', path: '/company/employees', icon: Users, actions: ['employee:list', 'employee:view'] },
-  { label: 'Roles & Permissions', path: '/company/roles', icon: ShieldCheck, actions: ['role:list', 'role:view'] },
-  { label: 'Categories', path: '/company/categories', icon: Tags, actions: ['category:list', 'category:view'] },
-  { label: 'Products', path: '/company/products', icon: Package, actions: ['product:list', 'product:view'] },
-  { label: 'Inventory', path: '/company/inventory', icon: Boxes, actions: ['inventory:view', 'inventory:view-stock'] },
-  { label: 'Suppliers', path: '/company/suppliers', icon: Truck, actions: ['supplier:list', 'supplier:view'] },
-  { label: 'Customers', path: '/company/customers', icon: ContactRound, actions: ['customer:list', 'customer:view'] },
-  { label: 'Purchase', path: '/company/purchases', icon: ShoppingCart, actions: ['purchase:list', 'purchase:view'] },
-  { label: 'Sales & Orders', path: '/company/orders', icon: ShoppingBag, actions: ['sales:list', 'sales:view'] },
-  { label: 'Invoices', path: '/company/invoices', icon: FileText, actions: ['invoice:list', 'invoice:view'] },
-  { label: 'Payments', path: '/company/payments', icon: CreditCard, actions: ['payment:list', 'payment:view'] },
-  { label: 'Expenses', path: '/company/expenses', icon: Receipt, actions: ['expense:list', 'expense:view'] },
-  { label: 'Warehouse', path: '/company/warehouses', icon: Warehouse, actions: ['warehouse:list', 'warehouse:view'] },
-  { label: 'Reports', path: '/company/reports', icon: ChartNoAxesCombined, actions: ['reports:view'] },
-  { label: 'Settings', path: '/company/settings', icon: Settings, actions: ['settings:view'] },
+  {
+    label: 'Dashboard',
+    path: '/company',
+    icon: LayoutDashboard,
+    end: true,
+    actions: ['dashboard:view'],
+  },
+  {
+    label: 'Employees',
+    path: '/company/employees',
+    icon: Users,
+    actions: ['employee:list'],
+  },
+  {
+    label: 'Roles & Permissions',
+    path: '/company/roles',
+    icon: ShieldCheck,
+    actions: ['role:list'],
+  },
+  {
+    label: 'Categories',
+    path: '/company/categories',
+    icon: Tags,
+    actions: ['category:list', 'category:view'],
+  },
+  {
+    label: 'Products',
+    path: '/company/products',
+    icon: Package,
+    actions: ['product:list', 'product:view'],
+  },
+  {
+    label: 'Inventory',
+    path: '/company/inventory',
+    icon: Boxes,
+    actions: ['inventory:view', 'inventory:view-stock'],
+  },
+  {
+    label: 'Suppliers',
+    path: '/company/suppliers',
+    icon: Truck,
+    actions: ['supplier:list'],
+  },
+  {
+    label: 'Customers',
+    path: '/company/customers',
+    icon: ContactRound,
+    actions: ['customer:list'],
+  },
+  {
+    label: 'Purchase',
+    path: '/company/purchases',
+    icon: ShoppingCart,
+    actions: ['purchase:list'],
+  },
+  {
+    label: 'Sales & Orders',
+    path: '/company/orders',
+    icon: ShoppingBag,
+    actions: ['sales:list'],
+  },
+  {
+    label: 'Invoices',
+    path: '/company/invoices',
+    icon: FileText,
+    actions: ['invoice:list'],
+  },
+  {
+    label: 'Payments',
+    path: '/company/payments',
+    icon: CreditCard,
+    actions: ['payment:list'],
+  },
+  {
+    label: 'Expenses',
+    path: '/company/expenses',
+    icon: Receipt,
+    actions: ['expense:list'],
+  },
+  {
+    label: 'Warehouse',
+    path: '/company/warehouses',
+    icon: Warehouse,
+    actions: ['warehouse:list'],
+  },
+  {
+    label: 'Reports',
+    path: '/company/reports',
+    icon: ChartNoAxesCombined,
+    actions: ['reports:view'],
+  },
+  {
+    label: 'Settings',
+    path: '/company/settings',
+    icon: Settings,
+    actions: ['settings:view'],
+  },
 ]
 
 const pageTitles = {
@@ -94,6 +175,7 @@ const sectionKey = {
   category: 'Category',
   product: 'Product',
   inventory: 'Inventory',
+  warehouse: 'Warehouse',
   supplier: 'Supplier',
   customer: 'Customer',
   purchase: 'Purchase',
@@ -101,12 +183,13 @@ const sectionKey = {
   invoice: 'Invoice',
   payment: 'Payment',
   expense: 'Expense',
-  warehouse: 'Warehouse',
+  accounting: 'Accounting',
   reports: 'Reports',
   settings: 'Settings',
 }
 
 const hasPermission = (permissions, actions = []) => {
+  // SuperAdmin permissions are null and bypass company permissions.
   if (permissions === null) return true
 
   if (!permissions || typeof permissions !== 'object') {
@@ -121,9 +204,225 @@ const hasPermission = (permissions, actions = []) => {
 
     const hasCustomPermission = Array.isArray(permissions.__customActions) && permissions.__customActions.includes(action)
 
-    return hasSectionPermission || hasCustomPermission
+    return Boolean(hasSectionPermission || hasCustomPermission)
   })
 }
+
+/*
+ * More specific routes must appear before general routes.
+ * For example, /employees/new must be checked before /employees/:id.
+ */
+const routePermissions = [
+  // Employees
+  {
+    pattern: /^\/company\/employees\/new\/?$/,
+    actions: ['employee:create'],
+  },
+  {
+    pattern: /^\/company\/employees\/[^/]+\/edit\/?$/,
+    actions: ['employee:update'],
+  },
+  {
+    pattern: /^\/company\/employees\/[^/]+\/?$/,
+    actions: ['employee:view'],
+  },
+  {
+    pattern: /^\/company\/employees\/?$/,
+    actions: ['employee:list'],
+  },
+
+  // Roles
+  {
+    pattern: /^\/company\/roles\/new\/?$/,
+    actions: ['role:create'],
+  },
+  {
+    pattern: /^\/company\/roles\/[^/]+\/edit\/?$/,
+    actions: ['role:update'],
+  },
+  {
+    pattern: /^\/company\/roles\/[^/]+\/?$/,
+    actions: ['role:view'],
+  },
+  {
+    pattern: /^\/company\/roles\/?$/,
+    actions: ['role:list'],
+  },
+
+  // Categories and products
+  {
+    pattern: /^\/company\/categories\/?$/,
+    actions: ['category:list', 'category:view'],
+  },
+  {
+    pattern: /^\/company\/products\/?$/,
+    actions: ['product:list', 'product:view'],
+  },
+  {
+    pattern: /^\/company\/inventory\/?$/,
+    actions: ['inventory:view', 'inventory:view-stock'],
+  },
+
+  // Suppliers
+  {
+    pattern: /^\/company\/suppliers\/new\/?$/,
+    actions: ['supplier:create'],
+  },
+  {
+    pattern: /^\/company\/suppliers\/[^/]+\/edit\/?$/,
+    actions: ['supplier:update'],
+  },
+  {
+    pattern: /^\/company\/suppliers\/[^/]+\/?$/,
+    actions: ['supplier:view'],
+  },
+  {
+    pattern: /^\/company\/suppliers\/?$/,
+    actions: ['supplier:list'],
+  },
+
+  // Customers
+  {
+    pattern: /^\/company\/customers\/new\/?$/,
+    actions: ['customer:create'],
+  },
+  {
+    pattern: /^\/company\/customers\/[^/]+\/edit\/?$/,
+    actions: ['customer:update'],
+  },
+  {
+    pattern: /^\/company\/customers\/[^/]+\/?$/,
+    actions: ['customer:view'],
+  },
+  {
+    pattern: /^\/company\/customers\/?$/,
+    actions: ['customer:list'],
+  },
+
+  // Purchases
+  {
+    pattern: /^\/company\/purchases\/new\/?$/,
+    actions: ['purchase:create'],
+  },
+  {
+    pattern: /^\/company\/purchases\/[^/]+\/edit\/?$/,
+    actions: ['purchase:update'],
+  },
+  {
+    pattern: /^\/company\/purchases\/[^/]+\/?$/,
+    actions: ['purchase:view'],
+  },
+  {
+    pattern: /^\/company\/purchases\/?$/,
+    actions: ['purchase:list'],
+  },
+
+  // Sales and orders
+  {
+    pattern: /^\/company\/orders\/new\/?$/,
+    actions: ['sales:create'],
+  },
+  {
+    pattern: /^\/company\/orders\/[^/]+\/edit\/?$/,
+    actions: ['sales:update'],
+  },
+  {
+    pattern: /^\/company\/orders\/[^/]+\/?$/,
+    actions: ['sales:view'],
+  },
+  {
+    pattern: /^\/company\/orders\/?$/,
+    actions: ['sales:list'],
+  },
+
+  // Invoices
+  {
+    pattern: /^\/company\/invoices\/new\/?$/,
+    actions: ['invoice:create'],
+  },
+  {
+    pattern: /^\/company\/invoices\/[^/]+\/edit\/?$/,
+    actions: ['invoice:update'],
+  },
+  {
+    pattern: /^\/company\/invoices\/[^/]+\/?$/,
+    actions: ['invoice:view'],
+  },
+  {
+    pattern: /^\/company\/invoices\/?$/,
+    actions: ['invoice:list'],
+  },
+
+  // Payments
+  {
+    pattern: /^\/company\/payments\/new\/?$/,
+    actions: ['payment:record'],
+  },
+  {
+    pattern: /^\/company\/payments\/[^/]+\/edit\/?$/,
+    actions: ['payment:update'],
+  },
+  {
+    pattern: /^\/company\/payments\/[^/]+\/?$/,
+    actions: ['payment:view'],
+  },
+  {
+    pattern: /^\/company\/payments\/?$/,
+    actions: ['payment:list'],
+  },
+
+  // Expenses
+  {
+    pattern: /^\/company\/expenses\/new\/?$/,
+    actions: ['expense:create'],
+  },
+  {
+    pattern: /^\/company\/expenses\/[^/]+\/edit\/?$/,
+    actions: ['expense:update'],
+  },
+  {
+    pattern: /^\/company\/expenses\/[^/]+\/?$/,
+    actions: ['expense:view'],
+  },
+  {
+    pattern: /^\/company\/expenses\/?$/,
+    actions: ['expense:list'],
+  },
+
+  // Warehouses
+  {
+    pattern: /^\/company\/warehouses\/new\/?$/,
+    actions: ['warehouse:create'],
+  },
+  {
+    pattern: /^\/company\/warehouses\/[^/]+\/edit\/?$/,
+    actions: ['warehouse:update'],
+  },
+  {
+    pattern: /^\/company\/warehouses\/[^/]+\/?$/,
+    actions: ['warehouse:view'],
+  },
+  {
+    pattern: /^\/company\/warehouses\/?$/,
+    actions: ['warehouse:list'],
+  },
+
+  // Reports and settings
+  {
+    pattern: /^\/company\/reports\/?$/,
+    actions: ['reports:view'],
+  },
+  {
+    pattern: /^\/company\/settings\/?$/,
+    actions: ['settings:view'],
+  },
+
+  // Dashboard
+  {
+    pattern: /^\/company\/?$/,
+    actions: ['dashboard:view'],
+  },
+]
 
 export default function CompaniesRoute() {
   const { user, permissions, loading, logout } = useAuth()
@@ -175,10 +474,31 @@ export default function CompaniesRoute() {
 
   const isCompanyAdmin = user.role === 'CompanyAdmin' || userRoles.includes('CompanyAdmin')
 
-  const isEmployee = user.role === 'Employee' || userRoles.includes('Employee')
+  const isEmployee = ['Employee', 'Manager', 'Accountant', 'InventoryManager', 'SalesManager'].includes(user.role) || userRoles.some((role) => ['Employee', 'Manager', 'Accountant', 'InventoryManager', 'SalesManager'].includes(role))
 
   if (!isCompanyAdmin && !isEmployee) {
     return <Navigate to="/" replace />
+  }
+
+  const matchedRoute = routePermissions.find((route) => route.pattern.test(location.pathname))
+
+  if (matchedRoute && !hasPermission(permissions, matchedRoute.actions)) {
+    const previousPath = location.state?.from?.pathname
+
+    const previousRoute = previousPath ? routePermissions.find((route) => route.pattern.test(previousPath)) : null
+
+    const fallbackPath = previousPath && previousPath !== '/forbidden' && previousRoute && hasPermission(permissions, previousRoute.actions) ? previousPath : '/company'
+
+    return (
+      <Navigate
+        to="/forbidden"
+        replace={false}
+        state={{
+          from: location,
+          fallbackPath,
+        }}
+      />
+    )
   }
 
   const visibleNavigationItems = navigationItems.filter((item) => hasPermission(permissions, item.actions))
@@ -191,7 +511,7 @@ export default function CompaniesRoute() {
 
   const displayName = user.name || user.fullName || user.email?.split('@')[0] || 'User'
 
-  const roleLabel = isCompanyAdmin ? 'Company Admin' : 'Employee'
+  const roleLabel = isCompanyAdmin ? 'Company Admin' : user.role || 'Employee'
 
   const handleLogout = async () => {
     if (loggingOut) return
@@ -249,9 +569,9 @@ export default function CompaniesRoute() {
                 end={item.end}
                 title={sidebarCollapsed ? item.label : undefined}
                 className={({ isActive }) =>
-                  `group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
-                    isActive ? 'bg-erp-primary-light text-erp-primary' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  } ${sidebarCollapsed ? 'justify-center px-0' : ''}`
+                  `group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${isActive ? 'bg-erp-primary-light text-erp-primary' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'} ${
+                    sidebarCollapsed ? 'justify-center px-0' : ''
+                  }`
                 }
               >
                 {({ isActive }) => (
@@ -261,6 +581,7 @@ export default function CompaniesRoute() {
                     {!sidebarCollapsed && (
                       <>
                         <span className="flex-1 truncate">{item.label}</span>
+
                         {isActive && <ChevronRight size={14} className="shrink-0" />}
                       </>
                     )}
@@ -298,7 +619,7 @@ export default function CompaniesRoute() {
 
       {/* Main Workspace */}
       <div className={`min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-60'}`}>
-        {/* Compact Common Header */}
+        {/* Common Header */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-3 backdrop-blur sm:px-5">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">
             <button type="button" onClick={() => setSidebarOpen(true)} className="shrink-0 rounded-lg p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden" aria-label="Open sidebar">
@@ -307,7 +628,6 @@ export default function CompaniesRoute() {
 
             <div className="min-w-0">
               <h2 className="truncate text-sm font-semibold leading-5 text-slate-900 sm:text-base">{pageTitle}</h2>
-
               <p className="truncate text-[11px] leading-4 text-slate-500 sm:text-xs">{pageDescription}</p>
             </div>
           </div>

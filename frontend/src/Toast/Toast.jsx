@@ -1,5 +1,12 @@
-import { useEffect } from 'react'
-import { CircleCheck, AlertCircle, Info, X, TriangleAlert } from 'lucide-react'
+
+import { useEffect, useRef, useState } from 'react'
+import {
+  CircleCheck,
+  AlertCircle,
+  Info,
+  X,
+  TriangleAlert,
+} from 'lucide-react'
 
 const toastStyles = {
   success: {
@@ -42,31 +49,108 @@ export default function Toast({ toast, onClose }) {
   const Icon = config.icon
   const duration = toast?.duration ?? 3000
 
+  const timerRef = useRef(null)
+  const startTimeRef = useRef(null)
+  const remainingRef = useRef(duration)
+
+  const [isHovered, setIsHovered] = useState(false)
+
   useEffect(() => {
+    clearTimeout(timerRef.current)
+
+    remainingRef.current = duration
+    startTimeRef.current = null
+    setIsHovered(false)
+
     if (!toast?.message || duration <= 0) return
 
-    const timer = setTimeout(() => {
-      onClose?.()
-    }, duration)
+    const startTimer = () => {
+      startTimeRef.current = Date.now()
 
-    return () => clearTimeout(timer)
-  }, [toast, duration, onClose])
+      timerRef.current = setTimeout(() => {
+        onClose?.()
+      }, remainingRef.current)
+    }
+
+    startTimer()
+
+    return () => {
+      clearTimeout(timerRef.current)
+    }
+  }, [toast?.id, toast?.message, duration, onClose])
+
+  const handleMouseEnter = () => {
+    if (duration <= 0 || isHovered) return
+
+    setIsHovered(true)
+    clearTimeout(timerRef.current)
+
+    if (startTimeRef.current !== null) {
+      const elapsed = Date.now() - startTimeRef.current
+
+      remainingRef.current = Math.max(
+        0,
+        remainingRef.current - elapsed
+      )
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (duration <= 0) {
+      setIsHovered(false)
+      return
+    }
+
+    setIsHovered(false)
+
+    if (remainingRef.current <= 0) {
+      onClose?.()
+      return
+    }
+
+    startTimeRef.current = Date.now()
+
+    timerRef.current = setTimeout(() => {
+      onClose?.()
+    }, remainingRef.current)
+  }
 
   if (!toast?.message) return null
 
   return (
-    <div className="pointer-events-none fixed right-3 top-3 z-[100] flex w-[calc(100%-1.5rem)] max-w-[300px] flex-col sm:right-4 sm:top-4" aria-live={type === 'error' ? 'assertive' : 'polite'} aria-atomic="true">
-      <div role={type === 'error' ? 'alert' : 'status'} className={`pointer-events-auto overflow-hidden rounded-lg border shadow-md ${config.container}`}>
+    <div
+      className="pointer-events-none fixed right-3 top-3 z-[100] flex w-[calc(100%-1.5rem)] max-w-[300px] flex-col sm:right-4 sm:top-4"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      aria-live={type === 'error' ? 'assertive' : 'polite'}
+      aria-atomic="true"
+    >
+      <div
+        role={type === 'error' ? 'alert' : 'status'}
+        className={`pointer-events-auto overflow-hidden rounded-lg border shadow-md ${config.container}`}
+      >
         <div className="flex items-start gap-2 px-2.5 py-2">
-          <Icon size={17} className={`mt-0.5 shrink-0 ${config.iconColor}`} />
+          <Icon
+            size={17}
+            className={`mt-0.5 shrink-0 ${config.iconColor}`}
+          />
 
           <div className="min-w-0 flex-1">
-            <p className={`text-xs font-semibold ${config.titleColor}`}>{toast.title || config.title}</p>
+            <p className={`text-xs font-semibold ${config.titleColor}`}>
+              {toast.title || config.title}
+            </p>
 
-            <p className="mt-0.5 break-words text-xs leading-4 text-slate-600">{toast.message}</p>
+            <p className="mt-0.5 break-words text-xs leading-4 text-slate-600">
+              {toast.message}
+            </p>
           </div>
 
-          <button type="button" onClick={onClose} aria-label="Close notification" className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close notification"
+            className="shrink-0 rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          >
             <X size={13} />
           </button>
         </div>
@@ -77,7 +161,9 @@ export default function Toast({ toast, onClose }) {
               key={`${toast.id || ''}-${toast.message}`}
               className={`h-full ${config.progress}`}
               style={{
+                width: '100%',
                 animation: `mineerp-toast-progress ${duration}ms linear forwards`,
+                animationPlayState: isHovered ? 'paused' : 'running',
               }}
             />
           </div>
@@ -86,8 +172,12 @@ export default function Toast({ toast, onClose }) {
 
       <style>{`
         @keyframes mineerp-toast-progress {
-          from { width: 100%; }
-          to { width: 0%; }
+          from {
+            width: 100%;
+          }
+          to {
+            width: 0%;
+          }
         }
       `}</style>
     </div>

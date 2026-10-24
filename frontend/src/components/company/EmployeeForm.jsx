@@ -6,6 +6,7 @@ import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import { EmployeeFormShimmer } from './CompanyEmployeeShimmer'
+import Loading from '../Loading/Loading'
 
 const sectionIcons = {
   Employee: Users,
@@ -354,44 +355,42 @@ export default function EmployeeForm() {
         link: `/company/employees/${id}`,
       },
       {
-        title: isEdit ? 'Edit Employee' : 'Add Employee',
+        title: 'Edit Employee',
         link: null,
       },
     ]
   } else {
-    items = [{ title: 'Employees', link: '/company/employees' }]
+    items = [
+      { title: 'Employees', link: '/company/employees' },
+      { title: 'Add Employee', link: null },
+    ]
   }
 
-  if (loading) {
-    return (
-      <>
-        {toast && <Toast toast={toast} onClose={closeToast} />}
-        <EmployeeFormShimmer />
-      </>
-    )
-  }
+
 
   return (
     <div className="space-y-4">
       {toast && <Toast toast={toast} onClose={closeToast} />}
 
-      <div className="flex h-10 min-w-0 items-center justify-between gap-2">
-        <div className="flex h-10 min-w-0 flex-1 items-center overflow-hidden">
-          <BreadCrumb items={items} />
-        </div>
+      {/* Header */}
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
 
-        <div className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-erp-primary/15 bg-erp-primary/5 px-2 text-[11px] font-semibold text-erp-primary">
-          <ShieldCheck size={14} />
-          <span>Access Control</span>
-        </div>
-      </div>
+        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+          {/* Breadcrumb */}
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <BreadCrumb items={items} />
+          </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-lg font-bold text-slate-900">{isEdit ? 'Edit Employee' : 'Add Employee'}</h1>
-          <p className="text-xs text-slate-500">{isEdit ? 'Update employee details, roles and access.' : 'Create an employee and configure their access.'}</p>
+          {/* Access Control */}
+          <div className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary">
+            <ShieldCheck size={14} />
+            <span>Access Control</span>
+          </div>
         </div>
-      </div>
+      </section>
+
+      {loading && <Loading label={isEdit ? 'Loading employee details' : 'Preparing employee form'} description="Fetching employee information, roles and permissions..." />}
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
