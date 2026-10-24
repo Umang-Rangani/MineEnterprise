@@ -11,6 +11,7 @@ const permissionMiddleware = (section, action) => {
         })
       }
 
+      // SuperAdmin bypasses company-level permission checks.
       if (req.user.role === 'SuperAdmin') {
         return next()
       }
@@ -22,16 +23,23 @@ const permissionMiddleware = (section, action) => {
         })
       }
 
-      const company = await Company.findById(req.user.companyId).select('_id customRoles').lean()
+      const company = await Company.findOne({
+        _id: req.user.companyId,
+        status: 'Approved',
+      })
+        .select('_id status customRoles predefinedRolePermissions')
+        .lean()
 
       if (!company) {
         return res.status(403).json({
           success: false,
-          message: 'Company not found',
+          message: 'Approved company not found',
         })
       }
 
-      if (!hasPermission(req.user, company, section, action)) {
+      const allowed = hasPermission(req.user, company, section, action)
+
+      if (!allowed) {
         return res.status(403).json({
           success: false,
           message: 'You do not have permission to perform this action',
@@ -39,6 +47,7 @@ const permissionMiddleware = (section, action) => {
         })
       }
 
+      // Make the loaded company available to the route handler.
       req.company = company
 
       return next()

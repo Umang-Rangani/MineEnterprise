@@ -10,9 +10,28 @@ const permissionMiddleware = require('../middleware/permissionMiddleware')
 
 const { ROLES, ACTIONS, ROLE_DEFAULT_PERMISSIONS } = require('../constants/permission')
 const { getEffectivePermissions } = require('../utils/permission')
+
 const router = express.Router()
 
 const allowedPredefinedRoles = [ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.ACCOUNTANT, ROLES.INVENTORY_MANAGER, ROLES.SALES_MANAGER]
+
+const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
+
+const getPredefinedRolePermissions = (company, roleName) => {
+  const savedRole = (company.predefinedRolePermissions || []).find((role) => role.name === roleName)
+
+  if (savedRole) {
+    return [...new Set((savedRole.permissions || []).filter((permission) => validPermissions.has(permission)))]
+  }
+
+  const defaults = ROLE_DEFAULT_PERMISSIONS[roleName] || {}
+
+  return [...new Set(Object.values(defaults).flatMap((permissions) => (Array.isArray(permissions) ? permissions.filter((permission) => validPermissions.has(permission)) : [])))]
+}
+
+const getRolePermissionList = (roleName, company) => {
+  return getPredefinedRolePermissions(company, roleName)
+}
 
 const getSafeEmployee = (user) => ({
   _id: user._id,
@@ -28,6 +47,163 @@ const getSafeEmployee = (user) => ({
   updatedAt: user.updatedAt,
 })
 
+// Collect the effective permissions the current user may grant.
+// Custom permissions are resolved only from this user's company.
+const getAssignablePermissions = (user, company) => {
+  const permissions = new Set()
+
+  const assignedRoles = [
+    {
+      type: 'Predefined',
+      name: user.role,
+    },
+    ...(Array.isArray(user.roles) ? user.roles : []),
+  ]
+
+  for (const assignedRole of assignedRoles) {
+    if (assignedRole?.type === 'Custom') {
+      const customRole = (company.customRoles || []).find((role) => String(role._id) === String(assignedRole.customRoleId))
+
+      for (const permission of customRole?.permissions || []) {
+        if (validPermissions.has(permission)) {
+          permissions.add(permission)
+        }
+      }
+
+      continue
+    }
+
+    if (assignedRole?.type && assignedRole.type !== 'Predefined') {
+      continue
+    }
+
+    for (const permission of getRolePermissionList(assignedRole?.name, company)) {
+      if (validPermissions.has(permission)) {
+        permissions.add(permission)
+      }
+    }
+  }
+
+  // Explicit employee permission overrides replace the role-derived permissions.
+  if (Array.isArray(user.permissionOverrides)) {
+    const overriddenPermissions = new Set(user.permissionOverrides.filter((permission) => validPermissions.has(permission)))
+
+    return overriddenPermissions
+  }
+
+  return permissions
+}
+
+const getCompanyForUser = async (user) => {
+  if (!user.companyId || !mongoose.isValidObjectId(user.companyId)) {
+    return null
+  }
+
+  return Company.findOne({
+    _id: user.companyId,
+    status: 'Approved',
+  })
+}
+
+const normalizeAssignedRoles = (roles, company) => {
+  if (!Array.isArray(roles)) {
+    return {
+      error: {
+        status: 400,
+        message: 'Roles must be an array.',
+      },
+    }
+  }
+
+  const assignedRoles = []
+  const assignedPermissions = new Set()
+  const seenRoleKeys = new Set()
+
+  for (const requestedRole of roles) {
+    if (!requestedRole || !['Predefined', 'Custom'].includes(requestedRole.type)) {
+      return {
+        error: {
+          status: 400,
+          message: 'Each role must have type Predefined or Custom.',
+        },
+      }
+    }
+
+    if (requestedRole.type === 'Predefined') {
+      if (!allowedPredefinedRoles.includes(requestedRole.name)) {
+        return {
+          error: {
+            status: 403,
+            message: 'You cannot assign this predefined role.',
+          },
+        }
+      }
+
+      const roleKey = `Predefined:${requestedRole.name}`
+
+      if (seenRoleKeys.has(roleKey)) continue
+      seenRoleKeys.add(roleKey)
+
+      assignedRoles.push({
+        type: 'Predefined',
+        name: requestedRole.name,
+        customRoleId: null,
+      })
+
+      for (const permission of getRolePermissionList(requestedRole.name, company)) {
+        if (validPermissions.has(permission)) {
+          assignedPermissions.add(permission)
+        }
+      }
+
+      continue
+    }
+
+    if (!mongoose.isValidObjectId(requestedRole.customRoleId)) {
+      return {
+        error: {
+          status: 400,
+          message: 'Invalid custom role ID.',
+        },
+      }
+    }
+
+    const customRole = (company.customRoles || []).find((role) => String(role._id) === String(requestedRole.customRoleId))
+
+    if (!customRole) {
+      return {
+        error: {
+          status: 403,
+          message: 'Custom role does not belong to your company.',
+        },
+      }
+    }
+
+    const roleKey = `Custom:${customRole._id}`
+
+    if (seenRoleKeys.has(roleKey)) continue
+    seenRoleKeys.add(roleKey)
+
+    assignedRoles.push({
+      type: 'Custom',
+      name: customRole.name,
+      customRoleId: customRole._id,
+    })
+
+    for (const permission of customRole.permissions || []) {
+      if (validPermissions.has(permission)) {
+        assignedPermissions.add(permission)
+      }
+    }
+  }
+
+  return {
+    assignedRoles,
+    assignedPermissions,
+  }
+}
+
+// GET /erp/my-permissions
 router.get('/my-permissions', authMiddleware, async (req, res, next) => {
   try {
     if (req.user.role === ROLES.SUPER_ADMIN) {
@@ -38,24 +214,12 @@ router.get('/my-permissions', authMiddleware, async (req, res, next) => {
       })
     }
 
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
-      .select('_id customRoles')
-      .lean()
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
@@ -71,25 +235,15 @@ router.get('/my-permissions', authMiddleware, async (req, res, next) => {
   }
 })
 
-// List employees belonging to the authenticated company.
+// GET /erp/employees
 router.get('/employees', authMiddleware, permissionMiddleware('Employee', 'LIST'), async (req, res, next) => {
   try {
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    }).select('_id')
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
@@ -111,7 +265,7 @@ router.get('/employees', authMiddleware, permissionMiddleware('Employee', 'LIST'
   }
 })
 
-// Get a single employee belonging to the authenticated company.
+// GET /erp/employees/:id
 router.get('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'VIEW'), async (req, res, next) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
@@ -121,29 +275,15 @@ router.get('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'V
       })
     }
 
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
-    // Load the approved company and its custom roles.
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
-      .select('_id customRoles')
-      .lean()
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
-    // Find the employee within this company only.
     const employee = await User.findOne({
       _id: req.params.id,
       companyId: company._id,
@@ -159,7 +299,6 @@ router.get('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'V
       })
     }
 
-    // Calculate permissions for this employee, not the logged-in user.
     const permissions = getEffectivePermissions(employee, company)
 
     return res.status(200).json({
@@ -181,13 +320,6 @@ router.post('/employees', authMiddleware, permissionMiddleware('Employee', 'CREA
       return res.status(403).json({
         success: false,
         message: 'Only CompanyAdmin can create employees.',
-      })
-    }
-
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
       })
     }
 
@@ -214,15 +346,12 @@ router.post('/employees', authMiddleware, permissionMiddleware('Employee', 'CREA
       })
     }
 
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
@@ -239,131 +368,18 @@ router.post('/employees', authMiddleware, permissionMiddleware('Employee', 'CREA
       })
     }
 
-    const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
+    const roleResult = normalizeAssignedRoles(roles, company)
 
-    const assignedRoles = []
-    const assignedPermissions = new Set()
-    const seenRoleKeys = new Set()
-
-    // Validate roles and collect their default permissions.
-    for (const requestedRole of roles) {
-      if (!requestedRole || !['Predefined', 'Custom'].includes(requestedRole.type)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Each role must have type Predefined or Custom.',
-        })
-      }
-
-      if (requestedRole.type === 'Predefined') {
-        if (!allowedPredefinedRoles.includes(requestedRole.name)) {
-          return res.status(403).json({
-            success: false,
-            message: 'You cannot assign this predefined role.',
-          })
-        }
-
-        const roleKey = `Predefined:${requestedRole.name}`
-
-        if (seenRoleKeys.has(roleKey)) continue
-        seenRoleKeys.add(roleKey)
-
-        assignedRoles.push({
-          type: 'Predefined',
-          name: requestedRole.name,
-          customRoleId: null,
-        })
-
-        const predefinedPermissions = ROLE_DEFAULT_PERMISSIONS[requestedRole.name] || {}
-
-        for (const permissionList of Object.values(predefinedPermissions)) {
-          if (!Array.isArray(permissionList)) continue
-
-          for (const permission of permissionList) {
-            if (validPermissions.has(permission)) {
-              assignedPermissions.add(permission)
-            }
-          }
-        }
-
-        continue
-      }
-
-      if (!mongoose.isValidObjectId(requestedRole.customRoleId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid custom role ID.',
-        })
-      }
-
-      const customRole = (company.customRoles || []).find((role) => String(role._id) === String(requestedRole.customRoleId))
-
-      if (!customRole) {
-        return res.status(403).json({
-          success: false,
-          message: 'Custom role does not belong to your company.',
-        })
-      }
-
-      const roleKey = `Custom:${customRole._id}`
-
-      if (seenRoleKeys.has(roleKey)) continue
-      seenRoleKeys.add(roleKey)
-
-      assignedRoles.push({
-        type: 'Custom',
-        name: customRole.name,
-        customRoleId: customRole._id,
+    if (roleResult.error) {
+      return res.status(roleResult.error.status).json({
+        success: false,
+        message: roleResult.error.message,
       })
-
-      for (const permission of customRole.permissions || []) {
-        if (validPermissions.has(permission)) {
-          assignedPermissions.add(permission)
-        }
-      }
     }
 
-    // Collect permissions the current CompanyAdmin is allowed to assign.
-    const currentUserPermissions = new Set()
+    const { assignedRoles, assignedPermissions } = roleResult
+    const currentUserPermissions = getAssignablePermissions(req.user, company)
 
-    const currentAssignedRoles = [
-      {
-        type: 'Predefined',
-        name: req.user.role,
-      },
-      ...(Array.isArray(req.user.roles) ? req.user.roles : []),
-    ]
-
-    for (const assignedRole of currentAssignedRoles) {
-      if (assignedRole?.type === 'Custom') {
-        const currentCustomRole = (company.customRoles || []).find((role) => String(role._id) === String(assignedRole.customRoleId))
-
-        for (const permission of currentCustomRole?.permissions || []) {
-          if (validPermissions.has(permission)) {
-            currentUserPermissions.add(permission)
-          }
-        }
-
-        continue
-      }
-
-      if (assignedRole?.type && assignedRole.type !== 'Predefined') {
-        continue
-      }
-
-      const predefinedPermissions = ROLE_DEFAULT_PERMISSIONS[assignedRole?.name] || {}
-
-      for (const permissionList of Object.values(predefinedPermissions)) {
-        if (!Array.isArray(permissionList)) continue
-
-        for (const permission of permissionList) {
-          if (validPermissions.has(permission)) {
-            currentUserPermissions.add(permission)
-          }
-        }
-      }
-    }
-
-    // Ensure assigned roles do not grant unauthorized permissions.
     const cannotAssignExtraPermissions = [...assignedPermissions].some((permission) => !currentUserPermissions.has(permission))
 
     if (cannotAssignExtraPermissions) {
@@ -373,7 +389,6 @@ router.post('/employees', authMiddleware, permissionMiddleware('Employee', 'CREA
       })
     }
 
-    // Validate explicit employee permission overrides.
     let normalizedOverrides
 
     if (permissionOverrides !== undefined) {
@@ -411,7 +426,6 @@ router.post('/employees', authMiddleware, permissionMiddleware('Employee', 'CREA
       status: 'Active',
     }
 
-    // Omitted means role-based permissions; an array means explicit overrides.
     if (normalizedOverrides !== undefined) {
       employeeData.permissionOverrides = normalizedOverrides
     }
@@ -435,10 +449,9 @@ router.post('/employees', authMiddleware, permissionMiddleware('Employee', 'CREA
   }
 })
 
-// CompanyAdmin can update employee details, roles,
+// PATCH /erp/employees/:id
 router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'UPDATE'), async (req, res, next) => {
   try {
-    // Only CompanyAdmin can update employees.
     if (req.user.role !== ROLES.COMPANY_ADMIN) {
       return res.status(403).json({
         success: false,
@@ -446,15 +459,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Validate company access.
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
-    // Validate employee ID.
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({
         success: false,
@@ -464,7 +468,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
 
     const { name, email, phone, roles, status, permissionOverrides } = req.body
 
-    // At least one field must be provided.
     if (name === undefined && email === undefined && phone === undefined && roles === undefined && status === undefined && permissionOverrides === undefined) {
       return res.status(400).json({
         success: false,
@@ -472,7 +475,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Validate name.
     if (name !== undefined && (typeof name !== 'string' || !name.trim())) {
       return res.status(400).json({
         success: false,
@@ -480,7 +482,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Validate email.
     if (email !== undefined && (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()))) {
       return res.status(400).json({
         success: false,
@@ -488,7 +489,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Validate phone.
     if (phone !== undefined && typeof phone !== 'string') {
       return res.status(400).json({
         success: false,
@@ -496,7 +496,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Validate roles.
     if (roles !== undefined && !Array.isArray(roles)) {
       return res.status(400).json({
         success: false,
@@ -504,7 +503,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Validate status.
     if (status !== undefined && !['Active', 'Inactive'].includes(status)) {
       return res.status(400).json({
         success: false,
@@ -512,35 +510,22 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Validate permission overrides.
-    if (permissionOverrides !== undefined && !Array.isArray(permissionOverrides)) {
+    if (permissionOverrides !== undefined && (!Array.isArray(permissionOverrides) || permissionOverrides.some((permission) => typeof permission !== 'string'))) {
       return res.status(400).json({
         success: false,
-        message: 'Permission overrides must be an array.',
+        message: 'Permission overrides must be an array of permission keys.',
       })
     }
 
-    if (permissionOverrides !== undefined && permissionOverrides.some((permission) => typeof permission !== 'string')) {
-      return res.status(400).json({
-        success: false,
-        message: 'Each permission must be a string.',
-      })
-    }
-
-    // Load the approved company.
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
-    // Only update employees belonging to this company.
     const employee = await User.findOne({
       _id: req.params.id,
       companyId: company._id,
@@ -554,7 +539,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       })
     }
 
-    // Update email.
     if (email !== undefined) {
       const normalizedEmail = email.trim().toLowerCase()
 
@@ -573,154 +557,23 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       employee.email = normalizedEmail
     }
 
-    // Update basic details.
-    if (name !== undefined) {
-      employee.name = name.trim()
-    }
+    if (name !== undefined) employee.name = name.trim()
+    if (phone !== undefined) employee.phone = phone.trim()
+    if (status !== undefined) employee.status = status
 
-    if (phone !== undefined) {
-      employee.phone = phone.trim()
-    }
+    const currentUserPermissions = getAssignablePermissions(req.user, company)
 
-    if (status !== undefined) {
-      employee.status = status
-    }
-
-    // Build the list of valid permission keys.
-    const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
-
-    // Resolve permissions available to CompanyAdmin.
-    const getCurrentUserPermissions = () => {
-      const permissions = new Set()
-
-      const currentAssignedRoles = [
-        {
-          type: 'Predefined',
-          name: req.user.role,
-        },
-        ...(Array.isArray(req.user.roles) ? req.user.roles : []),
-      ]
-
-      for (const assignedRole of currentAssignedRoles) {
-        if (assignedRole?.type === 'Custom') {
-          const currentCustomRole = (company.customRoles || []).find((role) => String(role._id) === String(assignedRole.customRoleId))
-
-          for (const permission of currentCustomRole?.permissions || []) {
-            if (validPermissions.has(permission)) {
-              permissions.add(permission)
-            }
-          }
-
-          continue
-        }
-
-        if (assignedRole?.type && assignedRole.type !== 'Predefined') {
-          continue
-        }
-
-        const predefinedPermissions = ROLE_DEFAULT_PERMISSIONS[assignedRole?.name] || {}
-
-        for (const permissionList of Object.values(predefinedPermissions)) {
-          if (!Array.isArray(permissionList)) continue
-
-          for (const permission of permissionList) {
-            if (validPermissions.has(permission)) {
-              permissions.add(permission)
-            }
-          }
-        }
-      }
-
-      return permissions
-    }
-
-    const currentUserPermissions = getCurrentUserPermissions()
-
-    // Update assigned roles if provided.
     if (roles !== undefined) {
-      const assignedRoles = []
-      const assignedPermissions = new Set()
-      const seenRoleKeys = new Set()
+      const roleResult = normalizeAssignedRoles(roles, company)
 
-      for (const requestedRole of roles) {
-        if (!requestedRole || !['Predefined', 'Custom'].includes(requestedRole.type)) {
-          return res.status(400).json({
-            success: false,
-            message: 'Each role must have type Predefined or Custom.',
-          })
-        }
-
-        if (requestedRole.type === 'Predefined') {
-          if (!allowedPredefinedRoles.includes(requestedRole.name)) {
-            return res.status(403).json({
-              success: false,
-              message: 'You cannot assign this predefined role.',
-            })
-          }
-
-          const roleKey = `Predefined:${requestedRole.name}`
-
-          if (seenRoleKeys.has(roleKey)) continue
-          seenRoleKeys.add(roleKey)
-
-          assignedRoles.push({
-            type: 'Predefined',
-            name: requestedRole.name,
-            customRoleId: null,
-          })
-
-          const predefinedPermissions = ROLE_DEFAULT_PERMISSIONS[requestedRole.name] || {}
-
-          for (const permissionList of Object.values(predefinedPermissions)) {
-            if (!Array.isArray(permissionList)) continue
-
-            for (const permission of permissionList) {
-              if (validPermissions.has(permission)) {
-                assignedPermissions.add(permission)
-              }
-            }
-          }
-
-          continue
-        }
-
-        // Validate custom role ID.
-        if (!mongoose.isValidObjectId(requestedRole.customRoleId)) {
-          return res.status(400).json({
-            success: false,
-            message: 'Invalid custom role ID.',
-          })
-        }
-
-        const customRole = (company.customRoles || []).find((role) => String(role._id) === String(requestedRole.customRoleId))
-
-        if (!customRole) {
-          return res.status(403).json({
-            success: false,
-            message: 'Custom role does not belong to your company.',
-          })
-        }
-
-        const roleKey = `Custom:${customRole._id}`
-
-        if (seenRoleKeys.has(roleKey)) continue
-        seenRoleKeys.add(roleKey)
-
-        assignedRoles.push({
-          type: 'Custom',
-          name: customRole.name,
-          customRoleId: customRole._id,
+      if (roleResult.error) {
+        return res.status(roleResult.error.status).json({
+          success: false,
+          message: roleResult.error.message,
         })
-
-        for (const permission of customRole.permissions || []) {
-          if (validPermissions.has(permission)) {
-            assignedPermissions.add(permission)
-          }
-        }
       }
 
-      // Do not allow assigning roles with extra permissions.
-      const cannotAssignExtraPermissions = [...assignedPermissions].some((permission) => !currentUserPermissions.has(permission))
+      const cannotAssignExtraPermissions = [...roleResult.assignedPermissions].some((permission) => !currentUserPermissions.has(permission))
 
       if (cannotAssignExtraPermissions) {
         return res.status(403).json({
@@ -729,14 +582,12 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
         })
       }
 
-      employee.roles = assignedRoles
+      employee.roles = roleResult.assignedRoles
     }
 
-    // Update individual employee permission overrides.
     if (permissionOverrides !== undefined) {
       const normalizedOverrides = [...new Set(permissionOverrides)]
 
-      // Reject unknown permission keys.
       const hasInvalidPermission = normalizedOverrides.some((permission) => !validPermissions.has(permission))
 
       if (hasInvalidPermission) {
@@ -746,7 +597,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
         })
       }
 
-      // Employee permissions cannot exceed CompanyAdmin authority.
       const cannotAssignExtraPermissions = normalizedOverrides.some((permission) => !currentUserPermissions.has(permission))
 
       if (cannotAssignExtraPermissions) {
@@ -759,7 +609,6 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
       employee.permissionOverrides = normalizedOverrides
     }
 
-    // Persist changes.
     await employee.save()
 
     return res.status(200).json({
@@ -782,29 +631,19 @@ router.patch('/employees/:id', authMiddleware, permissionMiddleware('Employee', 
 // GET /erp/roles
 router.get('/roles', authMiddleware, permissionMiddleware('Role', 'LIST'), async (req, res, next) => {
   try {
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    }).lean()
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
     const predefinedRoles = allowedPredefinedRoles.map((name) => ({
       type: 'Predefined',
       name,
-      permissions: ROLE_DEFAULT_PERMISSIONS[name] || {},
+      permissions: getRolePermissionList(name, company),
     }))
 
     const customRoles = (company.customRoles || []).map((role) => ({
@@ -812,7 +651,7 @@ router.get('/roles', authMiddleware, permissionMiddleware('Role', 'LIST'), async
       type: 'Custom',
       name: role.name,
       description: role.description,
-      permissions: role.permissions,
+      permissions: role.permissions || [],
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
     }))
@@ -830,7 +669,7 @@ router.get('/roles', authMiddleware, permissionMiddleware('Role', 'LIST'), async
   }
 })
 
-// POST /erp/roles
+// POST /erp/roles — create custom role
 router.post('/roles', authMiddleware, permissionMiddleware('Role', 'CREATE'), async (req, res, next) => {
   try {
     if (req.user.role !== ROLES.COMPANY_ADMIN) {
@@ -840,19 +679,19 @@ router.post('/roles', authMiddleware, permissionMiddleware('Role', 'CREATE'), as
       })
     }
 
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
     const { name, description = '', permissions } = req.body
 
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({
         success: false,
         message: 'Role name is required.',
+      })
+    }
+
+    if (name.trim().length > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role name cannot exceed 100 characters.',
       })
     }
 
@@ -870,19 +709,14 @@ router.post('/roles', authMiddleware, permissionMiddleware('Role', 'CREATE'), as
       })
     }
 
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
-
-    const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
 
     const requestedPermissions = [...new Set(permissions)]
 
@@ -893,7 +727,7 @@ router.post('/roles', authMiddleware, permissionMiddleware('Role', 'CREATE'), as
       })
     }
 
-    const duplicateRole = company.customRoles.some((role) => role.name.toLowerCase() === name.trim().toLowerCase())
+    const duplicateRole = (company.customRoles || []).some((role) => role.name.toLowerCase() === name.trim().toLowerCase())
 
     if (duplicateRole) {
       return res.status(409).json({
@@ -902,46 +736,7 @@ router.post('/roles', authMiddleware, permissionMiddleware('Role', 'CREATE'), as
       })
     }
 
-    // Calculate current user's permissions inline.
-    const currentUserPermissions = new Set()
-
-    const currentAssignedRoles = [
-      {
-        type: 'Predefined',
-        name: req.user.role,
-      },
-      ...(Array.isArray(req.user.roles) ? req.user.roles : []),
-    ]
-
-    for (const assignedRole of currentAssignedRoles) {
-      if (assignedRole?.type === 'Custom') {
-        const customRole = company.customRoles.find((role) => String(role._id) === String(assignedRole.customRoleId))
-
-        for (const permission of customRole?.permissions || []) {
-          if (validPermissions.has(permission)) {
-            currentUserPermissions.add(permission)
-          }
-        }
-
-        continue
-      }
-
-      if (assignedRole?.type && assignedRole.type !== 'Predefined') {
-        continue
-      }
-
-      const rolePermissions = ROLE_DEFAULT_PERMISSIONS[assignedRole?.name] || {}
-
-      for (const permissionList of Object.values(rolePermissions)) {
-        if (!Array.isArray(permissionList)) continue
-
-        for (const permission of permissionList) {
-          if (validPermissions.has(permission)) {
-            currentUserPermissions.add(permission)
-          }
-        }
-      }
-    }
+    const currentUserPermissions = getAssignablePermissions(req.user, company)
 
     const cannotAssignExtraPermissions = requestedPermissions.some((permission) => !currentUserPermissions.has(permission))
 
@@ -982,19 +777,113 @@ router.post('/roles', authMiddleware, permissionMiddleware('Role', 'CREATE'), as
   }
 })
 
-router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'), async (req, res) => {
+// PATCH /erp/roles/predefined/:name — save company-specific predefined permissions
+router.patch('/roles/predefined/:name', authMiddleware, permissionMiddleware('Role', 'UPDATE'), async (req, res, next) => {
   try {
     if (req.user.role !== ROLES.COMPANY_ADMIN) {
       return res.status(403).json({
         success: false,
-        message: 'Only Company Admin can edit custom roles.',
+        message: 'Only CompanyAdmin can edit predefined roles.',
+      })
+    }
+
+    const roleName = req.params.name
+
+    if (!allowedPredefinedRoles.includes(roleName)) {
+      return res.status(404).json({
+        success: false,
+        message: 'Predefined role not found or cannot be edited.',
+      })
+    }
+
+    const { permissions } = req.body
+
+    if (!Array.isArray(permissions)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Permissions must be an array.',
+      })
+    }
+
+    const company = await getCompanyForUser(req.user)
+
+    if (!company) {
+      return res.status(403).json({
+        success: false,
+        message: 'Approved company not found or company access is required.',
+      })
+    }
+
+    const normalizedPermissions = [...new Set(permissions)]
+
+    if (normalizedPermissions.some((permission) => typeof permission !== 'string' || !validPermissions.has(permission))) {
+      return res.status(400).json({
+        success: false,
+        message: 'One or more permissions are invalid.',
+      })
+    }
+
+    const authority = getAssignablePermissions(req.user, company)
+
+    if (normalizedPermissions.some((permission) => !authority.has(permission))) {
+      return res.status(403).json({
+        success: false,
+        message: 'You cannot assign permissions you do not have.',
+      })
+    }
+
+    if (!Array.isArray(company.predefinedRolePermissions)) {
+      company.predefinedRolePermissions = []
+    }
+
+    let savedRole = company.predefinedRolePermissions.find((role) => role.name === roleName)
+
+    if (savedRole) {
+      savedRole.permissions = normalizedPermissions
+      savedRole.updatedBy = req.user.userId
+      savedRole.updatedAt = new Date()
+    } else {
+      company.predefinedRolePermissions.push({
+        name: roleName,
+        permissions: normalizedPermissions,
+        updatedBy: req.user.userId,
+        updatedAt: new Date(),
+      })
+
+      savedRole = company.predefinedRolePermissions.find((role) => role.name === roleName)
+    }
+
+    await company.save()
+
+    return res.status(200).json({
+      success: true,
+      message: 'Predefined role permissions updated successfully.',
+      role: {
+        type: 'Predefined',
+        name: roleName,
+        permissions: savedRole.permissions,
+        updatedAt: savedRole.updatedAt,
+      },
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+// PATCH /erp/roles/:id — edit custom role
+router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'), async (req, res, next) => {
+  try {
+    if (req.user.role !== ROLES.COMPANY_ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only CompanyAdmin can edit custom roles.',
       })
     }
 
     const { id } = req.params
     const { name, description = '', permissions } = req.body
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!mongoose.isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid role ID.',
@@ -1029,15 +918,12 @@ router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'
       })
     }
 
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
-      return res.status(404).json({
+      return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
@@ -1052,7 +938,7 @@ router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'
 
     const normalizedName = name.trim()
 
-    const duplicateRole = company.customRoles.find((role) => role._id.toString() !== id && role.name.toLowerCase() === normalizedName.toLowerCase())
+    const duplicateRole = company.customRoles.find((role) => String(role._id) !== String(id) && role.name.toLowerCase() === normalizedName.toLowerCase())
 
     if (duplicateRole) {
       return res.status(409).json({
@@ -1060,8 +946,6 @@ router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'
         message: 'A role with this name already exists.',
       })
     }
-
-    const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
 
     const requestedPermissions = [...new Set(permissions)]
 
@@ -1072,31 +956,7 @@ router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'
       })
     }
 
-    const assignablePermissions = new Set()
-
-    const currentRolePermissions = ROLE_DEFAULT_PERMISSIONS[req.user.role] || {}
-
-    Object.values(currentRolePermissions).forEach((sectionPermissions) => {
-      sectionPermissions.forEach((permission) => assignablePermissions.add(permission))
-    })
-
-    for (const assignedRole of req.user.roles || []) {
-      if (assignedRole.type === 'Predefined') {
-        const rolePermissions = ROLE_DEFAULT_PERMISSIONS[assignedRole.name] || {}
-
-        Object.values(rolePermissions).forEach((sectionPermissions) => {
-          sectionPermissions.forEach((permission) => assignablePermissions.add(permission))
-        })
-      }
-
-      if (assignedRole.type === 'Custom' && assignedRole.customRoleId) {
-        const assignedCustomRole = company.customRoles.id(assignedRole.customRoleId)
-
-        if (assignedCustomRole) {
-          assignedCustomRole.permissions.forEach((permission) => assignablePermissions.add(permission))
-        }
-      }
-    }
+    const assignablePermissions = getAssignablePermissions(req.user, company)
 
     if (requestedPermissions.some((permission) => !assignablePermissions.has(permission))) {
       return res.status(403).json({
@@ -1117,154 +977,12 @@ router.patch('/roles/:id', authMiddleware, permissionMiddleware('Role', 'UPDATE'
       role: customRole,
     })
   } catch (error) {
-    console.error('Update custom role error:', error)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to update custom role.',
-    })
-  }
-})
-
-router.delete('/roles/:id', authMiddleware, permissionMiddleware('Role', 'DELETE'), async (req, res) => {
-  try {
-    if (req.user.role !== ROLES.COMPANY_ADMIN) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only Company Admin can delete custom roles.',
-      })
-    }
-
-    const { id } = req.params
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid role ID.',
-      })
-    }
-
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
-
-    if (!company) {
-      return res.status(404).json({
-        success: false,
-        message: 'Approved company not found.',
-      })
-    }
-
-    const customRole = company.customRoles.id(id)
-
-    if (!customRole || customRole.isSystem) {
-      return res.status(404).json({
-        success: false,
-        message: 'Deletable custom role not found.',
-      })
-    }
-
-    const roleId = customRole._id
-
-    // Remove this custom role from users in the same company.
-    await User.updateMany(
-      {
-        companyId: company._id,
-        'roles.customRoleId': roleId,
-      },
-      {
-        $pull: {
-          roles: {
-            customRoleId: roleId,
-            type: 'Custom',
-          },
-        },
-      },
-    )
-
-    company.customRoles.pull(roleId)
-    await company.save()
-
-    return res.status(200).json({
-      success: true,
-      message: 'Custom role deleted successfully.',
-      deletedRoleId: id,
-    })
-  } catch (error) {
-    console.error('Delete custom role error:', error)
-
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to delete custom role.',
-    })
-  }
-})
-
-// DELETE /erp/employees/:id
-router.delete('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'DELETE'), async (req, res, next) => {
-  try {
-    // Only CompanyAdmin can delete employees.
-    if (req.user.role !== ROLES.COMPANY_ADMIN) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only CompanyAdmin can delete employees.',
-      })
-    }
-
-    // Validate company access.
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
-    // Validate employee ID.
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid employee ID.',
-      })
-    }
-
-    // Verify the company is approved.
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    }).select('_id')
-
-    if (!company) {
-      return res.status(403).json({
-        success: false,
-        message: 'Approved company not found.',
-      })
-    }
-
-    // Delete only an employee belonging to this company.
-    const employee = await User.findOneAndDelete({
-      _id: req.params.id,
-      companyId: company._id,
-      role: ROLES.EMPLOYEE,
-    })
-
-    if (!employee) {
-      return res.status(404).json({
-        success: false,
-        message: 'Employee not found in your company.',
-      })
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Employee deleted successfully.',
-      employeeId: employee._id,
-    })
-  } catch (error) {
     return next(error)
   }
 })
 
+// DELETE /erp/roles/:id — single delete policy:
+// refuse deletion while the role is assigned to users.
 router.delete('/roles/:id', authMiddleware, permissionMiddleware('Role', 'DELETE'), async (req, res, next) => {
   try {
     if (req.user.role !== ROLES.COMPANY_ADMIN) {
@@ -1274,35 +992,23 @@ router.delete('/roles/:id', authMiddleware, permissionMiddleware('Role', 'DELETE
       })
     }
 
-    const { id } = req.params
-
-    if (!mongoose.isValidObjectId(id)) {
+    if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid role ID.',
       })
     }
 
-    if (!req.user.companyId || !mongoose.isValidObjectId(req.user.companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Company access is required.',
-      })
-    }
-
-    const company = await Company.findOne({
-      _id: req.user.companyId,
-      status: 'Approved',
-    })
+    const company = await getCompanyForUser(req.user)
 
     if (!company) {
       return res.status(403).json({
         success: false,
-        message: 'Approved company not found.',
+        message: 'Approved company not found or company access is required.',
       })
     }
 
-    const customRole = company.customRoles.id(id)
+    const customRole = company.customRoles.id(req.params.id)
 
     if (!customRole) {
       return res.status(404).json({
@@ -1341,6 +1047,55 @@ router.delete('/roles/:id', authMiddleware, permissionMiddleware('Role', 'DELETE
       success: true,
       message: 'Custom role deleted successfully.',
       deletedRoleId: String(roleId),
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
+// DELETE /erp/employees/:id
+router.delete('/employees/:id', authMiddleware, permissionMiddleware('Employee', 'DELETE'), async (req, res, next) => {
+  try {
+    if (req.user.role !== ROLES.COMPANY_ADMIN) {
+      return res.status(403).json({
+        success: false,
+        message: 'Only CompanyAdmin can delete employees.',
+      })
+    }
+
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid employee ID.',
+      })
+    }
+
+    const company = await getCompanyForUser(req.user)
+
+    if (!company) {
+      return res.status(403).json({
+        success: false,
+        message: 'Approved company not found or company access is required.',
+      })
+    }
+
+    const employee = await User.findOneAndDelete({
+      _id: req.params.id,
+      companyId: company._id,
+      role: ROLES.EMPLOYEE,
+    })
+
+    if (!employee) {
+      return res.status(404).json({
+        success: false,
+        message: 'Employee not found in your company.',
+      })
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Employee deleted successfully.',
+      employeeId: employee._id,
     })
   } catch (error) {
     return next(error)

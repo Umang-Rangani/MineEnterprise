@@ -345,13 +345,22 @@ export default function EmployeeForm() {
 
   const selectedCount = selectedPermissions.filter((permission) => allPermissionKeys.includes(permission)).length
 
-  const items = [
-    { title: 'Employees', link: '/company/employees' },
-    {
-      title: isEdit ? 'Edit Employee' : 'Add Employee',
-      link: null,
-    },
-  ]
+  let items
+  if (isEdit) {
+    items = [
+      { title: 'Employees', link: '/company/employees' },
+      {
+        title: isEdit && `${form.name}`,
+        link: `/company/employees/${id}`,
+      },
+      {
+        title: isEdit ? 'Edit Employee' : 'Add Employee',
+        link: null,
+      },
+    ]
+  } else {
+    items = [{ title: 'Employees', link: '/company/employees' }]
+  }
 
   if (loading) {
     return (

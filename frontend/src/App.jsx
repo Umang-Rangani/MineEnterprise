@@ -49,6 +49,7 @@ import ExpenseForm from './components/company/ExpenseForm'
 import ExpenseDetails from './components/company/ExpenseDetails'
 import WarehouseForm from './components/company/WarehouseForm'
 import WarehouseDetails from './components/company/WarehouseDetails'
+import RoleDetails from './components/company/RoleDetails'
 
 export default function App() {
   return (
@@ -81,6 +82,7 @@ export default function App() {
           {/* Roles & Permissions */}
           <Route path="roles" element={<CompanyRoles />} />
           <Route path="roles/new" element={<RoleForm />} />
+          <Route path="roles/:id" element={<RoleDetails />} />
           <Route path="roles/:id/edit" element={<RoleForm />} />
 
           {/* Products & Inventory */}

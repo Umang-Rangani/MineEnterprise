@@ -15,7 +15,54 @@ const normalizeSection = (section) => {
 
 const getValidPermissionKeys = () => new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
 
-const getPredefinedRolePermissions = (roleName) => {
+// Convert permissions from the defaults object into a unique flat array.
+const flattenPermissions = (permissions) => {
+  if (!permissions || typeof permissions !== 'object') return []
+
+  const validPermissions = getValidPermissionKeys()
+
+  return [
+    ...new Set(
+      Object.values(permissions)
+        .filter(Array.isArray)
+        .flat()
+        .filter((permission) => typeof permission === 'string' && validPermissions.has(permission)),
+    ),
+  ]
+}
+
+// Return company-specific permissions when configured.
+// Otherwise, use the global predefined defaults.
+const getPredefinedRolePermissionList = (roleName, company) => {
+  const role = normalizeRole(roleName)
+
+  if (!Object.prototype.hasOwnProperty.call(ROLE_DEFAULT_PERMISSIONS, role)) {
+    return []
+  }
+
+  if (role === ROLES.SUPER_ADMIN) {
+    return []
+  }
+
+  // Company-specific overrides must only be used for the matching company.
+  const companyMatches = company && company._id && Array.isArray(company.predefinedRolePermissions)
+
+  if (companyMatches) {
+    const savedRole = company.predefinedRolePermissions.find((item) => normalizeRole(item?.name) === role)
+
+    // An explicitly saved empty array means no permissions.
+    if (savedRole && Array.isArray(savedRole.permissions)) {
+      const validPermissions = getValidPermissionKeys()
+
+      return [...new Set(savedRole.permissions.filter((permission) => typeof permission === 'string' && validPermissions.has(permission)))]
+    }
+  }
+
+  return flattenPermissions(ROLE_DEFAULT_PERMISSIONS[role])
+}
+
+// Keep the object format for compatibility with existing code.
+const getPredefinedRolePermissions = (roleName, company) => {
   const role = normalizeRole(roleName)
 
   if (!Object.prototype.hasOwnProperty.call(ROLE_DEFAULT_PERMISSIONS, role)) {
@@ -26,7 +73,19 @@ const getPredefinedRolePermissions = (roleName) => {
     return null
   }
 
-  return ROLE_DEFAULT_PERMISSIONS[role] || {}
+  const permissions = getPredefinedRolePermissionList(role, company)
+
+  const result = {}
+
+  for (const [section, sectionActions] of Object.entries(ACTIONS)) {
+    const allowed = Object.values(sectionActions).filter((permission) => permissions.includes(permission))
+
+    if (allowed.length > 0) {
+      result[section] = allowed
+    }
+  }
+
+  return result
 }
 
 const getCustomRolePermissions = (user, company) => {
@@ -41,7 +100,9 @@ const getCustomRolePermissions = (user, company) => {
   }
 
   const assignedRoles = Array.isArray(user.roles) ? user.roles : []
+
   const companyRoles = Array.isArray(company.customRoles) ? company.customRoles : []
+
   const validPermissions = getValidPermissionKeys()
 
   for (const assignedRole of assignedRoles) {
@@ -72,11 +133,15 @@ const getEffectivePermissions = (user, company) => {
     return null
   }
 
+  // Prevent permissions from another company's configuration
+  // being applied to this user.
+  const sameCompany = Boolean(user.companyId && company?._id && String(user.companyId) === String(company._id))
+
   const effective = {}
   const validPermissions = getValidPermissionKeys()
 
-  // Individual permission overrides apply only to Employees.
-  // CompanyAdmin and other roles retain their normal role permissions.
+  // Individual permission overrides apply to Employees.
+  // An empty array intentionally means no permissions.
   if (normalizeRole(user.role) === ROLES.EMPLOYEE && Array.isArray(user.permissionOverrides)) {
     const allowedPermissions = new Set(user.permissionOverrides.filter((permission) => typeof permission === 'string' && validPermissions.has(permission)))
 
@@ -110,20 +175,24 @@ const getEffectivePermissions = (user, company) => {
       continue
     }
 
-    const rolePermissions = getPredefinedRolePermissions(assignedRole?.name)
+    // A company's custom permissions must not be applied to a user
+    // whose company does not match.
+    const roleCompany = sameCompany ? company : null
+
+    const rolePermissions = getPredefinedRolePermissions(assignedRole?.name, roleCompany)
 
     if (rolePermissions === null) {
       return null
     }
 
-    for (const [section, actions] of Object.entries(rolePermissions)) {
-      if (!Array.isArray(actions)) continue
+    for (const [section, permissions] of Object.entries(rolePermissions)) {
+      if (!Array.isArray(permissions)) continue
 
       if (!Array.isArray(effective[section])) {
         effective[section] = []
       }
 
-      effective[section].push(...actions)
+      effective[section].push(...permissions)
     }
   }
 
@@ -131,7 +200,8 @@ const getEffectivePermissions = (user, company) => {
     effective[section] = [...new Set(effective[section])]
   }
 
-  effective.__customActions = [...getCustomRolePermissions(user, company)]
+  // Add permissions from custom roles belonging to the same company.
+  effective.__customActions = [...(sameCompany ? [...getCustomRolePermissions(user, company)] : [])]
 
   return effective
 }

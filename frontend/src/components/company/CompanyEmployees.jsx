@@ -1,53 +1,43 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Plus, ShieldCheck, RefreshCw, Search, Check, Pencil, Trash2, Users, LockKeyhole, SlidersHorizontal, PackageOpen } from 'lucide-react'
+import { Users, UserRoundPlus, Search, RefreshCw, Eye, Pencil, Trash2, UserCheck, UserX, ShieldCheck, Mail, Phone, LoaderCircle, PackageOpen, X } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import TrashBox from '../../TrashBox/TrashBox'
+import { CompanyEmployeesShimmer } from './CompanyEmployeeShimmer'
 
-function getRolePermissions(role) {
-  if (Array.isArray(role?.permissions)) {
-    return role.permissions
+function humanize(value) {
+  return String(value || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function getRoleNames(employee) {
+  if (Array.isArray(employee.roles) && employee.roles.length > 0) {
+    return employee.roles.map((role) => role.name).filter(Boolean)
   }
 
-  return Object.values(role?.permissions || {}).flatMap((items) => (Array.isArray(items) ? items : []))
+  return employee.role ? [humanize(employee.role)] : []
 }
 
-function formatPermission(permission) {
-  return String(permission || '')
-    .split(':')
-    .map((part) =>
-      part
-        .split('-')
-        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' '),
-    )
-    .join(' · ')
-}
-
-function getRoleKey(role) {
-  return role?._id ? String(role._id) : `${role?.type || ''}-${role?.name || ''}`
-}
-
-export default function CompanyRoles() {
+export default function CompanyEmployees() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const [roles, setRoles] = useState([])
-  const [availablePermissions, setAvailablePermissions] = useState([])
+  const [employees, setEmployees] = useState([])
   const [search, setSearch] = useState('')
-  const [selectedRole, setSelectedRole] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [deletingRole, setDeletingRole] = useState(null)
-  const [deleting, setDeleting] = useState(false)
+  const [deletingId, setDeletingId] = useState('')
+  const [confirmEmployee, setConfirmEmployee] = useState(null)
   const [toast, setToast] = useState(null)
 
-  const items = [{ title: 'Roles & Permissions', link: null }]
-
-  const showToast = (type, message, duration = 3000) => {
+  function showToast(type, message, duration = 3000) {
     setToast({
       id: Date.now(),
       type,
@@ -56,11 +46,15 @@ export default function CompanyRoles() {
     })
   }
 
-  const closeToast = () => {
+  function closeToast() {
     setToast(null)
   }
 
-  async function fetchRoles(isRefresh = false) {
+  useEffect(() => {
+    document.title = 'Employees | MineERP'
+  }, [])
+
+  async function loadEmployees(isRefresh = false) {
     if (isRefresh) {
       setRefreshing(true)
     } else {
@@ -68,28 +62,15 @@ export default function CompanyRoles() {
     }
 
     try {
-      const { data } = await axiosInstance.get('/erp/roles')
+      const response = await axiosInstance.get('/erp/employees')
 
-      if (!data.success) {
-        throw new Error(data.message || 'Unable to load roles.')
-      }
-
-      const loadedRoles = data.roles || []
-
-      setRoles(loadedRoles)
-      setAvailablePermissions(data.availablePermissions || [])
-
-      setSelectedRole((current) => {
-        if (!current) return loadedRoles[0] || null
-
-        return loadedRoles.find((role) => getRoleKey(role) === getRoleKey(current)) || loadedRoles[0] || null
-      })
+      setEmployees(response.data.employees || [])
 
       if (isRefresh) {
-        showToast('success', 'Roles refreshed successfully.')
+        showToast('success', 'Employees refreshed successfully.')
       }
-    } catch (err) {
-      showToast('error', err.response?.data?.message || err.message || 'Unable to load roles.')
+    } catch (requestError) {
+      showToast('error', requestError.response?.data?.message || 'Unable to load employees. Please try again.')
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -97,94 +78,97 @@ export default function CompanyRoles() {
   }
 
   useEffect(() => {
-    document.title = 'Roles & Permissions | MineERP'
-
-    fetchRoles()
-
-    if (location.state?.successMessage) {
-      showToast('success', location.state.successMessage)
-
-      navigate(location.pathname, {
-        replace: true,
-        state: null,
-      })
-    }
+    loadEmployees()
   }, [])
 
-  function openCreatePage() {
-    navigate('/company/roles/new', {
-      state: { availablePermissions },
+  useEffect(() => {
+    if (!location.state?.message) return
+
+    showToast('success', location.state.message)
+
+    navigate(location.pathname, {
+      replace: true,
+      state: null,
     })
-  }
+  }, [location.state, location.pathname, navigate])
 
-  function openEditPage(role) {
-    if (!role) return
+  async function handleDelete() {
+    if (!confirmEmployee?._id || deletingId) return
 
-    const roleIdentifier = role._id || role.name
+    const employeeId = confirmEmployee._id
 
-    navigate(`/company/roles/${encodeURIComponent(roleIdentifier)}/edit`, {
-      state: {
-        role,
-        availablePermissions,
-        isPredefined: role.type === 'Predefined',
-      },
-    })
-  }
-
-  async function handleDeleteRole() {
-    if (!deletingRole || deleting) return
-
-    if (deletingRole.type !== 'Custom') {
-      showToast('error', 'Only custom roles can be deleted.')
-      return
-    }
-
-    if (!deletingRole._id) {
-      showToast('error', 'Custom role ID is missing.')
-      return
-    }
-
-    setDeleting(true)
+    setDeletingId(employeeId)
 
     try {
-      const deletedId = String(deletingRole._id)
+      const response = await axiosInstance.delete(`/erp/employees/${employeeId}`)
 
-      const { data } = await axiosInstance.delete(`/erp/roles/${deletedId}`)
-
-      if (!data.success) {
-        throw new Error(data.message || 'Unable to delete role.')
+      if (response.data?.success === false) {
+        throw new Error(response.data.message || 'Unable to delete employee.')
       }
 
-      setRoles((current) => current.filter((role) => String(role._id) !== deletedId))
+      setEmployees((currentEmployees) => currentEmployees.filter((employee) => employee._id !== employeeId))
 
-      setSelectedRole((current) => (current && String(current._id) === deletedId ? null : current))
+      setConfirmEmployee(null)
 
-      setDeletingRole(null)
+      showToast('success', response.data?.message || 'Employee deleted successfully.')
+    } catch (requestError) {
+      showToast('error', requestError.response?.data?.message || requestError.message || 'Unable to delete employee. Please try again.')
 
-      showToast('success', data.message || 'Custom role deleted successfully.')
-
-      await fetchRoles()
-    } catch (err) {
-      showToast('error', err.response?.data?.message || err.message || 'Unable to delete role.')
+      // Keep the confirmation open so the user can retry or cancel.
     } finally {
-      setDeleting(false)
+      setDeletingId('')
     }
   }
 
   const normalizedSearch = search.trim().toLowerCase()
 
-  const filteredRoles = roles.filter((role) => `${role.name || ''} ${role.description || ''} ${role.type || ''}`.toLowerCase().includes(normalizedSearch))
+  const filteredEmployees = employees.filter((employee) => {
+    const roleNames = getRoleNames(employee).join(' ')
 
-  const predefinedCount = roles.filter((role) => role.type === 'Predefined').length
+    return [employee.name, employee.email, employee.phone, roleNames, employee.status].filter(Boolean).some((value) => String(value).toLowerCase().includes(normalizedSearch))
+  })
 
-  const customCount = roles.filter((role) => role.type === 'Custom').length
+  const activeCount = employees.filter((employee) => employee.status === 'Active').length
 
-  const selectedPermissions = getRolePermissions(selectedRole)
+  const inactiveCount = employees.length - activeCount
 
+  function openCreate() {
+    navigate('/company/employees/new')
+  }
+
+  function openEdit(employee) {
+    navigate(`/company/employees/${employee._id}/edit`)
+  }
+
+  function openDetails(employee) {
+    navigate(`/company/employees/${employee._id}`)
+  }
+
+  function requestDelete(employee) {
+    if (deletingId) return
+    setConfirmEmployee(employee)
+  }
+
+  function closeDeleteConfirmation() {
+    if (deletingId) return
+    setConfirmEmployee(null)
+  }
+
+  const items = [{ title: 'Employees', link: null }]
+
+  if (loading || refreshing) {
+    return (
+      <>
+        <Toast toast={toast} onClose={closeToast} />
+        <CompanyEmployeesShimmer />
+      </>
+    )
+  }
   return (
     <div className="min-w-0 space-y-4 text-sm">
       <Toast toast={toast} onClose={closeToast} />
 
+      {/* Header */}
       <div className="flex min-h-10 min-w-0 items-center justify-between gap-2">
         <div className="flex h-10 min-w-0 flex-1 items-center overflow-hidden">
           <BreadCrumb items={items} />
@@ -193,10 +177,10 @@ export default function CompanyRoles() {
         <div className="flex h-10 shrink-0 items-center gap-2">
           <button
             type="button"
-            onClick={() => fetchRoles(true)}
+            onClick={() => loadEmployees(true)}
             disabled={refreshing || loading}
-            title="Refresh roles"
-            aria-label="Refresh roles"
+            title="Refresh employees"
+            aria-label="Refresh employees"
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 disabled:opacity-60 sm:w-auto sm:px-3"
           >
             <RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} />
@@ -205,261 +189,277 @@ export default function CompanyRoles() {
 
           <button
             type="button"
-            onClick={openCreatePage}
+            onClick={openCreate}
             className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-erp-primary-hover sm:px-3.5 sm:text-sm"
           >
-            <Plus size={15} />
-            <span className="hidden sm:inline">Create Custom Role</span>
-            <span className="sm:hidden">Create</span>
+            <UserRoundPlus size={15} />
+            <span className="hidden xs:inline">Add Employee</span>
+            <span className="xs:hidden">Add</span>
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <div className="flex h-[88px] min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:h-22 sm:p-4">
+      {/* Statistics */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 h-22">
+        <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">Total Roles</p>
-            <p className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{loading ? '—' : roles.length}</p>
+            <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">Total Employees</p>
+            <p className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{loading ? '—' : employees.length}</p>
           </div>
+
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
-            <ShieldCheck size={19} />
-          </div>
-        </div>
-
-        <div className="flex h-[88px] min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:h-22 sm:p-4">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">Predefined Roles</p>
-            <p className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{loading ? '—' : predefinedCount}</p>
-          </div>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-            <LockKeyhole size={19} />
-          </div>
-        </div>
-
-        <div className="flex h-[88px] min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:h-22 sm:p-4">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">Custom Roles</p>
-            <p className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{loading ? '—' : customCount}</p>
-          </div>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
             <Users size={19} />
           </div>
         </div>
-      </div>
 
-      <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-5">
-        <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
-          <div className="flex flex-col gap-3 border-b border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Available Roles</h2>
-              <p className="mt-0.5 text-xs text-slate-500">{loading ? 'Loading roles...' : `${filteredRoles.length} of ${roles.length} roles`}</p>
-            </div>
-
-            <div className="relative w-full sm:max-w-xs">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search roles..."
-                aria-label="Search roles"
-                className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition placeholder:text-slate-400 focus:border-erp-primary focus:bg-white focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
-              />
-            </div>
+        <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">Active Employees</p>
+            <p className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{loading ? '—' : activeCount}</p>
           </div>
 
-          {loading ? (
-            <div className="space-y-2 p-3 sm:p-4">
-              {[1, 2, 3, 4].map((item) => (
-                <div key={item} className="flex min-h-[76px] items-center gap-3 rounded-lg border border-slate-100 p-3">
-                  <div className="h-9 w-9 shrink-0 animate-pulse rounded-lg bg-slate-100" />
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <div className="h-3.5 w-32 max-w-full animate-pulse rounded bg-slate-100" />
-                    <div className="h-3 w-48 max-w-full animate-pulse rounded bg-slate-100" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : filteredRoles.length === 0 ? (
-            <div className="flex min-h-48 flex-col items-center justify-center px-4 py-8 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
-                <PackageOpen size={23} />
-              </div>
-              <h3 className="mt-3 text-sm font-bold text-slate-800">No roles found</h3>
-              <p className="mt-1 max-w-xs text-xs leading-5 text-slate-500">{normalizedSearch ? 'Try a different search term.' : 'Create a custom role to define access for your company.'}</p>
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
+            <UserCheck size={19} />
+          </div>
+        </div>
 
-              {!normalizedSearch && (
-                <button type="button" onClick={openCreatePage} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
-                  <Plus size={15} />
-                  Create Custom Role
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-2 p-3 sm:p-4">
-              {filteredRoles.map((role) => {
-                const isSelected = selectedRole && getRoleKey(role) === getRoleKey(selectedRole)
+        <div className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-slate-500 sm:text-sm">Inactive Employees</p>
+            <p className="mt-1 text-xl font-bold tracking-tight text-slate-900 sm:text-2xl">{loading ? '—' : inactiveCount}</p>
+          </div>
 
-                const permissions = getRolePermissions(role)
-                const isPredefined = role.type === 'Predefined'
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+            <UserX size={19} />
+          </div>
+        </div>
+      </div>
+
+      {/* Employee list */}
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">All Employees</h2>
+            <p className="mt-0.5 text-xs text-slate-500">{loading ? 'Loading employee records...' : `${filteredEmployees.length} of ${employees.length} employees`}</p>
+          </div>
+
+          <div className="relative w-full sm:max-w-xs">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search employees..."
+              aria-label="Search employees"
+              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition placeholder:text-slate-400 focus:border-erp-primary focus:bg-white focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
+            />
+          </div>
+        </div>
+
+        {filteredEmployees.length === 0 ? (
+          <div className="flex min-h-48 flex-col items-center justify-center px-4 py-8 text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+              <PackageOpen size={24} />
+            </div>
+
+            <h3 className="mt-3 text-sm font-bold text-slate-800">{search ? 'No employees found' : 'No employees yet'}</h3>
+
+            <p className="mt-1 max-w-xs text-xs text-slate-500">{search ? 'Try another name, email, phone number or role.' : 'Add your first employee to start managing your team.'}</p>
+
+            {!search && (
+              <button type="button" onClick={openCreate} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                <UserRoundPlus size={15} />
+                Add Employee
+              </button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Desktop table */}
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full min-w-[800px] text-left">
+                <thead className="bg-slate-50">
+                  <tr className="border-b border-slate-100">
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Employee</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Contact</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Roles</th>
+                    <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+                    <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-slate-100">
+                  {filteredEmployees.map((employee) => {
+                    const roles = getRoleNames(employee)
+                    const isActive = employee.status === 'Active'
+
+                    return (
+                      <tr key={employee._id} className="transition hover:bg-slate-50/70">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-sm font-bold text-erp-primary">{employee.name?.trim()?.charAt(0)?.toUpperCase() || 'E'}</div>
+
+                            <div className="min-w-0">
+                              <p className="max-w-48 truncate text-xs font-semibold text-slate-800 sm:text-sm">{employee.name || 'Unnamed employee'}</p>
+                              <p className="mt-0.5 text-[10px] text-slate-400">ID: {String(employee._id).slice(-8)}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex max-w-56 items-center gap-1.5 text-xs text-slate-700">
+                            <Mail size={13} className="shrink-0 text-slate-400" />
+                            <span className="truncate">{employee.email}</span>
+                          </div>
+
+                          {employee.phone && (
+                            <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
+                              <Phone size={12} className="shrink-0 text-slate-400" />
+                              <span>{employee.phone}</span>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex max-w-64 flex-wrap gap-1">
+                            {roles.length > 0 ? (
+                              roles.map((role, index) => (
+                                <span key={`${role}-${index}`} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600">
+                                  <ShieldCheck size={12} />
+                                  {humanize(role)}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-400">No role assigned</span>
+                            )}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ${isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                            {humanize(employee.status || 'Inactive')}
+                          </span>
+                        </td>
+
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => openDetails(employee)}
+                              title="View employee"
+                              aria-label={`View ${employee.name}`}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                            >
+                              <Eye size={15} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => openEdit(employee)}
+                              title="Edit employee"
+                              aria-label={`Edit ${employee.name}`}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                            >
+                              <Pencil size={14} />
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => requestDelete(employee)}
+                              title="Delete employee"
+                              aria-label={`Delete ${employee.name}`}
+                              disabled={Boolean(deletingId)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {deletingId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile employee cards */}
+            <div className="divide-y divide-slate-100 md:hidden">
+              {filteredEmployees.map((employee) => {
+                const roles = getRoleNames(employee)
+                const isActive = employee.status === 'Active'
 
                 return (
-                  <button
-                    type="button"
-                    key={getRoleKey(role)}
-                    onClick={() => setSelectedRole(role)}
-                    aria-pressed={Boolean(isSelected)}
-                    className={`flex min-h-[78px] w-full items-center gap-3 rounded-lg border p-3 text-left transition sm:gap-3.5 ${
-                      isSelected ? 'border-erp-primary/30 bg-violet-50/70' : 'border-slate-100 bg-white hover:border-slate-200 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isPredefined ? 'bg-violet-50 text-violet-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                      {isPredefined ? <ShieldCheck size={18} /> : <Users size={18} />}
-                    </div>
+                  <div key={employee._id} className="space-y-3 p-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-sm font-bold text-erp-primary">{employee.name?.trim()?.charAt(0)?.toUpperCase() || 'E'}</div>
 
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <h3 className="break-words text-xs font-semibold text-slate-800 sm:text-sm">{role.name}</h3>
-                        <span className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${isPredefined ? 'bg-violet-50 text-violet-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                          {isPredefined ? 'Predefined' : 'Custom'}
-                        </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="break-words text-sm font-semibold text-slate-900">{employee.name || 'Unnamed employee'}</p>
+                        <p className="mt-0.5 break-all text-xs text-slate-500">{employee.email}</p>
+
+                        {employee.phone && <p className="mt-1 text-[11px] text-slate-500">{employee.phone}</p>}
                       </div>
-                      <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-slate-500 sm:text-xs">{role.description || 'No description provided.'}</p>
+
+                      <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ${isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                        {humanize(employee.status || 'Inactive')}
+                      </span>
                     </div>
 
-                    <div className="shrink-0 text-right">
-                      <p className="text-base font-bold tabular-nums text-slate-800">{permissions.length}</p>
-                      <p className="text-[10px] text-slate-400 sm:text-[11px]">Permissions</p>
+                    <div className="flex flex-wrap gap-1">
+                      {roles.length > 0 ? (
+                        roles.map((role, index) => (
+                          <span key={`${role}-${index}`} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-medium text-slate-600">
+                            <ShieldCheck size={12} />
+                            {humanize(role)}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-xs text-slate-400">No role assigned</span>
+                      )}
                     </div>
-                  </button>
+
+                    <div className="flex gap-2 border-t border-slate-100 pt-2.5">
+                      <button type="button" onClick={() => openDetails(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                        <Eye size={14} />
+                        View
+                      </button>
+
+                      <button type="button" onClick={() => openEdit(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
+                        <Pencil size={14} />
+                        Edit
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => requestDelete(employee)}
+                        disabled={Boolean(deletingId)}
+                        className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {deletingId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                 )
               })}
             </div>
-          )}
-        </section>
+          </>
+        )}
+      </section>
 
-        <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:col-span-2">
-          <div className="flex min-h-[68px] items-center justify-between gap-3 border-b border-slate-100 p-3 sm:px-4">
-            <div>
-              <h2 className="text-sm font-bold text-slate-900">Permission Details</h2>
-              <p className="mt-0.5 text-xs text-slate-500">Review role access and actions.</p>
-            </div>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
-              <SlidersHorizontal size={17} />
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="space-y-3 p-4">
-              <div className="h-4 w-32 animate-pulse rounded bg-slate-100" />
-              <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
-              <div className="h-3 w-2/3 animate-pulse rounded bg-slate-100" />
-              <div className="h-9 w-full animate-pulse rounded-lg bg-slate-100" />
-              <div className="h-9 w-full animate-pulse rounded-lg bg-slate-100" />
-            </div>
-          ) : !selectedRole ? (
-            <div className="flex min-h-48 flex-col items-center justify-center px-4 py-8 text-center">
-              <ShieldCheck size={25} className="text-slate-300" />
-              <p className="mt-2 text-sm font-semibold text-slate-700">Select a role</p>
-              <p className="mt-1 text-xs text-slate-500">Choose a role from the list to inspect its permissions.</p>
-            </div>
-          ) : (
-            <div className="p-3 sm:p-4">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5">
-                <div className="flex items-start gap-3">
-                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${selectedRole.type === 'Predefined' ? 'bg-violet-50 text-violet-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                    {selectedRole.type === 'Predefined' ? <ShieldCheck size={20} /> : <Users size={20} />}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <h3 className="break-words text-sm font-bold text-slate-900">{selectedRole.name}</h3>
-                    <span className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${selectedRole.type === 'Predefined' ? 'bg-violet-50 text-violet-700' : 'bg-emerald-50 text-emerald-700'}`}>
-                      {selectedRole.type === 'Predefined' ? 'Predefined' : 'Custom'}
-                    </span>
-                  </div>
-                </div>
-
-                <p className="mt-3 break-words text-xs leading-5 text-slate-500">{selectedRole.description || 'No description provided.'}</p>
-
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <p className="text-[11px] text-slate-500">Total permissions</p>
-                    <p className="mt-1 text-lg font-bold tabular-nums text-slate-900">{selectedPermissions.length}</p>
-                  </div>
-                  <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    <p className="text-[11px] text-slate-500">Role type</p>
-                    <p className="mt-1 text-sm font-bold text-slate-900">{selectedRole.type === 'Predefined' ? 'Built-in' : 'Custom'}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => openEditPage(selectedRole)}
-                  className="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 sm:text-sm"
-                >
-                  <Pencil size={14} />
-                  Edit Role
-                </button>
-
-                <button
-                  type="button"
-                  disabled={selectedRole.type !== 'Custom'}
-                  onClick={() => setDeletingRole(selectedRole)}
-                  title={selectedRole.type === 'Predefined' ? 'Predefined roles cannot be deleted.' : 'Delete custom role'}
-                  className="inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 bg-white px-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white sm:text-sm"
-                >
-                  <Trash2 size={14} />
-                  Delete
-                </button>
-              </div>
-
-              {selectedRole.type === 'Predefined' && <p className="mt-2 text-[11px] leading-4 text-slate-400">Built-in roles are protected and cannot be deleted.</p>}
-
-              <div className="mb-2 mt-5 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <LockKeyhole size={15} className="text-slate-500" />
-                  <h4 className="text-xs font-bold text-slate-800 sm:text-sm">Permissions</h4>
-                </div>
-                <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold tabular-nums text-slate-600 sm:text-xs">{selectedPermissions.length} total</span>
-              </div>
-
-              <div className="max-h-[320px] space-y-2 overflow-y-auto overscroll-contain pr-1">
-                {selectedPermissions.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center">
-                    <LockKeyhole size={21} className="mx-auto mb-2 text-slate-400" />
-                    <p className="text-xs text-slate-500">No permissions assigned.</p>
-                  </div>
-                ) : (
-                  selectedPermissions.map((permission, index) => (
-                    <div key={`${permission}-${index}`} className="flex items-start gap-2.5 rounded-lg border border-slate-100 p-2.5 transition hover:bg-slate-50">
-                      <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-700">
-                        <Check size={11} />
-                      </span>
-                      <span className="min-w-0 break-words text-xs leading-5 text-slate-700">{formatPermission(permission)}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          )}
-        </section>
-      </div>
-
+      {/* Delete confirmation using the shared TrashBox */}
       <TrashBox
-        isOpen={Boolean(deletingRole)}
-        onClose={() => {
-          if (!deleting) {
-            setDeletingRole(null)
-          }
-        }}
-        title="Delete Custom Role"
-        message={deletingRole ? `Are you sure you want to delete "${deletingRole.name}"? This role may be assigned to employees.` : 'Are you sure you want to delete this custom role?'}
-        actionButtonText="Delete Role"
+        isOpen={Boolean(confirmEmployee)}
+        onClose={closeDeleteConfirmation}
+        title="Delete Employee"
+        message={`Are you sure you want to delete "${confirmEmployee?.name || 'this employee'}"? This action may be permanent.`}
+        actionButtonText="Delete Employee"
         cancelButtonText="Cancel"
-        onAction={handleDeleteRole}
-        isProcessing={deleting}
+        onAction={handleDelete}
+        isProcessing={Boolean(deletingId)}
       />
     </div>
   )

@@ -38,6 +38,35 @@ const customRoleSchema = new mongoose.Schema(
   },
 )
 
+const predefinedRolePermissionSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    permissions: {
+      type: [String],
+      default: [],
+    },
+
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UserEnterPrise',
+      default: null,
+    },
+
+    updatedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    _id: false,
+  },
+)
+
 const companySchema = new mongoose.Schema(
   {
     companyName: {
@@ -171,6 +200,12 @@ const companySchema = new mongoose.Schema(
 
     customRoles: {
       type: [customRoleSchema],
+      default: [],
+    },
+
+    // Company-specific permission overrides for predefined roles.
+    predefinedRolePermissions: {
+      type: [predefinedRolePermissionSchema],
       default: [],
     },
   },
