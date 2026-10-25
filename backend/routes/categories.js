@@ -73,6 +73,53 @@ router.get('/', permissionMiddleware('Category', 'LIST'), async (req, res, next)
   }
 })
 
+// GET /erp/categories/export - Export company categories as CSV
+router.get('/export', permissionMiddleware('Category', 'EXPORT'), async (req, res, next) => {
+  try {
+    const filter = {
+      companyId: req.user.companyId,
+    }
+
+    if (req.query.search?.trim()) {
+      const search = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+      filter.$or = [{ name: { $regex: search, $options: 'i' } }, { code: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }]
+    }
+
+    if (['Active', 'Inactive'].includes(req.query.status)) {
+      filter.status = req.query.status
+    }
+
+    const categories = await Category.find(filter).select('name code description status createdAt').sort({ createdAt: -1, _id: -1 }).lean()
+
+    const escapeCsv = (value) => {
+      let text = String(value ?? '')
+
+      // Reduce spreadsheet formula-injection risk.
+      if (/^[\s]*[=+\-@]/.test(text)) {
+        text = `'${text}`
+      }
+
+      return `"${text.replace(/"/g, '""')}"`
+    }
+
+    const headers = ['Category Name', 'Code', 'Description', 'Status', 'Created At']
+
+    const rows = categories.map((category) => [category.name, category.code, category.description, category.status, category.createdAt ? new Date(category.createdAt).toISOString().slice(0, 10) : ''])
+
+    const csv = [headers.map(escapeCsv).join(','), ...rows.map((row) => row.map(escapeCsv).join(','))].join('\r\n')
+
+    const filename = `categories-${new Date().toISOString().slice(0, 10)}.csv`
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
+    res.setHeader('Cache-Control', 'no-store')
+
+    return res.status(200).send('\uFEFF' + csv)
+  } catch (error) {
+    return next(error)
+  }
+})
 
 // GET /erp/categories/:id - Get one category
 router.get('/:id', permissionMiddleware('Category', 'VIEW'), async (req, res, next) => {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Plus, RefreshCw, Search, Pencil, Trash2, X, Eye, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, LoaderCircle, Power, FolderTree, CheckCircle2, CircleX } from 'lucide-react'
+import { Plus, RefreshCw, Search, Pencil, Trash2, Eye, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, LoaderCircle, Power, FolderTree, Download } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
@@ -28,6 +28,7 @@ export default function CompanyCategories() {
   const canCreate = hasPermission(permissions, 'category:create')
   const canUpdate = hasPermission(permissions, 'category:update')
   const canDelete = hasPermission(permissions, 'category:delete')
+  const canExport = hasPermission(permissions, 'category:export')
 
   const canShowActions = canView || canUpdate || canDelete
 
@@ -54,6 +55,7 @@ export default function CompanyCategories() {
   const [isFetching, setIsFetching] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+  const [isExporting, setIsExporting] = useState(false)
 
   const [deletingCategory, setDeletingCategory] = useState(null)
   const [deletingId, setDeletingId] = useState('')
@@ -65,7 +67,6 @@ export default function CompanyCategories() {
   const [error, setError] = useState('')
 
   const items = [{ title: 'Categories', link: null }]
-
   const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All'
 
   const showToast = (type, message, duration = 3000) => {
@@ -124,9 +125,9 @@ export default function CompanyCategories() {
         if (serverPage !== currentPage) {
           setCurrentPage(serverPage)
         }
-      } catch (error) {
+      } catch (err) {
         if (!cancelled) {
-          setError(error.response?.data?.message || error.message || 'Unable to load categories.')
+          setError(getErrorMessage(err, 'Unable to load categories.'))
         }
       } finally {
         if (!cancelled) {
@@ -163,19 +164,71 @@ export default function CompanyCategories() {
     setRefreshKey((key) => key + 1)
   }
 
+  // Export categories through the secured backend endpoint.
+  const handleExportCategories = async () => {
+    if (!canExport || isExporting) return
+
+    setIsExporting(true)
+
+    try {
+      const response = await axiosInstance.get('/erp/categories/export', {
+        params: {
+          search: search.trim() || undefined,
+          status: statusFilter === 'All' ? undefined : statusFilter,
+        },
+        responseType: 'blob',
+      })
+
+      const blob = new Blob([response.data], {
+        type: 'text/csv;charset=utf-8;',
+      })
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = url
+      link.download = `categories-${new Date().toISOString().slice(0, 10)}.csv`
+
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      // Revoke after the browser has had a chance to start the download.
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      showToast('success', 'Categories exported successfully.')
+    } catch (err) {
+      // Blob responses can contain the backend's JSON error message.
+      let message = 'Unable to export categories.'
+
+      if (err.response?.data instanceof Blob) {
+        try {
+          const errorData = JSON.parse(await err.response.data.text())
+          message = errorData.message || message
+        } catch {
+          // Keep the fallback message.
+        }
+      } else {
+        message = getErrorMessage(err, message)
+      }
+
+      showToast('error', message)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
   const openCreatePage = () => {
     navigate('/company/categories/new')
   }
 
   const openDetailsPage = (category) => {
     if (!category?._id) return
-
     navigate(`/company/categories/${category._id}`)
   }
 
   const openEditPage = (category) => {
     if (!category?._id) return
-
     navigate(`/company/categories/${category._id}/edit`)
   }
 
@@ -196,9 +249,7 @@ export default function CompanyCategories() {
       }
 
       setStatusTarget(null)
-
       showToast('success', data.message || `Category ${nextStatus.toLowerCase()} successfully.`)
-
       setRefreshKey((key) => key + 1)
     } catch (err) {
       showToast('error', getErrorMessage(err, 'Unable to update category status.'))
@@ -221,7 +272,6 @@ export default function CompanyCategories() {
       }
 
       setDeletingCategory(null)
-
       showToast('success', data.message || 'Category deleted successfully.')
 
       if (categories.length === 1 && currentPage > 1) {
@@ -245,9 +295,7 @@ export default function CompanyCategories() {
   const totalPages = Math.max(1, Number(pagination.totalPages) || 1)
   const safePage = Math.min(currentPage, totalPages)
   const totalFilteredCategories = Number(pagination.total) || 0
-
   const startItem = totalFilteredCategories === 0 ? 0 : (safePage - 1) * pageSize + 1
-
   const endItem = Math.min(safePage * pageSize, totalFilteredCategories)
 
   if (!canList) {
@@ -299,6 +347,19 @@ export default function CompanyCategories() {
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
+
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleExportCategories}
+                disabled={isExporting}
+                title="Export categories to CSV"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-700 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isExporting ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
+                <span>{isExporting ? 'Exporting...' : 'Export'}</span>
+              </button>
+            )}
 
             {canCreate && (
               <button
@@ -389,7 +450,6 @@ export default function CompanyCategories() {
                   Clear filters
                 </button>
               ) : (
-                !hasActiveFilters &&
                 canCreate && (
                   <button type="button" onClick={openCreatePage} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
                     <Plus size={15} />
@@ -409,7 +469,6 @@ export default function CompanyCategories() {
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Code</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
-                      {/* <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th> */}
                       {canShowActions && <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>}
                     </tr>
                   </thead>
@@ -426,7 +485,6 @@ export default function CompanyCategories() {
                               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
                                 <FolderTree size={17} />
                               </div>
-
                               <div className="min-w-0">
                                 <p className="max-w-52 truncate text-xs font-semibold text-slate-800 sm:text-sm">{category.name || 'Unnamed category'}</p>
                                 <p className="mt-0.5 text-[10px] text-slate-400">{category.createdAt ? `Created ${new Date(category.createdAt).toLocaleDateString()}` : 'Category'}</p>
@@ -528,9 +586,7 @@ export default function CompanyCategories() {
 
                         <div className="min-w-0 flex-1">
                           <p className="break-words text-sm font-semibold text-slate-900">{category.name || 'Unnamed category'}</p>
-
                           <p className="mt-1 break-words text-xs text-slate-500">Code: {category.code || '—'}</p>
-
                           <p className="mt-1 break-words text-xs leading-5 text-slate-500">{category.description || 'No description provided.'}</p>
                         </div>
 
