@@ -29,6 +29,8 @@ export default function CompanyCategories() {
   const canUpdate = hasPermission(permissions, 'category:update')
   const canDelete = hasPermission(permissions, 'category:delete')
 
+  const canShowActions = canView || canUpdate || canDelete
+
   const [categories, setCategories] = useState([])
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
@@ -407,7 +409,8 @@ export default function CompanyCategories() {
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Code</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
-                      <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
+                      {/* <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th> */}
+                      {canShowActions && <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>}
                     </tr>
                   </thead>
 
@@ -446,61 +449,63 @@ export default function CompanyCategories() {
                             </span>
                           </td>
 
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {canView && (
-                                <button
-                                  type="button"
-                                  onClick={() => openDetailsPage(category)}
-                                  title="View category"
-                                  aria-label={`View ${category.name}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                                >
-                                  <Eye size={15} />
-                                </button>
-                              )}
+                          {canShowActions && (
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {canView && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openDetailsPage(category)}
+                                    title="View category"
+                                    aria-label={`View ${category.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Eye size={15} />
+                                  </button>
+                                )}
 
-                              {canUpdate && (
-                                <button
-                                  type="button"
-                                  onClick={() => openEditPage(category)}
-                                  title="Edit category"
-                                  aria-label={`Edit ${category.name}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                                >
-                                  <Pencil size={14} />
-                                </button>
-                              )}
+                                {canUpdate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditPage(category)}
+                                    title="Edit category"
+                                    aria-label={`Edit ${category.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                )}
 
-                              {canUpdate && (
-                                <button
-                                  type="button"
-                                  onClick={() => setStatusTarget(category)}
-                                  disabled={Boolean(updatingStatusId)}
-                                  title={isInactive ? 'Activate category' : 'Deactivate category'}
-                                  aria-label={`${isInactive ? 'Activate' : 'Deactivate'} ${category.name}`}
-                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                    isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
-                                  }`}
-                                >
-                                  {updatingStatusId === categoryId ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
-                                </button>
-                              )}
+                                {canUpdate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setStatusTarget(category)}
+                                    disabled={Boolean(updatingStatusId)}
+                                    title={isInactive ? 'Activate category' : 'Deactivate category'}
+                                    aria-label={`${isInactive ? 'Activate' : 'Deactivate'} ${category.name}`}
+                                    className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                                    }`}
+                                  >
+                                    {updatingStatusId === categoryId ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
+                                  </button>
+                                )}
 
-                              {canDelete && (
-                                <button
-                                  type="button"
-                                  onClick={() => setDeletingCategory(category)}
-                                  disabled={Boolean(deletingId)}
-                                  title="Delete category"
-                                  aria-label={`Delete ${category.name}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  {deletingId === categoryId ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingCategory(category)}
+                                    disabled={Boolean(deletingId)}
+                                    title="Delete category"
+                                    aria-label={`Delete ${category.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    {deletingId === categoryId ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
