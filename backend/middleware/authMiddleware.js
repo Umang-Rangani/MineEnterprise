@@ -43,7 +43,7 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-    const user = await User.findById(decoded.userId).select('_id companyId name email role roles status')
+    const user = await User.findById(decoded.userId).select('_id companyId name email role roles status permissionOverrides')
 
     if (!user || user.status !== 'Active') {
       clearAuthCookie(res)
@@ -80,6 +80,7 @@ const authMiddleware = async (req, res, next) => {
         email: user.email,
         role: user.role,
         roles: safeRoles,
+        permissionOverrides: user.permissionOverrides,
       }
 
       return next()
@@ -114,14 +115,14 @@ const authMiddleware = async (req, res, next) => {
         message: 'Company is not approved or is unavailable.',
       })
     }
-
     req.user = {
       userId: user._id.toString(),
-      companyId: user.companyId.toString(),
+      companyId: user.companyId.toString(), // ✅ Fixed
       name: user.name,
       email: user.email,
       role: user.role,
       roles: safeRoles,
+      permissionOverrides: user.permissionOverrides,
     }
 
     return next()

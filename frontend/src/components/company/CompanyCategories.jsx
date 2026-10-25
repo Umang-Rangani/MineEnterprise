@@ -1,550 +1,722 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Search, Plus, Tags, Pencil, Trash2, X, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Filter, Eye } from 'lucide-react'
-import axiosInstance from '../../api/axiosInstance'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Plus, RefreshCw, Search, Pencil, Trash2, X, Eye, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, LoaderCircle, Power, FolderTree, CheckCircle2, CircleX } from 'lucide-react'
 
-const initialForm = {
-  name: '',
-  code: '',
-  description: '',
-  status: 'Active',
+import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import Toast from '../../Toast/Toast'
+import TrashBox from '../../TrashBox/TrashBox'
+import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
+
+function getCategoryKey(category) {
+  return category?._id ? String(category._id) : category?.name
+}
+
+function getErrorMessage(error, fallback) {
+  return error.response?.data?.message || error.message || fallback
 }
 
 export default function CompanyCategories() {
+  const navigate = useNavigate()
+  const location = useLocation()
+
+  const { permissions } = useAuth()
+
+  const canList = hasPermission(permissions, 'category:list')
+  const canView = hasPermission(permissions, 'category:view')
+  const canCreate = hasPermission(permissions, 'category:create')
+  const canUpdate = hasPermission(permissions, 'category:update')
+  const canDelete = hasPermission(permissions, 'category:delete')
+
   const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState('All')
+  const [pageSize, setPageSize] = useState(5)
+  const [currentPage, setCurrentPage] = useState(1)
+
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 10,
+    limit: 5,
     total: 0,
     totalPages: 1,
   })
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingCategory, setEditingCategory] = useState(null)
-  const [form, setForm] = useState(initialForm)
-  const [deleteCategory, setDeleteCategory] = useState(null)
-  const [viewCategory, setViewCategory] = useState(null)
 
-  const loadCategories = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    inactive: 0,
+  })
 
-    try {
-      const response = await axiosInstance.get('/erp/categories', {
-        params: {
-          page,
-          limit: 10,
-          search: search.trim() || undefined,
-          status: statusFilter || undefined,
-        },
-      })
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-      const data = response.data
-      setCategories(data.categories || data.data?.categories || [])
-      setPagination(
-        data.pagination || {
-          page,
-          limit: 10,
-          total: data.total || 0,
-          totalPages: data.totalPages || 1,
-        },
-      )
-    } catch (err) {
-      setError(err.response?.data?.message)
-    } finally {
-      setLoading(false)
-    }
-  }, [page, search, statusFilter])
+  const [deletingCategory, setDeletingCategory] = useState(null)
+  const [deletingId, setDeletingId] = useState('')
 
-  useEffect(() => {
-    loadCategories()
-  }, [loadCategories])
+  const [statusTarget, setStatusTarget] = useState(null)
+  const [updatingStatusId, setUpdatingStatusId] = useState('')
 
-  useEffect(() => {
-    if (!success) return
+  const [toast, setToast] = useState(null)
+  const [error, setError] = useState('')
 
-    const timeout = setTimeout(() => setSuccess(''), 3000)
-    return () => clearTimeout(timeout)
-  }, [success])
+  const items = [{ title: 'Categories', link: null }]
 
-  const openCreateModal = () => {
-    setEditingCategory(null)
-    setForm(initialForm)
-    setError('')
-    setModalOpen(true)
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All'
+
+  const showToast = (type, message, duration = 3000) => {
+    setToast({ id: Date.now(), type, message, duration })
   }
 
-  const openEditModal = (category) => {
-    setEditingCategory(category)
-    setForm({
-      name: category.name || '',
-      code: category.code || '',
-      description: category.description || '',
-      status: category.status || 'Active',
+  const closeToast = () => setToast(null)
+
+  useEffect(() => {
+    document.title = 'Categories | MineERP'
+  }, [])
+
+  // Fetch categories and summary counts.
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchCategories() {
+      setIsFetching(true)
+      setError('')
+
+      try {
+        const { data } = await axiosInstance.get('/erp/categories', {
+          params: {
+            search: search.trim(),
+            status: statusFilter === 'All' ? undefined : statusFilter,
+            page: currentPage,
+            limit: pageSize,
+          },
+        })
+
+        if (data.success === false) {
+          throw new Error(data.message || 'Unable to load categories.')
+        }
+
+        if (cancelled) return
+
+        setCategories(Array.isArray(data.categories) ? data.categories : [])
+
+        const serverPagination = data.pagination || {}
+
+        setPagination({
+          page: Number(serverPagination.page) || currentPage,
+          limit: Number(serverPagination.limit) || pageSize,
+          total: Number(serverPagination.total) || 0,
+          totalPages: Math.max(1, Number(serverPagination.totalPages) || 1),
+        })
+
+        setStats({
+          total: Number(data.stats?.total) || 0,
+          active: Number(data.stats?.active) || 0,
+          inactive: Number(data.stats?.inactive) || 0,
+        })
+
+        const serverPage = Number(serverPagination.page) || currentPage
+
+        if (serverPage !== currentPage) {
+          setCurrentPage(serverPage)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setError(error.response?.data?.message || error.message || 'Unable to load categories.')
+        }
+      } finally {
+        if (!cancelled) {
+          setInitialLoading(false)
+          setIsFetching(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    fetchCategories()
+
+    return () => {
+      cancelled = true
+    }
+  }, [search, statusFilter, currentPage, pageSize, refreshKey])
+
+  // Show success message received from the form or details page.
+  useEffect(() => {
+    if (!location.state?.successMessage) return
+
+    showToast('success', location.state.successMessage)
+
+    navigate(location.pathname, {
+      replace: true,
+      state: null,
     })
-    setError('')
-    setModalOpen(true)
+  }, [location.state, location.pathname, navigate])
+
+  const handleRefresh = () => {
+    if (isFetching) return
+
+    setRefreshing(true)
+    setRefreshKey((key) => key + 1)
   }
 
-  const handleFormChange = (event) => {
-    const { name, value } = event.target
-    setForm((current) => ({ ...current, [name]: value }))
+  const openCreatePage = () => {
+    navigate('/company/categories/new')
   }
 
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    setSuccess('')
+  const openDetailsPage = (category) => {
+    if (!category?._id) return
 
-    const payload = {
-      name: form.name.trim(),
-      code: form.code.trim().toUpperCase(),
-      description: form.description.trim(),
-      status: form.status,
-    }
+    navigate(`/company/categories/${category._id}`)
+  }
+
+  const openEditPage = (category) => {
+    if (!category?._id) return
+
+    navigate(`/company/categories/${category._id}/edit`)
+  }
+
+  const handleToggleStatus = async () => {
+    if (!statusTarget?._id || updatingStatusId) return
+
+    const category = statusTarget
+    const nextStatus = category.status === 'Active' ? 'Inactive' : 'Active'
+    const categoryId = String(category._id)
+
+    setUpdatingStatusId(categoryId)
 
     try {
-      if (editingCategory) {
-        await axiosInstance.patch(`/erp/categories/${editingCategory._id}`, payload)
-        setSuccess('Category successfully updated.')
-      } else {
-        await axiosInstance.post('/erp/categories', payload)
-        setSuccess('Category successfully created.')
+      const { data } = await axiosInstance.patch(`/erp/categories/${categoryId}`, { status: nextStatus })
+
+      if (data.success === false) {
+        throw new Error(data.message || 'Unable to update category status.')
       }
 
-      setModalOpen(false)
-      setEditingCategory(null)
-      setForm(initialForm)
+      setStatusTarget(null)
 
-      if (!editingCategory && page !== 1) {
-        setPage(1)
-      } else {
-        await loadCategories()
-      }
+      showToast('success', data.message || `Category ${nextStatus.toLowerCase()} successfully.`)
+
+      setRefreshKey((key) => key + 1)
     } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error)
+      showToast('error', getErrorMessage(err, 'Unable to update category status.'))
     } finally {
-      setSaving(false)
+      setUpdatingStatusId('')
     }
   }
 
-  const handleDelete = async () => {
-    if (!deleteCategory) return
+  const handleDeleteCategory = async () => {
+    if (!deletingCategory?._id || deletingId) return
 
-    setSaving(true)
-    setError('')
+    const categoryId = String(deletingCategory._id)
+    setDeletingId(categoryId)
 
     try {
-      await axiosInstance.delete(`/erp/categories/${deleteCategory._id}`)
+      const { data } = await axiosInstance.delete(`/erp/categories/${categoryId}`)
 
-      setDeleteCategory(null)
-      setSuccess('Category successfully deleted.')
+      if (data.success === false) {
+        throw new Error(data.message || 'Unable to delete category.')
+      }
 
-      if (categories.length === 1 && page > 1) {
-        setPage((current) => current - 1)
+      setDeletingCategory(null)
+
+      showToast('success', data.message || 'Category deleted successfully.')
+
+      if (categories.length === 1 && currentPage > 1) {
+        setCurrentPage((page) => page - 1)
       } else {
-        await loadCategories()
+        setRefreshKey((key) => key + 1)
       }
     } catch (err) {
-      setError(err.response?.data?.message)
+      showToast('error', getErrorMessage(err, 'Unable to delete category.'))
     } finally {
-      setSaving(false)
+      setDeletingId('')
     }
+  }
+
+  const resetFilters = () => {
+    setSearch('')
+    setStatusFilter('All')
+    setCurrentPage(1)
+  }
+
+  const totalPages = Math.max(1, Number(pagination.totalPages) || 1)
+  const safePage = Math.min(currentPage, totalPages)
+  const totalFilteredCategories = Number(pagination.total) || 0
+
+  const startItem = totalFilteredCategories === 0 ? 0 : (safePage - 1) * pageSize + 1
+
+  const endItem = Math.min(safePage * pageSize, totalFilteredCategories)
+
+  if (!canList) {
+    return (
+      <div className="rounded-xl border border-rose-200 bg-white p-6 text-center">
+        <h2 className="text-base font-semibold text-slate-800">Access Denied</h2>
+        <p className="mt-1 text-sm text-slate-500">You do not have permission to view categories.</p>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-erp-muted">
-            <Tags size={16} />
-            <span>Inventory Management</span>
-            <span>/</span>
-            <span className="text-erp-text">Categories</span>
+    <div className="min-w-0 space-y-4 text-sm">
+      <Toast toast={toast} onClose={closeToast} />
+
+      {/* Header */}
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
+
+        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <BreadCrumb items={items} />
           </div>
 
-          <h1 className="mt-2 text-2xl font-bold text-erp-text">Categories</h1>
-          <p className="mt-1 text-sm text-erp-muted">Organize your products with categories and manage their status.</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={loadCategories}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-4 py-2.5 text-sm font-medium text-erp-text transition hover:bg-erp-hover disabled:opacity-60"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-
-          <button type="button" onClick={openCreateModal} className="inline-flex items-center justify-center gap-2 rounded-xl bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-erp-primary-hover">
-            <Plus size={17} />
-            Add Category
-          </button>
-        </div>
-      </div>
-
-      {success && (
-        <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          <Tags size={17} />
-          {success}
-        </div>
-      )}
-
-      {error && !modalOpen && (
-        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-erp-muted">Total Categories</p>
-              <p className="mt-2 text-2xl font-bold text-erp-text">{pagination.total ?? categories.length}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-erp-border px-3">
+              <span className="text-xs text-slate-500">Total</span>
+              <span className="text-sm font-bold text-slate-900">{stats.total}</span>
             </div>
-            <div className="rounded-xl bg-erp-primary-light p-3 text-erp-primary">
-              <Tags size={22} />
-            </div>
-          </div>
-        </div>
 
-        <div className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-erp-muted">Active on This Page</p>
-              <p className="mt-2 text-2xl font-bold text-erp-text">{categories.filter((category) => category.status === 'Active').length}</p>
+            <div className="hidden h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-emerald-200 px-3 sm:flex">
+              <span className="text-xs text-emerald-700">Active</span>
+              <span className="text-sm font-bold text-slate-900">{stats.active}</span>
             </div>
-            <div className="rounded-xl bg-green-50 p-3 text-green-700">
-              <Tags size={22} />
+
+            <div className="hidden h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-rose-200 px-3 md:flex">
+              <span className="text-xs text-rose-700">Inactive</span>
+              <span className="text-sm font-bold text-slate-900">{stats.inactive}</span>
             </div>
-          </div>
-        </div>
-      </div>
 
-      <div className="rounded-2xl border border-erp-border bg-erp-surface p-4 shadow-sm">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-muted" />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
-              placeholder="Search category name, code or description..."
-              className="w-full rounded-xl border border-erp-border bg-erp-bg py-2.5 pl-10 pr-4 text-sm text-erp-text outline-none transition placeholder:text-erp-muted focus:border-erp-primary"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Filter size={17} className="shrink-0 text-erp-muted" />
-            <select
-              value={statusFilter}
-              onChange={(event) => {
-                setStatusFilter(event.target.value)
-                setPage(1)
-              }}
-              className="min-w-40 rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 text-sm text-erp-text outline-none focus:border-erp-primary"
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isFetching}
+              title="Refresh categories"
+              aria-label="Refresh categories"
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <option value="">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-sm">
-        <div className="flex items-center justify-between border-b border-erp-border px-5 py-4">
-          <div>
-            <h2 className="font-semibold text-erp-text">Category Catalogue</h2>
-            <p className="mt-1 text-xs text-erp-muted">{pagination.total ?? categories.length} category(s) found</p>
-          </div>
-          <span className="rounded-lg bg-erp-bg px-3 py-1.5 text-xs font-medium text-erp-muted">
-            Page {pagination.page || page} of {pagination.totalPages || 1}
-          </span>
-        </div>
-
-        {loading ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-erp-muted">
-            <RefreshCw size={26} className="animate-spin text-erp-primary" />
-            <p className="text-sm">Loading categories...</p>
-          </div>
-        ) : categories.length === 0 ? (
-          <div className="flex min-h-64 flex-col items-center justify-center px-5 text-center">
-            <div className="rounded-2xl bg-erp-bg p-4 text-erp-muted">
-              <Tags size={30} />
-            </div>
-            <h3 className="mt-4 font-semibold text-erp-text">No categories found</h3>
-            <p className="mt-1 max-w-sm text-sm text-erp-muted">Add your first category or change your search and filters.</p>
-            <button type="button" onClick={openCreateModal} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover">
-              <Plus size={16} />
-              Add Category
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">Refresh</span>
             </button>
+
+            {canCreate && (
+              <button
+                type="button"
+                onClick={openCreatePage}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+              >
+                <Plus size={15} />
+                <span>Create Category</span>
+              </button>
+            )}
           </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[750px] text-left">
-                <thead className="bg-erp-bg text-xs uppercase tracking-wide text-erp-muted">
-                  <tr>
-                    <th className="px-5 py-4 font-semibold">Category</th>
-                    <th className="px-4 py-4 font-semibold">Code</th>
-                    <th className="px-4 py-4 font-semibold">Description</th>
-                    <th className="px-4 py-4 font-semibold">Status</th>
-                    <th className="px-5 py-4 text-right font-semibold">Actions</th>
-                  </tr>
-                </thead>
+        </div>
+      </section>
 
-                <tbody className="divide-y divide-erp-border">
-                  {categories.map((category) => (
-                    <tr key={category._id} className="transition hover:bg-erp-hover">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-                            <Tags size={19} />
-                          </div>
-                          <span className="text-sm font-semibold text-erp-text">{category.name}</span>
-                        </div>
-                      </td>
+      {/* Categories list */}
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        {/* Search and filters */}
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-3 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-1 lg:flex-wrap lg:justify-between">
+            <div className="flex min-w-0 gap-3 sm:gap-5">
+              <div className="relative min-w-0 flex-1 lg:w-100 lg:flex-none">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
-                      <td className="px-4 py-4 text-sm font-medium text-erp-text">{category.code || '—'}</td>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value)
+                    setCurrentPage(1)
+                  }}
+                  placeholder="Search categories..."
+                  aria-label="Search categories"
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition placeholder:text-slate-400 focus:border-erp-primary focus:bg-white focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
+                />
+              </div>
 
-                      <td className="max-w-xs px-4 py-4 text-sm text-erp-muted">
-                        <p className="truncate">{category.description || 'No description'}</p>
-                      </td>
-
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${category.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{category.status}</span>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setViewCategory(category)}
-                            title="View category"
-                            className="rounded-lg border border-erp-border p-2 text-erp-muted transition hover:border-erp-primary hover:bg-erp-primary-light hover:text-erp-primary"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(category)}
-                            title="Edit category"
-                            className="rounded-lg border border-erp-border p-2 text-erp-muted transition hover:border-erp-primary hover:bg-erp-primary-light hover:text-erp-primary"
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button type="button" onClick={() => setDeleteCategory(category)} title="Delete category" className="rounded-lg border border-erp-border p-2 text-erp-muted transition hover:border-red-200 hover:bg-red-50 hover:text-red-600">
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  title="Clear filters"
+                  aria-label="Clear filters"
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:text-sm"
+                >
+                  <FilterX size={14} />
+                </button>
+              )}
             </div>
 
-            <div className="flex flex-col gap-3 border-t border-erp-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-erp-muted">
-                Showing {categories.length} of {pagination.total ?? categories.length} categories
+            <div className="flex gap-3 sm:gap-5">
+              <select
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value)
+                  setCurrentPage(1)
+                }}
+                aria-label="Filter categories by status"
+                className="h-9 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
+              >
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Table and loading */}
+        <div className="relative min-h-[220px]">
+          {initialLoading ? (
+            <div className="flex min-h-[280px] items-center justify-center">
+              <Loading fullScreen={false} label="Loading categories" description="Fetching category records..." className="!h-full min-h-[220px]" />
+            </div>
+          ) : categories.length === 0 ? (
+            <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                <PackageOpen size={24} />
+              </div>
+
+              <h3 className="mt-3 text-sm font-bold text-slate-800">{hasActiveFilters ? 'No matching categories' : 'No categories available'}</h3>
+
+              <p className="mt-1 max-w-xs text-xs text-slate-500">{hasActiveFilters ? 'Try another search or change your filter.' : 'Create a category to start organizing your products.'}</p>
+
+              {hasActiveFilters ? (
+                <button type="button" onClick={resetFilters} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <Filter size={14} />
+                  Clear filters
+                </button>
+              ) : (
+                !hasActiveFilters &&
+                canCreate && (
+                  <button type="button" onClick={openCreatePage} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                    <Plus size={15} />
+                    Create Category
+                  </button>
+                )
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[850px] text-left">
+                  <thead className="bg-slate-50">
+                    <tr className="border-b border-slate-100">
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Category</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Code</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+                      <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {categories.map((category) => {
+                      const isInactive = category.status === 'Inactive'
+                      const categoryId = String(category._id || '')
+
+                      return (
+                        <tr key={getCategoryKey(category)} className="transition hover:bg-slate-50/70">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                                <FolderTree size={17} />
+                              </div>
+
+                              <div className="min-w-0">
+                                <p className="max-w-52 truncate text-xs font-semibold text-slate-800 sm:text-sm">{category.name || 'Unnamed category'}</p>
+                                <p className="mt-0.5 text-[10px] text-slate-400">{category.createdAt ? `Created ${new Date(category.createdAt).toLocaleDateString()}` : 'Category'}</p>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="inline-flex max-w-36 truncate rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">{category.code || '—'}</span>
+                          </td>
+
+                          <td className="max-w-[260px] px-4 py-3">
+                            <p className="line-clamp-2 text-xs leading-5 text-slate-500">{category.description || 'No description provided.'}</p>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ${isInactive ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${isInactive ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                              {isInactive ? 'Inactive' : 'Active'}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {canView && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetailsPage(category)}
+                                  title="View category"
+                                  aria-label={`View ${category.name}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                >
+                                  <Eye size={15} />
+                                </button>
+                              )}
+
+                              {canUpdate && (
+                                <button
+                                  type="button"
+                                  onClick={() => openEditPage(category)}
+                                  title="Edit category"
+                                  aria-label={`Edit ${category.name}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                              )}
+
+                              {canUpdate && (
+                                <button
+                                  type="button"
+                                  onClick={() => setStatusTarget(category)}
+                                  disabled={Boolean(updatingStatusId)}
+                                  title={isInactive ? 'Activate category' : 'Deactivate category'}
+                                  aria-label={`${isInactive ? 'Activate' : 'Deactivate'} ${category.name}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                    isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                                  }`}
+                                >
+                                  {updatingStatusId === categoryId ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
+                                </button>
+                              )}
+
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  onClick={() => setDeletingCategory(category)}
+                                  disabled={Boolean(deletingId)}
+                                  title="Delete category"
+                                  aria-label={`Delete ${category.name}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  {deletingId === categoryId ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="divide-y divide-slate-100 md:hidden">
+                {categories.map((category) => {
+                  const isInactive = category.status === 'Inactive'
+                  const categoryId = String(category._id || '')
+
+                  return (
+                    <div key={getCategoryKey(category)} className="space-y-3 p-3">
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                          <FolderTree size={18} />
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-semibold text-slate-900">{category.name || 'Unnamed category'}</p>
+
+                          <p className="mt-1 break-words text-xs text-slate-500">Code: {category.code || '—'}</p>
+
+                          <p className="mt-1 break-words text-xs leading-5 text-slate-500">{category.description || 'No description provided.'}</p>
+                        </div>
+
+                        <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-semibold ${isInactive ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${isInactive ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                          {isInactive ? 'Inactive' : 'Active'}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2.5">
+                        {canView && (
+                          <button
+                            type="button"
+                            onClick={() => openDetailsPage(category)}
+                            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            <Eye size={14} />
+                            View
+                          </button>
+                        )}
+
+                        {canUpdate && (
+                          <button type="button" onClick={() => openEditPage(category)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+                        )}
+
+                        {canUpdate && (
+                          <button
+                            type="button"
+                            onClick={() => setStatusTarget(category)}
+                            disabled={Boolean(updatingStatusId)}
+                            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold disabled:opacity-50 ${
+                              isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-orange-200 bg-orange-50 text-orange-600'
+                            }`}
+                          >
+                            <Power size={14} />
+                            {isInactive ? 'Activate' : 'Deactivate'}
+                          </button>
+                        )}
+
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingCategory(category)}
+                            disabled={Boolean(deletingId)}
+                            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                          >
+                            {deletingId === categoryId ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Loading overlay */}
+          {!initialLoading && isFetching && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
+              <Loading fullScreen={false} label="Updating categories" description="Refreshing category records..." className="!h-full min-h-[220px]" />
+            </div>
+          )}
+
+          {/* Fetch error with retry */}
+          {!initialLoading && error && categories.length === 0 && (
+            <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-center">
+              <p className="text-xs text-rose-700">{error}</p>
+              <button type="button" onClick={handleRefresh} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">
+                <RefreshCw size={13} />
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {!initialLoading && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs text-slate-500 sm:text-sm">
+                Showing{' '}
+                <span className="font-semibold text-slate-700">
+                  {startItem}–{endItem}
+                </span>{' '}
+                of <span className="font-semibold text-slate-700">{totalFilteredCategories}</span> categories
               </p>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  className="inline-flex items-center gap-1 rounded-lg border border-erp-border px-3 py-2 text-sm text-erp-text hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+                <label htmlFor="category-page-size" className="whitespace-nowrap text-xs text-slate-500">
+                  Rows:
+                </label>
+
+                <select
+                  id="category-page-size"
+                  value={pageSize}
+                  onChange={(event) => {
+                    setPageSize(Number(event.target.value))
+                    setCurrentPage(1)
+                  }}
+                  disabled={isFetching}
+                  className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
                 >
-                  <ChevronLeft size={16} />
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={page >= (pagination.totalPages || 1)}
-                  onClick={() => setPage((current) => Math.min(pagination.totalPages || 1, current + 1))}
-                  className="inline-flex items-center gap-1 rounded-lg border border-erp-border px-3 py-2 text-sm text-erp-text hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-erp-border px-5 py-4 sm:px-6">
-              <div>
-                <h2 className="text-lg font-bold text-erp-text">{editingCategory ? 'Edit Category' : 'Add Category'}</h2>
-                <p className="mt-1 text-sm text-erp-muted">Enter the category details below.</p>
-              </div>
-              <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg p-2 text-erp-muted hover:bg-erp-hover hover:text-erp-text">
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit}>
-              <div className="grid max-h-[65vh] grid-cols-1 gap-4 overflow-y-auto p-5 sm:grid-cols-2 sm:p-6">
-                {error && (
-                  <div className="col-span-full flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    <AlertCircle size={17} className="mt-0.5 shrink-0" />
-                    <span>{error}</span>
-                  </div>
-                )}
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Category Name *
-                  <input
-                    required
-                    maxLength={100}
-                    name="name"
-                    value={form.name}
-                    onChange={handleFormChange}
-                    placeholder="e.g. Cricket Equipment"
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Category Code
-                  <input
-                    maxLength={40}
-                    name="code"
-                    value={form.code}
-                    onChange={handleFormChange}
-                    placeholder="e.g. CRICKET"
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal uppercase outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text sm:col-span-2">
-                  Description
-                  <textarea
-                    rows={3}
-                    maxLength={500}
-                    name="description"
-                    value={form.description}
-                    onChange={handleFormChange}
-                    placeholder="Describe this category..."
-                    className="w-full resize-y rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Status
-                  <select name="status" value={form.status} onChange={handleFormChange} className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary">
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="flex flex-col-reverse gap-2 border-t border-erp-border px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
-                <button type="button" onClick={() => setModalOpen(false)} disabled={saving} className="rounded-xl border border-erp-border px-5 py-2.5 text-sm font-semibold text-erp-text hover:bg-erp-hover disabled:opacity-60">
-                  Cancel
-                </button>
-                <button type="submit" disabled={saving} className="rounded-xl bg-erp-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60">
-                  {saving ? 'Saving...' : editingCategory ? 'Update Category' : 'Create Category'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {deleteCategory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-erp-border bg-erp-surface p-6 shadow-2xl">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
-              <Trash2 size={22} />
-            </div>
-            <h2 className="mt-4 text-lg font-bold text-erp-text">Delete Category?</h2>
-            <p className="mt-2 text-sm leading-6 text-erp-muted">
-              Are you sure you want to delete <span className="font-semibold text-erp-text">{deleteCategory.name}</span>? Products linked to this category must be reassigned before it can be deleted.
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setDeleteCategory(null)} disabled={saving} className="rounded-xl border border-erp-border px-4 py-2.5 text-sm font-semibold text-erp-text hover:bg-erp-hover disabled:opacity-60">
-                Cancel
-              </button>
-              <button type="button" onClick={handleDelete} disabled={saving} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">
-                {saving ? 'Deleting...' : 'Delete Category'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {viewCategory && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-erp-border px-5 py-4 sm:px-6">
-              <div>
-                <h2 className="text-lg font-bold text-erp-text">Category Details</h2>
-                <p className="mt-1 text-sm text-erp-muted">Complete category information.</p>
-              </div>
-              <button type="button" onClick={() => setViewCategory(null)} className="rounded-lg p-2 text-erp-muted hover:bg-erp-hover hover:text-erp-text">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2 sm:p-6">
-              {[
-                ['Category Name', viewCategory.name],
-                ['Category Code', viewCategory.code || '—'],
-                ['Status', viewCategory.status || '—'],
-                ['Created At', viewCategory.createdAt ? new Date(viewCategory.createdAt).toLocaleString('en-IN') : '—'],
-                ['Updated At', viewCategory.updatedAt ? new Date(viewCategory.updatedAt).toLocaleString('en-IN') : '—'],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-erp-border bg-erp-bg p-3">
-                  <p className="text-xs font-medium text-erp-muted">{label}</p>
-                  <p className="mt-1 break-words text-sm font-semibold text-erp-text">{value}</p>
-                </div>
-              ))}
-
-              <div className="rounded-xl border border-erp-border bg-erp-bg p-3 sm:col-span-2">
-                <p className="text-xs font-medium text-erp-muted">Description</p>
-                <p className="mt-1 whitespace-pre-wrap break-words text-sm text-erp-text">{viewCategory.description || 'No description available.'}</p>
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                </select>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-erp-border px-5 py-4 sm:px-6">
-              <button type="button" onClick={() => setViewCategory(null)} className="rounded-xl border border-erp-border px-5 py-2.5 text-sm font-semibold text-erp-text hover:bg-erp-hover">
-                Close
-              </button>
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => {
-                  const category = viewCategory
-                  setViewCategory(null)
-                  openEditModal(category)
-                }}
-                className="inline-flex items-center gap-2 rounded-xl bg-erp-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover"
+                disabled={safePage <= 1 || isFetching}
+                onClick={() => setCurrentPage(1)}
+                aria-label="First page"
+                className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Pencil size={15} />
-                Edit Category
+                1
+              </button>
+
+              <button
+                type="button"
+                disabled={safePage <= 1 || isFetching}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                aria-label="Previous page"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <span className="min-w-20 px-1 text-center text-xs text-slate-600 sm:text-sm">
+                Page {safePage} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                disabled={safePage >= totalPages || isFetching}
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                aria-label="Next page"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight size={16} />
+              </button>
+
+              <button
+                type="button"
+                disabled={safePage >= totalPages || isFetching}
+                onClick={() => setCurrentPage(totalPages)}
+                aria-label="Last page"
+                className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {totalPages}
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </section>
+
+      {/* Delete confirmation */}
+      <TrashBox
+        isOpen={Boolean(deletingCategory)}
+        onClose={() => {
+          if (!deletingId) setDeletingCategory(null)
+        }}
+        title="Delete Category"
+        message={`Are you sure you want to delete "${deletingCategory?.name || 'this category'}"? Categories assigned to products cannot be deleted. Reassign those products first.`}
+        actionButtonText="Delete Category"
+        cancelButtonText="Cancel"
+        onAction={handleDeleteCategory}
+        isProcessing={Boolean(deletingId)}
+      />
+
+      {/* Activate / Deactivate confirmation */}
+      <TrashBox
+        isOpen={Boolean(statusTarget)}
+        onClose={() => {
+          if (!updatingStatusId) setStatusTarget(null)
+        }}
+        title={statusTarget?.status === 'Inactive' ? 'Activate Category' : 'Deactivate Category'}
+        message={statusTarget?.status === 'Inactive' ? `Are you sure you want to activate "${statusTarget?.name}"?` : `Are you sure you want to deactivate "${statusTarget?.name}"?`}
+        actionButtonText={statusTarget?.status === 'Inactive' ? 'Activate Category' : 'Deactivate Category'}
+        cancelButtonText="Cancel"
+        onAction={handleToggleStatus}
+        isProcessing={Boolean(updatingStatusId)}
+        variant={statusTarget?.status === 'Inactive' ? 'activate' : 'deactivate'}
+      />
     </div>
   )
 }

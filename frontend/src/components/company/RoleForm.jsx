@@ -1,10 +1,108 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronRight, ShieldCheck, LoaderCircle, AlertCircle, Trash2, Save, Search } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, ShieldCheck, LoaderCircle, AlertCircle, Trash2, Save, Search, RefreshCw, LockKeyhole, CheckCircle2, Info, Users } from 'lucide-react'
+
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import TrashBox from '../../TrashBox/TrashBox'
+import Loading from '../Loading/Loading'
+
+function normalizePermissionGroups(permissions) {
+  if (Array.isArray(permissions)) {
+    return permissions
+      .filter((item) => item && typeof item === 'object')
+      .map((section, index) => ({
+        section: section.section || section.name || `Section ${index + 1}`,
+        permissions: Array.isArray(section.permissions) ? section.permissions : [],
+      }))
+  }
+
+  if (permissions && typeof permissions === 'object') {
+    if (Array.isArray(permissions.sections)) {
+      return normalizePermissionGroups(permissions.sections)
+    }
+
+    return Object.entries(permissions).map(([section, items]) => ({
+      section,
+      permissions: Array.isArray(items) ? items.filter((item) => typeof item === 'string') : Array.isArray(items?.permissions) ? items.permissions : [],
+    }))
+  }
+
+  return []
+}
+
+function flattenPermissions(permissions) {
+  if (Array.isArray(permissions)) {
+    return [...new Set(permissions.filter((item) => typeof item === 'string'))]
+  }
+
+  if (permissions && typeof permissions === 'object') {
+    return [...new Set(Object.values(permissions).flatMap((items) => (Array.isArray(items) ? items.filter((item) => typeof item === 'string') : [])))]
+  }
+
+  return []
+}
+
+function humanize(value) {
+  return String(value || '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_:-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function getPermissionLabel(permission) {
+  const parts = String(permission).split(/[:._]/)
+  const action = parts[parts.length - 1]?.toUpperCase()
+
+  const labels = {
+    LIST: 'View List',
+    VIEW: 'View Details',
+    CREATE: 'Create',
+    UPDATE: 'Edit',
+    EDIT: 'Edit',
+    DELETE: 'Delete',
+    READ: 'View',
+    MANAGE: 'Manage',
+    APPROVE: 'Approve',
+    EXPORT: 'Export',
+    IMPORT: 'Import',
+  }
+
+  return labels[action] || humanize(action || permission)
+}
+
+function getPermissionDescription(permission) {
+  const action = String(permission).split(/[:._]/).pop()?.toUpperCase()
+
+  const descriptions = {
+    LIST: 'View records and lists',
+    VIEW: 'Open and view record details',
+    CREATE: 'Create new records',
+    UPDATE: 'Edit existing records',
+    EDIT: 'Edit existing records',
+    DELETE: 'Delete records',
+    READ: 'View information',
+    MANAGE: 'Manage this section',
+    APPROVE: 'Approve pending requests',
+    EXPORT: 'Export data',
+    IMPORT: 'Import data',
+  }
+
+  return descriptions[action] || `Allow ${getPermissionLabel(permission).toLowerCase()} access`
+}
+
+function getSectionIcon(section) {
+  const value = String(section || '').toLowerCase()
+
+  if (value.includes('employee') || value.includes('user')) return Users
+  if (value.includes('role') || value.includes('permission')) return ShieldCheck
+  if (value.includes('product') || value.includes('inventory')) return LockKeyhole
+
+  return ShieldCheck
+}
 
 export default function RoleForm({ initialRole = null, availablePermissions: initialAvailablePermissions = [], onSave }) {
   const navigate = useNavigate()
@@ -16,34 +114,32 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
   const isPredefined = location.state?.isPredefined === true || routeRole?.type === 'Predefined'
 
   const roleId = id || routeRole?._id || routeRole?.name || ''
-
   const isEdit = Boolean(id || routeRole?._id || isPredefined)
-
   const roleName = isPredefined ? routeRole?.name || id || '' : ''
 
   const [form, setForm] = useState({
     name: routeRole?.name || '',
     description: routeRole?.description || '',
-    permissions: Array.isArray(routeRole?.permissions) ? [...routeRole.permissions] : Object.values(routeRole?.permissions || {}).flatMap((items) => (Array.isArray(items) ? items : [])),
+    permissions: flattenPermissions(routeRole?.permissions),
   })
 
-  const [availablePermissions, setAvailablePermissions] = useState(location.state?.availablePermissions || initialAvailablePermissions)
+  const [availablePermissions, setAvailablePermissions] = useState(() => normalizePermissionGroups(location.state?.availablePermissions || initialAvailablePermissions))
 
   const [expandedSections, setExpandedSections] = useState({})
   const [errors, setErrors] = useState({})
-  const [loading, setLoading] = useState(isEdit)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showDeleteBox, setShowDeleteBox] = useState(false)
   const [apiError, setApiError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
   const [toast, setToast] = useState(null)
   const [permissionSearch, setPermissionSearch] = useState('')
 
   const items = [
     { title: 'Roles & Permissions', link: '/company/roles' },
     {
-      title: isEdit ? (isPredefined ? `Edit ${roleName || 'Role'} Permissions` : 'Edit Role') : 'Create Custom Role',
+      title: isEdit ? (isPredefined ? `${roleName || 'Role'} Permissions` : 'Edit Role') : 'Create Custom Role',
       link: null,
     },
   ]
@@ -62,49 +158,47 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
       try {
         const { data } = await axiosInstance.get('/erp/roles')
 
-        if (!data.success) {
+        if (data.success === false) {
           throw new Error(data.message || 'Unable to load roles.')
         }
 
         if (!active) return
 
-        const permissionGroups = data.availablePermissions || []
+        const permissionGroups = normalizePermissionGroups(data.availablePermissions)
 
         setAvailablePermissions(permissionGroups)
 
         setExpandedSections(Object.fromEntries(permissionGroups.map((section) => [section.section, true])))
 
         if (isEdit) {
-          const roles = data.roles || []
+          const roles = Array.isArray(data.roles) ? data.roles : []
 
           const role = roles.find((item) => {
             if (isPredefined) {
-              return item.type === 'Predefined' && item.name === roleId
+              return item.type === 'Predefined' && item.name === (routeRole?.name || roleId)
             }
 
             return item.type === 'Custom' && String(item._id) === String(roleId)
           })
 
           if (!role) {
-            throw new Error('Role not found. Please return to Roles & Permissions and try again.')
+            throw new Error('Role not found. Return to Roles & Permissions and try again.')
           }
 
           if (role.type === 'Custom' && role.isSystem) {
             throw new Error('System roles cannot be edited.')
           }
 
-          const permissions = Array.isArray(role.permissions) ? [...role.permissions] : Object.values(role.permissions || {}).flatMap((values) => (Array.isArray(values) ? values : []))
-
           setForm({
             name: role.name || '',
             description: role.description || '',
-            permissions,
+            permissions: flattenPermissions(role.permissions),
           })
         } else if (routeRole) {
           setForm({
             name: routeRole.name || '',
             description: routeRole.description || '',
-            permissions: Array.isArray(routeRole.permissions) ? [...routeRole.permissions] : Object.values(routeRole.permissions || {}).flatMap((values) => (Array.isArray(values) ? values : [])),
+            permissions: flattenPermissions(routeRole.permissions),
           })
         }
       } catch (error) {
@@ -139,7 +233,6 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
     }))
 
     setApiError('')
-    setSuccessMessage('')
   }
 
   function togglePermission(permission) {
@@ -149,7 +242,6 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
     }))
 
     setApiError('')
-    setSuccessMessage('')
   }
 
   function toggleSection(permissions) {
@@ -161,7 +253,6 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
     }))
 
     setApiError('')
-    setSuccessMessage('')
   }
 
   function toggleExpanded(section) {
@@ -169,6 +260,39 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
       ...current,
       [section]: !(current[section] ?? true),
     }))
+  }
+
+  async function refreshPermissions() {
+    if (refreshing || saving || deleting) return
+
+    setRefreshing(true)
+    setApiError('')
+
+    try {
+      const { data } = await axiosInstance.get('/erp/roles')
+
+      if (data.success === false) {
+        throw new Error(data.message || 'Unable to refresh permissions.')
+      }
+
+      const permissionGroups = normalizePermissionGroups(data.availablePermissions)
+
+      setAvailablePermissions(permissionGroups)
+
+      setExpandedSections((current) => ({
+        ...current,
+        ...Object.fromEntries(permissionGroups.map((section) => [section.section, current[section.section] ?? true])),
+      }))
+
+      setToast({
+        type: 'success',
+        message: 'Permissions refreshed successfully.',
+      })
+    } catch (error) {
+      setApiError(error.response?.data?.message || error.message || 'Unable to refresh permissions.')
+    } finally {
+      setRefreshing(false)
+    }
   }
 
   async function handleSubmit(event) {
@@ -188,7 +312,6 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
 
     setErrors(nextErrors)
     setApiError('')
-    setSuccessMessage('')
 
     if (Object.keys(nextErrors).length > 0) return
 
@@ -204,16 +327,14 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
       let response
 
       if (isEdit && isPredefined) {
-        response = await axiosInstance.patch(`/erp/roles/predefined/${encodeURIComponent(roleId)}`, {
-          permissions: values.permissions,
-        })
+        response = await axiosInstance.patch(`/erp/roles/predefined/${encodeURIComponent(roleId)}`, { permissions: values.permissions })
       } else if (isEdit) {
         response = await axiosInstance.patch(`/erp/roles/${encodeURIComponent(roleId)}`, values)
       } else {
         response = await axiosInstance.post('/erp/roles', values)
       }
 
-      if (!response.data.success) {
+      if (response.data.success === false) {
         throw new Error(response.data.message || 'Unable to save role.')
       }
 
@@ -221,12 +342,30 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
         await onSave(response.data.role || values)
       }
 
-      const message = response.data.message || (isEdit ? 'Role updated successfully.' : 'Role created successfully.')
+      const savedRole = response.data.role
 
-      navigate('/company/roles', {
-        replace: true,
-        state: { successMessage: message },
-      })
+      if (savedRole?._id) {
+        navigate(`/company/roles/${savedRole._id}`, {
+          replace: true,
+          state: {
+            successMessage: response.data.message || (isEdit ? 'Role updated successfully.' : 'Role created successfully.'),
+          },
+        })
+      } else if (isPredefined) {
+        navigate(`/company/roles/${encodeURIComponent(roleId)}`, {
+          replace: true,
+          state: {
+            successMessage: response.data.message || 'Permissions updated successfully.',
+          },
+        })
+      } else {
+        navigate('/company/roles', {
+          replace: true,
+          state: {
+            successMessage: response.data.message || 'Role saved successfully.',
+          },
+        })
+      }
     } catch (error) {
       setApiError(error.response?.data?.message || error.message || 'Something went wrong while saving the role.')
     } finally {
@@ -235,9 +374,7 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
   }
 
   async function handleDeleteRole() {
-    if (!isEdit || isPredefined || !roleId || deleting || saving) {
-      return
-    }
+    if (!isEdit || isPredefined || !roleId || deleting || saving) return
 
     setDeleting(true)
     setApiError('')
@@ -245,7 +382,7 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
     try {
       const { data } = await axiosInstance.delete(`/erp/roles/${encodeURIComponent(roleId)}`)
 
-      if (!data.success) {
+      if (data.success === false) {
         throw new Error(data.message || 'Unable to delete role.')
       }
 
@@ -271,91 +408,67 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
 
   const normalizedPermissionSearch = permissionSearch.trim().toLowerCase()
 
+  const visibleSections = availablePermissions
+    .map((section) => ({
+      ...section,
+      visiblePermissions: (section.permissions || []).filter((permission) => {
+        if (!normalizedPermissionSearch) return true
+
+        return `${permission} ${String(permission).split(':').join(' ')} ${getPermissionLabel(permission)}`.toLowerCase().includes(normalizedPermissionSearch)
+      }),
+    }))
+    .filter((section) => !normalizedPermissionSearch || section.visiblePermissions.length > 0)
+
   if (loading) {
     return (
-      <div className="flex min-h-[50vh] items-center justify-center bg-erp-bg p-6">
-        <div className="flex items-center gap-3 text-sm font-medium text-erp-text-secondary">
-          <LoaderCircle size={22} className="animate-spin text-erp-primary" />
-          Loading role information...
-        </div>
+      <div className="min-w-0 space-y-3">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex h-[calc(100%-4px)] items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <Loading label={id ? 'Loading role for editing...' : 'Preparing new role form...'} />
       </div>
     )
   }
 
   return (
-    <div className="min-w-0 space-y-4 bg-erp-bg text-erp-text">
-      <Toast toast={toast} onClose={() => setToast(null)} />
+    <div className="min-w-0 space-y-3">
+      {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
 
-      <div className="flex min-h-10 min-w-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center overflow-hidden">
-          <BreadCrumb items={items} />
-        </div>
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
 
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={goBack}
-            disabled={saving || deleting}
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-2.5 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:opacity-50 sm:px-3 sm:text-sm"
-          >
-            <ArrowLeft size={15} />
-            <span>Back</span>
-          </button>
-
-          {isEdit && !isPredefined && (
-            <button
-              type="button"
-              onClick={() => setShowDeleteBox(true)}
-              disabled={saving || deleting}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50 sm:px-3 sm:text-sm"
-            >
-              <Trash2 size={15} />
-              <span className="hidden sm:inline">Delete Role</span>
-              <span className="sm:hidden">Delete</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex min-w-0 items-center gap-3 rounded-xl border border-erp-border bg-erp-surface p-4 shadow-sm sm:p-5">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-          <ShieldCheck size={22} />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-bold tracking-tight sm:text-xl">{isEdit ? (isPredefined ? `Edit ${roleName || 'Role'} Permissions` : 'Edit Role') : 'Create Custom Role'}</h1>
-
-          <p className="mt-1 text-xs text-erp-text-secondary sm:text-sm">
-            {isPredefined ? 'Update permissions for this predefined role in your company.' : isEdit ? 'Update role details and access permissions.' : 'Create a custom role and define its permissions.'}
-          </p>
-        </div>
-
-        <span className="hidden shrink-0 rounded-lg bg-erp-primary-light px-3 py-2 text-xs font-semibold text-erp-primary sm:inline-flex">{isPredefined ? 'Predefined role' : isEdit ? 'Edit mode' : 'New role'}</span>
-      </div>
-
-      {apiError && (
-        <div role="alert" className="flex items-start gap-2.5 rounded-xl border border-red-200 bg-red-50 p-3.5 text-sm text-red-700">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <p className="min-w-0 break-words">{apiError}</p>
-        </div>
-      )}
-
-      {successMessage && (
-        <div role="status" className="rounded-xl border border-green-200 bg-green-50 p-3.5 text-sm text-green-700">
-          {successMessage}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-sm">
-          <div className="border-b border-erp-border px-4 py-3.5 sm:px-5">
-            <h2 className="text-sm font-bold">Basic Information</h2>
-            <p className="mt-1 text-xs text-erp-text-secondary">{isPredefined ? 'This predefined role name cannot be changed.' : 'Enter the role name and its responsibilities.'}</p>
+        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <BreadCrumb items={items} />
           </div>
 
-          <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:p-5">
-            <div className="min-w-0">
-              <label htmlFor="role-name" className="mb-1.5 block text-xs font-semibold sm:text-sm">
+          <div className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary">
+            <ShieldCheck size={14} />
+            <span>Access Control</span>
+          </div>
+        </div>
+      </section>
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+              <ShieldCheck size={16} />
+            </div>
+
+            <div>
+              <h2 className="text-sm font-bold text-erp-text">Basic Information</h2>
+              <p className="text-[11px] text-erp-text-secondary">{isPredefined ? 'The predefined role name cannot be changed.' : 'Enter the role details and responsibilities'}</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 p-3 sm:grid-cols-2">
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="role-name" className="block text-xs font-semibold text-erp-text-secondary">
                 Role Name {!isPredefined && <span className="text-erp-danger">*</span>}
               </label>
 
@@ -368,63 +481,70 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
                 value={form.name}
                 onChange={(event) => updateField('name', event.target.value)}
                 placeholder="e.g. Junior Accountant"
-                className={`h-10 w-full rounded-lg border border-erp-border px-3 text-sm outline-none transition focus:border-erp-focus focus:ring-2 focus:ring-erp-ring ${
-                  isPredefined ? 'cursor-not-allowed bg-erp-surface-secondary text-erp-text-secondary' : 'bg-erp-surface'
+                className={`h-10 w-full rounded-lg border px-3 text-xs outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 ${errors.name ? 'border-red-400' : 'border-erp-border'} ${
+                  isPredefined ? 'cursor-not-allowed bg-erp-bg text-erp-text-secondary' : 'bg-erp-surface text-erp-text'
                 }`}
               />
 
-              {errors.name && <p className="mt-1.5 text-xs text-erp-danger">{errors.name}</p>}
+              {errors.name && <p className="text-[11px] text-red-600">{errors.name}</p>}
 
-              <p className="mt-1 text-right text-[11px] text-erp-text-muted">{form.name.length}/100</p>
+              <p className="text-right text-[10px] text-erp-text-muted">{form.name.length}/100</p>
             </div>
 
-            <div className="min-w-0">
-              <label htmlFor="role-description" className="mb-1.5 block text-xs font-semibold sm:text-sm">
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="role-description" className="block text-xs font-semibold text-erp-text-secondary">
                 Description
               </label>
 
               <textarea
                 id="role-description"
-                rows={3}
+                rows={2}
                 maxLength={500}
                 readOnly={isPredefined}
                 value={form.description}
                 onChange={(event) => updateField('description', event.target.value)}
                 placeholder="Describe this role's responsibilities and access."
-                className={`w-full resize-y rounded-lg border border-erp-border px-3 py-2.5 text-sm outline-none transition focus:border-erp-focus focus:ring-2 focus:ring-erp-ring ${
-                  isPredefined ? 'cursor-not-allowed bg-erp-surface-secondary text-erp-text-secondary' : 'bg-erp-surface'
+                className={`w-full resize-y rounded-lg border px-3 py-2.5 text-xs outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 ${errors.description ? 'border-red-400' : 'border-erp-border'} ${
+                  isPredefined ? 'cursor-not-allowed bg-erp-bg text-erp-text-secondary' : 'bg-erp-surface text-erp-text'
                 }`}
               />
 
-              {errors.description && <p className="mt-1.5 text-xs text-erp-danger">{errors.description}</p>}
+              {errors.description && <p className="text-[11px] text-red-600">{errors.description}</p>}
 
-              <p className="mt-1 text-right text-[11px] text-erp-text-muted">{form.description.length}/500</p>
+              <p className="text-right text-[10px] text-erp-text-muted">{form.description.length}/500</p>
             </div>
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-sm">
-          <div className="flex flex-col gap-3 border-b border-erp-border p-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-            <div className="min-w-0">
-              <h2 className="text-sm font-bold">Module Permissions</h2>
-              <p className="mt-1 text-xs text-erp-text-secondary">Choose which actions this role can perform.</p>
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-erp-border px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+                <LockKeyhole size={16} />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-erp-text">Module Permissions</h2>
+                <p className="text-[11px] text-erp-text-secondary">Choose which actions this role can perform</p>
+              </div>
             </div>
 
-            <span className="inline-flex w-fit shrink-0 items-center rounded-lg bg-erp-primary-light px-3 py-2 text-xs font-bold text-erp-primary">{form.permissions.length} selected</span>
+            <div className="flex items-center gap-1 rounded-lg bg-erp-primary/10 px-2 py-1.5 text-[11px] font-bold text-erp-primary">
+              <CheckCircle2 size={13} />
+              {form.permissions.length} selected
+            </div>
           </div>
 
-          <div className="space-y-4 p-4 sm:p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-3 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="relative w-full sm:max-w-xs">
-                <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-muted" />
-
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-erp-text-muted" />
                 <input
                   type="search"
                   value={permissionSearch}
                   onChange={(event) => setPermissionSearch(event.target.value)}
                   placeholder="Search permissions..."
                   aria-label="Search permissions"
-                  className="h-9 w-full rounded-lg border border-erp-border bg-erp-surface pl-9 pr-3 text-xs outline-none transition focus:border-erp-focus focus:ring-2 focus:ring-erp-ring sm:text-sm"
+                  className="h-9 w-full rounded-lg border border-erp-border bg-erp-surface pl-8 pr-2.5 text-xs text-erp-text outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
                 />
               </div>
 
@@ -432,79 +552,98 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
                 type="button"
                 onClick={() => updateField('permissions', allSelected ? [] : allPermissions)}
                 disabled={allPermissions.length === 0}
-                className="self-start text-xs font-semibold text-erp-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto sm:text-sm"
+                className="text-xs font-semibold text-erp-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {allSelected ? 'Clear all permissions' : 'Select all permissions'}
+                {allSelected ? 'Clear all' : 'Enable all'}
               </button>
             </div>
 
+            <div className="flex items-start gap-2 rounded-lg border border-blue-100 bg-blue-50/70 px-2.5 py-2 text-xs text-blue-800">
+              <Info size={14} className="mt-0.5 shrink-0" />
+              <p>Select permissions to control access to each ERP module. Use the section controls to enable or disable permissions in bulk.</p>
+            </div>
+
             {availablePermissions.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-erp-border bg-erp-surface-secondary p-6 text-center">
-                <ShieldCheck size={26} className="mx-auto mb-2 text-erp-text-muted" />
-                <h3 className="text-sm font-semibold">No permission groups available</h3>
-                <p className="mt-1 text-xs text-erp-text-secondary">Unable to load permission groups from the server.</p>
+              <div className="rounded-lg border border-dashed border-erp-border bg-erp-bg px-3 py-7 text-center">
+                <ShieldCheck size={24} className="mx-auto text-erp-text-muted" />
+                <p className="mt-2 text-xs font-semibold text-erp-text">No permission groups available</p>
+                <p className="mt-1 text-[11px] text-erp-text-secondary">Permission groups could not be loaded from the server.</p>
+                <button
+                  type="button"
+                  onClick={refreshPermissions}
+                  disabled={refreshing}
+                  className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-erp-primary px-3 py-2 text-xs font-semibold text-white hover:bg-erp-primary-hover disabled:opacity-50"
+                >
+                  <RefreshCw size={13} />
+                  {refreshing ? 'Refreshing...' : 'Try again'}
+                </button>
+              </div>
+            ) : visibleSections.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-erp-border px-3 py-7 text-center">
+                <Search size={23} className="mx-auto text-erp-text-muted" />
+                <p className="mt-2 text-xs font-semibold text-erp-text">No matching permissions found</p>
+                <p className="mt-1 text-[11px] text-erp-text-secondary">Try another permission name or action.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {availablePermissions.map((section) => {
+              <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
+                {visibleSections.map((section) => {
                   const sectionPermissions = section.permissions || []
-
-                  const visiblePermissions = sectionPermissions.filter((permission) => `${permission} ${permission.split(':').join(' ')}`.toLowerCase().includes(normalizedPermissionSearch))
+                  const visiblePermissions = section.visiblePermissions
+                  const Icon = getSectionIcon(section.section)
 
                   const selectedCount = sectionPermissions.filter((permission) => form.permissions.includes(permission)).length
 
-                  const isExpanded = expandedSections[section.section] ?? true
+                  const visibleAllSelected = visiblePermissions.length > 0 && visiblePermissions.every((permission) => form.permissions.includes(permission))
 
-                  if (normalizedPermissionSearch && visiblePermissions.length === 0) {
-                    return null
-                  }
+                  const isExpanded = normalizedPermissionSearch.length > 0 || (expandedSections[section.section] ?? true)
 
                   return (
-                    <div key={section.section} className="overflow-hidden rounded-xl border border-erp-border">
-                      <div className="flex items-center gap-2 bg-erp-surface-secondary px-3 py-3 sm:px-4">
+                    <div key={section.section} className="overflow-hidden rounded-lg border border-erp-border">
+                      <div className="flex items-center justify-between gap-2 bg-erp-bg px-2.5 py-2">
                         <button type="button" onClick={() => toggleExpanded(section.section)} aria-expanded={isExpanded} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                          {isExpanded ? <ChevronDown size={17} className="shrink-0" /> : <ChevronRight size={17} className="shrink-0" />}
+                          {isExpanded ? <ChevronDown size={15} className="shrink-0 text-erp-text-secondary" /> : <ChevronRight size={15} className="shrink-0 text-erp-text-secondary" />}
 
-                          <span className="truncate text-xs font-bold sm:text-sm">{section.section}</span>
+                          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-erp-surface text-erp-primary">
+                            <Icon size={14} />
+                          </span>
 
-                          <span className="shrink-0 rounded-md bg-erp-surface px-2 py-1 text-[10px] font-semibold text-erp-text-secondary">
-                            {selectedCount}/{sectionPermissions.length}
+                          <span className="min-w-0">
+                            <span className="block truncate text-xs font-bold text-erp-text">{humanize(section.section)}</span>
+                            <span className="block text-[10px] text-erp-text-secondary">
+                              {selectedCount}/{sectionPermissions.length} enabled
+                            </span>
                           </span>
                         </button>
 
-                        <button type="button" onClick={() => toggleSection(visiblePermissions)} className="shrink-0 text-[11px] font-semibold text-erp-primary hover:underline sm:text-xs">
-                          {visiblePermissions.length > 0 && visiblePermissions.every((permission) => form.permissions.includes(permission)) ? 'Clear' : 'Select all'}
+                        <button type="button" onClick={() => toggleSection(visiblePermissions)} className="shrink-0 text-[10px] font-semibold text-erp-primary hover:underline">
+                          {visibleAllSelected ? 'Disable all' : 'Enable all'}
                         </button>
                       </div>
 
                       {isExpanded && (
-                        <div className="grid grid-cols-1 gap-2 border-t border-erp-border p-3 sm:grid-cols-2 sm:p-4">
+                        <div className="divide-y divide-erp-border px-2.5">
                           {visiblePermissions.map((permission) => {
                             const checked = form.permissions.includes(permission)
 
                             return (
-                              <label
-                                key={permission}
-                                className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border p-3 transition ${checked ? 'border-erp-primary/40 bg-erp-primary-light/50' : 'border-erp-border hover:bg-erp-surface-hover'}`}
-                              >
-                                <span className="min-w-0 flex-1">
-                                  <span className="block break-words text-xs font-semibold sm:text-sm">
-                                    {permission
-                                      .split(':')
-                                      .map((part) =>
-                                        part
-                                          .split('-')
-                                          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                                          .join(' '),
-                                      )
-                                      .join(' · ')}
-                                  </span>
+                              <div key={permission} className="flex items-center gap-2 py-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-xs font-semibold text-erp-text">{getPermissionLabel(permission)}</p>
+                                  <p className="mt-0.5 break-words text-[10px] leading-4 text-erp-text-secondary">{getPermissionDescription(permission)}</p>
+                                  <p className="mt-0.5 break-all text-[10px] text-erp-text-muted">{permission}</p>
+                                </div>
 
-                                  <span className="mt-1 block break-all text-[10px] text-erp-text-muted sm:text-[11px]">{permission}</span>
-                                </span>
-
-                                <input type="checkbox" checked={checked} onChange={() => togglePermission(permission)} className="h-4 w-4 shrink-0 cursor-pointer rounded border-erp-border accent-[var(--color-erp-primary)]" />
-                              </label>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={checked}
+                                  aria-label={`${getPermissionLabel(permission)} permission`}
+                                  onClick={() => togglePermission(permission)}
+                                  className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-erp-primary/30 ${checked ? 'bg-erp-primary' : 'bg-slate-300'}`}
+                                >
+                                  <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+                                </button>
+                              </div>
                             )
                           })}
                         </div>
@@ -512,34 +651,34 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
                     </div>
                   )
                 })}
-
-                {normalizedPermissionSearch && !availablePermissions.some((section) => (section.permissions || []).some((permission) => `${permission} ${permission.split(':').join(' ')}`.toLowerCase().includes(normalizedPermissionSearch))) && (
-                  <div className="rounded-lg border border-dashed border-erp-border p-6 text-center text-xs text-erp-text-secondary">No matching permissions found.</div>
-                )}
               </div>
             )}
           </div>
         </section>
 
-        <footer className="sticky bottom-0 z-20 flex flex-col-reverse gap-2 rounded-xl border border-erp-border bg-erp-surface/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between sm:px-4">
-          <p className="hidden text-xs text-erp-text-secondary sm:block">{form.permissions.length} permissions selected for this role</p>
+        <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-erp-border bg-erp-surface/95 p-2.5 shadow-sm backdrop-blur">
+          <div className="hidden min-w-0 sm:block">
+            <p className="text-xs font-semibold text-erp-text">{form.permissions.length} permissions selected</p>
+            <p className="mt-0.5 text-[10px] text-erp-text-secondary">Review the role permissions before saving.</p>
+          </div>
 
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
+          <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={goBack}
               disabled={saving || deleting}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-erp-border bg-erp-surface px-4 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:opacity-50 sm:text-sm"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:opacity-50"
             >
+              <ArrowLeft size={14} />
               Cancel
             </button>
 
             <button
               type="submit"
               disabled={saving || deleting}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-erp-primary px-5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-erp-primary px-4 text-xs font-bold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {saving ? <LoaderCircle size={16} className="animate-spin" /> : <Save size={16} />}
+              {saving ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}
 
               {saving ? 'Saving...' : isPredefined ? 'Save Permissions' : isEdit ? 'Save Changes' : 'Create Role'}
             </button>

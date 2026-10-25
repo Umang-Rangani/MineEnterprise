@@ -27,7 +27,7 @@ router.post('/login', async (req, res, next) => {
 
     const user = await User.findOne({
       email: email.trim().toLowerCase(),
-    }).select('+password')
+    }).select('+password +permissionOverrides')
 
     if (!user || user.role !== 'Employee' || user.status !== 'Active') {
       return res.status(401).json({
@@ -93,6 +93,7 @@ router.post('/login', async (req, res, next) => {
         email: user.email,
         role: user.role,
         roles: user.roles,
+        permissionOverrides: user.permissionOverrides,
         status: user.status,
         companyId: company._id,
       },

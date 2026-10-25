@@ -15,6 +15,8 @@ var companiesRouter = require('./routes/companies')
 
 const employeeAuthRouter = require('./routes/employeeAuth')
 const employeesRouter = require('./routes/employees')
+const rolesRouter = require('./routes/roles')
+
 const productsRouter = require('./routes/products')
 const categoriesRouter = require('./routes/categories')
 const inventoryRouter = require('./routes/inventory')
@@ -49,6 +51,8 @@ app.use('/companies', companiesRouter)
 
 app.use('/erp/auth', employeeAuthRouter)
 app.use('/erp/employees', employeesRouter)
+app.use('/erp/roles', rolesRouter)
+
 app.use('/erp/products', productsRouter)
 app.use('/erp/categories', categoriesRouter)
 app.use('/erp/inventory', inventoryRouter)

@@ -3,6 +3,17 @@ import axiosInstance from '../api/axiosInstance'
 
 const AuthContext = createContext(null)
 
+export function hasPermission(permissions, requiredPermission) {
+  // SuperAdmin has full access
+  if (permissions === null) return true
+
+  if (!permissions || !requiredPermission) return false
+
+  return Object.values(permissions).some((sectionPermissions) => {
+    return Array.isArray(sectionPermissions) && sectionPermissions.includes(requiredPermission)
+  })
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [permissions, setPermissions] = useState({})
@@ -28,6 +39,9 @@ export function AuthProvider({ children }) {
       }
 
       const effectivePermissions = response.data.permissions ?? {}
+
+      console.log('effectivePermissions', effectivePermissions)
+
       setPermissions(effectivePermissions)
       return effectivePermissions
     } catch (error) {
@@ -37,25 +51,36 @@ export function AuthProvider({ children }) {
   }
 
   const refreshUser = async () => {
-    try {
-      const response = await axiosInstance.get('/superadmin/me')
+    const endpoints = ['/superadmin/me']
 
-      if (!response.data?.success || !response.data?.user) {
-        setUser(null)
-        setPermissions({})
-        return null
+    for (const endpoint of endpoints) {
+      try {
+        const response = await axiosInstance.get(endpoint)
+
+
+        
+
+        if (response.data?.success && response.data?.user) {
+          const currentUser = response.data.user
+
+          setUser(currentUser)
+          await loadPermissions(currentUser)
+
+          return currentUser
+        }
+      } catch (error) {
+        const status = error.response?.status
+
+        // Try the next endpoint if this session type is not supported.
+        if (status && ![401, 403, 404].includes(status)) {
+          console.error(`Session restore failed at ${endpoint}:`, error)
+        }
       }
-
-      const currentUser = response.data.user
-      setUser(currentUser)
-      await loadPermissions(currentUser)
-
-      return currentUser
-    } catch (error) {
-      setUser(null)
-      setPermissions({})
-      return null
     }
+
+    setUser(null)
+    setPermissions({})
+    return null
   }
 
   const login = async (email, password) => {

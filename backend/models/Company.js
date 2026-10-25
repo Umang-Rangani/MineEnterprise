@@ -51,6 +51,11 @@ const predefinedRolePermissionSchema = new mongoose.Schema(
       default: [],
     },
 
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'UserEnterPrise',

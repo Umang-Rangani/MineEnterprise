@@ -189,13 +189,14 @@ const sectionKey = {
 }
 
 const hasPermission = (permissions, actions = []) => {
-  // SuperAdmin permissions are null and bypass company permissions.
+  // SuperAdmin has full access
   if (permissions === null) return true
 
   if (!permissions || typeof permissions !== 'object') {
     return false
   }
 
+  // Menu should be visible if at least one required action is allowed.
   return actions.some((action) => {
     const section = action.split(':')[0]
     const key = sectionKey[section]
@@ -249,11 +250,25 @@ const routePermissions = [
     actions: ['role:list'],
   },
 
-  // Categories and products
+  // Categories
+  {
+    pattern: /^\/company\/categories\/new\/?$/,
+    actions: ['category:create'],
+  },
+  {
+    pattern: /^\/company\/categories\/[^/]+\/edit\/?$/,
+    actions: ['category:view', 'category:update'],
+  },
+  {
+    pattern: /^\/company\/categories\/[^/]+\/?$/,
+    actions: ['category:view'],
+  },
   {
     pattern: /^\/company\/categories\/?$/,
-    actions: ['category:list', 'category:view'],
+    actions: ['category:list'],
   },
+
+  //  products
   {
     pattern: /^\/company\/products\/?$/,
     actions: ['product:list', 'product:view'],
@@ -489,6 +504,12 @@ export default function CompaniesRoute() {
 
     const fallbackPath = previousPath && previousPath !== '/forbidden' && previousRoute && hasPermission(permissions, previousRoute.actions) ? previousPath : '/company'
 
+    console.log('COMPANY ROUTE DEBUG:', {
+      userRole: user?.role,
+      pathname: location.pathname,
+      permissions,
+    })
+
     return (
       <Navigate
         to="/forbidden"
@@ -526,6 +547,15 @@ export default function CompaniesRoute() {
       setLoggingOut(false)
     }
   }
+
+  // console.log('Current user:', user)
+  // console.log('Current permissions:', permissions)
+  // console.log('Role list permission:', hasPermission(permissions, ['role:list']))
+
+  console.log('Current permissions:', permissions)
+  console.log('Employee list:', hasPermission(permissions, ['employee:list']))
+  console.log('Role list:', hasPermission(permissions, ['role:list']))
+  console.log('Category list:', hasPermission(permissions, ['category:list']))
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">

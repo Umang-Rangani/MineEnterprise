@@ -51,6 +51,8 @@ import WarehouseForm from './components/company/WarehouseForm'
 import WarehouseDetails from './components/company/WarehouseDetails'
 import RoleDetails from './components/company/RoleDetails'
 import Forbidden from './components/company/Forbidden'
+import CategoryForm from './components/company/CategoryForm'
+import CategoryDetails from './components/company/CategoryDetails'
 
 export default function App() {
   return (
@@ -80,17 +82,20 @@ export default function App() {
           <Route path="employees/:id" element={<CompanyEmployeeDetails />} />
           <Route path="employees/:id/edit" element={<EmployeeForm />} />
 
-          
-
           {/* Roles & Permissions */}
           <Route path="roles" element={<CompanyRoles />} />
           <Route path="roles/new" element={<RoleForm />} />
           <Route path="roles/:id" element={<RoleDetails />} />
           <Route path="roles/:id/edit" element={<RoleForm />} />
 
+          {/* categories */}
+          <Route path="categories" element={<CompanyCategories />} />
+          <Route path="categories/new" element={<CategoryForm />} />
+          <Route path="categories/:id" element={<CategoryDetails />} />
+          <Route path="categories/:id/edit" element={<CategoryForm />} />
+    
           {/* Products & Inventory */}
           <Route path="products" element={<CompanyProducts />} />
-          <Route path="categories" element={<CompanyCategories />} />
           <Route path="inventory" element={<CompanyInventory />} />
 
           {/* Suppliers */}
@@ -150,9 +155,10 @@ export default function App() {
       </Route>
 
       {/* Fallback */}
+      <Route path="/forbidden" element={<Forbidden />} />
+      
       <Route path="*" element={<Navigate to="/" replace />} />
 
-      <Route path="/forbidden" element={<Forbidden />} />
     </Routes>
   )
 }

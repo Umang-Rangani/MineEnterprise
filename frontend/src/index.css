@@ -79,6 +79,13 @@
   --shadow-erp-dropdown: 0 10px 25px -5px rgb(15 23 42 / 0.1), 0 8px 10px -6px rgb(15 23 42 / 0.08);
 
   --shadow-erp-modal: 0 20px 50px -12px rgb(15 23 42 / 0.2);
+
+  /* Disabled / Inactive */
+  --color-erp-disabled: #94a3b8;
+  --color-erp-disabled-light: #f1f5f9;
+  --color-erp-disabled-surface: #f8fafc;
+  --color-erp-disabled-border: #cbd5e1;
+  --color-erp-disabled-text: #64748b;
 }
 
 /* Hide scrollbars while preserving scrolling */

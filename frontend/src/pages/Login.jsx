@@ -8,6 +8,12 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  console.log('LOGIN DEBUG:', {
+    loading,
+    user,
+    pathname: location.pathname,
+  })
+
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)

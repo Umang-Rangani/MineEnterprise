@@ -5,7 +5,6 @@ import { ArrowLeft, UserRound, Mail, Phone, LockKeyhole, Eye, EyeOff, ShieldChec
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
-import { EmployeeFormShimmer } from './CompanyEmployeeShimmer'
 import Loading from '../Loading/Loading'
 
 const sectionIcons = {
@@ -164,7 +163,13 @@ export default function EmployeeForm() {
       setLoading(true)
 
       try {
-        const rolesResponse = await axiosInstance.get('/erp/roles')
+        const rolesResponse = await axiosInstance.get('/erp/roles', {
+          params: {
+            type: 'All',
+            page: 1,
+            limit: 100,
+          },
+        })
         const roleData = rolesResponse.data
 
         const roles = Array.isArray(roleData.roles) ? roleData.roles : []
@@ -365,8 +370,6 @@ export default function EmployeeForm() {
       { title: 'Add Employee', link: null },
     ]
   }
-
-
 
   return (
     <div className="space-y-4">

@@ -10,44 +10,69 @@ const router = express.Router()
 
 router.use(authMiddleware)
 
-// GET /erp/categories - List, search, filter and pagination
+// GET /erp/categories - List, search, filter, pagination and stats
 router.get('/', permissionMiddleware('Category', 'LIST'), async (req, res, next) => {
   try {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10))
-    const filter = { companyId: req.user.companyId }
+
+    const baseFilter = { companyId: req.user.companyId }
+    const filter = { ...baseFilter }
 
     if (req.query.search?.trim()) {
-      filter.$or = [{ name: { $regex: req.query.search.trim(), $options: 'i' } }, { code: { $regex: req.query.search.trim(), $options: 'i' } }, { description: { $regex: req.query.search.trim(), $options: 'i' } }]
+      const search = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+      filter.$or = [{ name: { $regex: search, $options: 'i' } }, { code: { $regex: search, $options: 'i' } }, { description: { $regex: search, $options: 'i' } }]
     }
 
     if (['Active', 'Inactive'].includes(req.query.status)) {
       filter.status = req.query.status
     }
 
-    const [categories, total] = await Promise.all([
+    const [categories, total, totalCategories, activeCategories, inactiveCategories] = await Promise.all([
       Category.find(filter)
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .lean(),
+
       Category.countDocuments(filter),
+
+      Category.countDocuments(baseFilter),
+
+      Category.countDocuments({
+        ...baseFilter,
+        status: 'Active',
+      }),
+
+      Category.countDocuments({
+        ...baseFilter,
+        status: 'Inactive',
+      }),
     ])
 
     return res.status(200).json({
       success: true,
       categories,
+
       pagination: {
         page,
         limit,
         total,
         totalPages: Math.max(1, Math.ceil(total / limit)),
       },
+
+      stats: {
+        total: totalCategories,
+        active: activeCategories,
+        inactive: inactiveCategories,
+      },
     })
   } catch (error) {
     return next(error)
   }
 })
+
 
 // GET /erp/categories/:id - Get one category
 router.get('/:id', permissionMiddleware('Category', 'VIEW'), async (req, res, next) => {

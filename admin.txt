@@ -1,149 +1,18 @@
-# MineERP — UI Standard & Development Rules
+હા, સમજાયું. આપણે MineERP માં Permissions ના બધા buttons cover થયા છે કે નહીં એ audit કરવાનું છે.
 
-## Project Identity
-- Project name: **MineERP**
-- MineERP એક standalone ERP SaaS project છે.
-- MineKart નો code, branding, theme અથવા project structure reuse કરવો નહીં.
-- Frontend: React + Vite + Tailwind CSS v4.
-- Backend: Express.js + MongoDB/Mongoose.
-- Frontend માં `useCallback` નો ઉપયોગ કરવો નહીં.
 
-## 1. Common Layout
-બધા pages માં એકસરખો common layout રાખવો.
 
-- Common sidebar અને navigation.
-- Consistent content container અને width.
-- Header અને breadcrumb માટે fixed/stable height.
-- બધા pages માં consistent padding અને spacing.
-- Sidebar અને main content વચ્ચે યોગ્ય alignment.
-- Responsive layout: Desktop, tablet અને mobile.
-- Page change વખતે header, content અથવા buttons અચાનક ઉપર-નીચે ખસે નહીં.
-- Loading અને empty states માં પણ શક્ય હોય ત્યાં સુધી layout stability જાળવવી.
-- Scrollbar દેખાવા કે ગાયબ થવાથી થતા layout shift ને પણ તપાસવો.
+આટલું કરીને CategoryDetails.jsx save કરો અને done લખો. પછી આપણે CompaniesRoute.jsx માં Category ની routes માટે permission guard ચકાસીશું, જેથી સીધું URL નાખીને પણ અનધિકૃત page ખોલી ન શકાય.
 
-## 2. Reusable UI Components
-શક્ય હોય ત્યાં reusable components બનાવવાના અને બધા pages માં ઉપયોગ કરવાના.
 
-- `BreadCrumb`
-- `PageHeader`
-- `PageContainer`
-- `StatCard`
-- `FormField`
-- `Button`
-- `DataTable`
-- `Pagination`
-- `Loader`
-- `EmptyState`
-- `ErrorMessage`
-- `ConfirmModal`
 
-Components પહેલેથી project માં હોય તો પહેલાં તેને તપાસવા; duplicate component બનાવવો નહીં.
 
-## 3. Breadcrumb Standard
-Breadcrumb માં હંમેશાં `title` અને `link` properties વાપરવી.
+but ek problem sol nhi thyo, 
 
-Example:
+Employee login krta tene permission hoy tej roles & permissionOverrides dekhava joye,
 
-```jsx
-const items = [
-  {
-    title: 'Employees',
-    link: '/company/employees',
-  },
-  {
-    title: 'Add Employee',
-    link: null,
-  },
-]
-```
+mare all roles & permissionOverrides  aave che,  aa problem sol krva no che
 
-- Current page માટે `link: null`.
-- Parent page માટે યોગ્ય route.
-- Breadcrumb ની height અને spacing consistent.
-- લાંબું text હોય તો layout તૂટવો કે header jump થવો નહીં.
 
-## 4. Page Header Standard
-બધા pages માં title, subtitle અને action buttons માટે એકસરખું structure રાખવું.
-
-- Breadcrumb અને page title વચ્ચે consistent spacing.
-- Title અને subtitle માટે stable height અથવા minimum height.
-- Action buttons જમણી બાજુ રાખવા.
-- Page title common layout માં પહેલેથી હોય તો child page માં duplicate title ન બતાવવો.
-- Add/Edit જેવા pages માં જરૂરી title રાખવો, પરંતુ layout shift ન થાય તે રીતે.
-
-## 5. Cards, Forms & Tables
-### Cards
-- Consistent border, radius, padding અને heading style.
-- Compact design; બિનજરૂરી whitespace નહીં.
-
-### Forms
-- બધા inputs ની height અને label style consistent.
-- Field spacing અને validation messages માટે એકસરખી જગ્યા.
-- Save અને Cancel buttons જમણી બાજુ.
-- Loading વખતે buttons અને fields અનાવશ્યક રીતે ખસે નહીં.
-
-### Tables
-- Consistent header height અને row padding.
-- Action buttons માટે એકસરખું alignment.
-- Search, filters, pagination અને empty states માટે common style.
-- લાંબા data થી આખું layout તૂટી ન જાય.
-
-## 6. Buttons & Feedback
-- Primary, secondary, cancel, save, refresh અને delete buttons માટે consistent styles.
-- બધા buttons ની height, icon size અને spacing સમાન.
-- Loading, success અને error feedback માટે consistent UI.
-- Disabled state સ્પષ્ટ હોવી જોઈએ.
-
-## 7. Layout Shift Prevention
-દરેક page બનાવતી વખતે આ બાબતો તપાસવી:
-
-- Parent layout માં header height બદલાય છે કે નહીં.
-- Breadcrumb અથવા title wrap થવાથી height બદલાય છે કે નહીં.
-- Loading state અને loaded content ની height માં મોટો ફેરફાર છે કે નહીં.
-- Conditional elements આવવાથી buttons ખસે છે કે નહીં.
-- Scrollbar આવવાથી અથવા જવાથી content width બદલાય છે કે નહીં.
-- Table, modal અથવા form ના કારણે અનિચ્છિત page movement થાય છે કે નહીં.
-
-જ્યાં જરૂરી હોય ત્યાં fixed height, `min-height`, reserved space, consistent flex/grid layout અને stable loading placeholders વાપરવા. દરેક જગ્યાએ fixed height બળજબરીથી ન લગાવવી; content અને responsive design મુજબ યોગ્ય રીત પસંદ કરવી.
-
-## 8. Apply to All Modules
-આ standard બધા MineERP modules માં લાગુ કરવો:
-
-- SuperAdmin Dashboard
-- Companies
-- Company Dashboard
-- Employees
-- Roles & Permissions
-- Products
-- Categories
-- Inventory
-- Warehouses
-- Suppliers
-- Customers
-- Purchases
-- Sales & Orders
-- Invoices
-- Payments
-- Expenses
-- Accounting
-- Reports
-- Settings
-
-## 9. Code Delivery Rules
-જ્યારે હું કોઈ page નો code માગું:
-
-1. પહેલાં હાલના project structure અને reusable components તપાસવા.
-2. હાલના API endpoints, authentication અને permission logic જાળવવા.
-3. Existing theme અને Tailwind v4 conventions follow કરવી.
-4. `useCallback` વાપરવો નહીં.
-5. બિનજરૂરી comments અને duplicate components ટાળવા.
-6. Code ને હાલના project સાથે compatible રાખવો.
-7. જરૂરી હોય ત્યારે complete file આપવી, માત્ર અધૂરો snippet નહીં.
-8. કોઈ existing functionality દૂર કરતા પહેલાં કારણ સમજાવવું.
-9. નવા page માટે નવો UI pattern બનાવવાને બદલે existing common components reuse કરવા.
-10. UI માં ફેરફાર કરતી વખતે functionality અને permission checks તૂટે નહીં તેની ખાતરી કરવી.
-
-## 10. Reminder Prompt
-જ્યારે હું આ document અથવા આ rules તને મોકલું, ત્યારે તેનો અર્થ:
-
-**“MineERP માટે આ UI Standard અનુસર. હાલના project ના components અને structure તપાસીને code આપ. બધા pages ની UI consistent રાખ. Breadcrumb, header અને content માં page change વખતે jump ન થાય તેનું ધ્યાન રાખ. `useCallback` ન વાપર. Existing functionality, APIs અને permissions જાળવીને જરૂરી હોય ત્યારે complete code આપ.”**
+=> chnage  kri ne full API aapo
+=> chnage  kri ne full code aapo

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ShieldCheck, LockKeyhole, RefreshCw, Pencil, CheckCircle2, Users, FileText, Settings2, AlertCircle } from 'lucide-react'
+import { ShieldCheck, LockKeyhole, RefreshCw, Pencil, CheckCircle2, FileText, Settings2, AlertCircle, Ban, CircleCheck } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
+import Loading from '../Loading/Loading'
 
 const buttonBase = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -24,58 +25,73 @@ function getRolePermissions(role) {
   const permissions = role?.permissions
 
   if (Array.isArray(permissions)) {
-    return permissions.map((permission) => (typeof permission === 'string' ? permission : permission?.key || permission?.name || '')).filter(Boolean)
+    return [...new Set(permissions.map((permission) => (typeof permission === 'string' ? permission : permission?.key || permission?.name || '')).filter(Boolean))]
   }
 
   if (permissions && typeof permissions === 'object') {
-    return Object.entries(permissions).flatMap(([section, actions]) => {
-      if (!Array.isArray(actions)) return []
+    return [
+      ...new Set(
+        Object.entries(permissions).flatMap(([section, actions]) => {
+          if (!Array.isArray(actions)) return []
 
-      return actions
-        .map((action) => {
-          if (typeof action !== 'string') {
-            return action?.key || action?.name || ''
-          }
+          return actions
+            .map((action) => {
+              if (typeof action !== 'string') {
+                return action?.key || action?.name || ''
+              }
 
-          return action.includes(':') ? action : `${section}:${action}`
-        })
-        .filter(Boolean)
-    })
+              return action.includes(':') ? action : `${section}:${action}`
+            })
+            .filter(Boolean)
+        }),
+      ),
+    ]
   }
 
   return []
 }
 
-function SectionCard({ icon: Icon, title, description, action, children }) {
+function formatDate(date) {
+  if (!date) return 'Not available'
+
+  const parsedDate = new Date(date)
+
+  if (Number.isNaN(parsedDate.getTime())) return 'Not available'
+
+  return parsedDate.toLocaleString('en-IN', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+function DetailItem({ label, value, icon: Icon, inactive }) {
   return (
-    <section className="min-w-0 rounded-xl border border-erp-border bg-erp-surface p-3 shadow-erp-card sm:p-4">
-      <div className="mb-3 flex min-w-0 items-center gap-2.5">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
-          <Icon size={18} />
-        </div>
+    <div className={`min-w-0 rounded-lg border p-3 ${inactive ? 'border-erp-disabled-border bg-erp-disabled-surface' : 'border-erp-border bg-erp-surface'}`}>
+      <p className={`mb-2 flex items-center gap-2 text-xs ${inactive ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>
+        {Icon && <Icon size={14} className="shrink-0" />}
+        {label}
+      </p>
 
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-bold text-erp-text">{title}</h2>
-          <p className="mt-0.5 text-xs text-erp-text-secondary">{description}</p>
-        </div>
-
-        {action}
-      </div>
-
-      {children}
-    </section>
+      <p className={`break-words text-sm font-semibold ${inactive ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{value || 'Not provided'}</p>
+    </div>
   )
 }
 
-function DetailItem({ label, value, icon: Icon }) {
+function SectionHeader({ icon: Icon, title, description, inactive }) {
   return (
-    <div className="min-w-0">
-      <p className="mb-1.5 text-xs font-semibold text-erp-text-secondary">{label}</p>
+    <div className="mb-4 flex min-w-0 flex-wrap items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${inactive ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
+          <Icon size={19} />
+        </div>
 
-      <div className="flex min-h-10 min-w-0 items-center gap-2 rounded-lg border border-erp-border bg-erp-surface-secondary/40 px-3 py-2">
-        {Icon && <Icon size={15} className="shrink-0 text-erp-text-muted" />}
-
-        <span className="min-w-0 break-words text-sm font-medium text-erp-text">{value || 'Not provided'}</span>
+        <div className="min-w-0">
+          <h2 className="text-sm font-bold text-erp-text">{title}</h2>
+          <p className="mt-0.5 text-xs text-erp-text-secondary">{description}</p>
+        </div>
       </div>
     </div>
   )
@@ -93,7 +109,19 @@ export default function RoleDetails() {
   const [toast, setToast] = useState(null)
 
   const isPredefined = role?.type === 'Predefined'
+
+  const isInactive =
+    String(role?.status ?? '')
+      .trim()
+      .toLowerCase() === 'inactive' ||
+    role?.isActive === false ||
+    role?.active === false
+
   const rolePermissions = getRolePermissions(role)
+
+  const panelClass = isInactive ? 'border-erp-disabled-border bg-erp-disabled-surface' : 'border-erp-border bg-erp-surface'
+
+  const iconBoxClass = isInactive ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'
 
   function showToast(type, message) {
     setToast({ type, message })
@@ -109,27 +137,76 @@ export default function RoleDetails() {
     setError(false)
 
     try {
-      const response = await axiosInstance.get('/erp/roles')
-      const data = response.data
+      const decodedId = decodeURIComponent(id || '')
 
-      if (!data?.success) {
-        throw new Error(data?.message || 'Unable to load role details.')
+      if (!decodedId) {
+        throw new Error('Role ID is missing.')
       }
 
-      const decodedId = decodeURIComponent(id || '')
-      const roles = Array.isArray(data.roles) ? data.roles : []
+      let matchedRole = null
+      let permissionsData = {}
 
-      const matchedRole = roles.find((item) => String(item._id || '') === decodedId || String(item.name || '') === decodedId)
+      // Try fetching the role directly first.
+      try {
+        const response = await axiosInstance.get(`/erp/roles/${encodeURIComponent(decodedId)}`)
 
+        const data = response.data
+
+        if (data?.success && data.role) {
+          matchedRole = data.role
+          permissionsData = data.availablePermissions || {}
+        }
+      } catch (detailError) {
+        if (detailError.response?.status !== 404 && detailError.response?.status !== 400) {
+          throw detailError
+        }
+      }
+
+      // Fallback to the roles list if direct details are unavailable.
       if (!matchedRole) {
-        setRole(null)
-        setError(true)
-        showToast('error', 'Role not found or you do not have access.')
-        return
+        const firstResponse = await axiosInstance.get('/erp/roles', {
+          params: {
+            type: 'All',
+            page: 1,
+            limit: 100,
+          },
+        })
+
+        const firstData = firstResponse.data
+
+        if (!firstData?.success) {
+          throw new Error(firstData?.message || 'Unable to load roles.')
+        }
+
+        const roles = Array.isArray(firstData.roles) ? [...firstData.roles] : []
+
+        const totalPages = Math.max(1, Number(firstData.pagination?.totalPages) || 1)
+
+        for (let page = 2; page <= totalPages; page += 1) {
+          const pageResponse = await axiosInstance.get('/erp/roles', {
+            params: {
+              type: 'All',
+              page,
+              limit: 100,
+            },
+          })
+
+          if (Array.isArray(pageResponse.data?.roles)) {
+            roles.push(...pageResponse.data.roles)
+          }
+        }
+
+        matchedRole = roles.find((item) => String(item._id || '') === decodedId || String(item.name || '') === decodedId)
+
+        permissionsData = firstData.availablePermissions || {}
+
+        if (!matchedRole) {
+          throw new Error('Role was not found in the roles list. Check the role ID and access permissions.')
+        }
       }
 
       setRole(matchedRole)
-      setAvailablePermissions(data.availablePermissions || {})
+      setAvailablePermissions(permissionsData)
 
       if (showRefreshMessage) {
         showToast('success', 'Role details refreshed successfully.')
@@ -148,12 +225,10 @@ export default function RoleDetails() {
   useEffect(() => {
     document.title = 'Role Details | MineERP'
     fetchRole()
-
-    // Fetch role details whenever the route ID changes.
   }, [id])
 
   function handleEdit() {
-    if (!role || isPredefined) return
+    if (!role || isInactive) return
 
     navigate(`/company/roles/${encodeURIComponent(role._id || role.name)}/edit`, {
       state: {
@@ -164,212 +239,231 @@ export default function RoleDetails() {
     })
   }
 
-  function handleBack() {
-    navigate('/company/roles')
-  }
-
   const breadcrumbItems = [
     { title: 'Roles & Permissions', link: '/company/roles' },
     { title: role?.name || 'Role Details', link: null },
   ]
 
-  if (loading) {
-    return (
-      <div className="min-w-0 space-y-3 text-erp-text">
-        {toast && <Toast toast={toast} onClose={closeToast} />}
-
-        <div className="flex min-h-10 items-center">
-          <BreadCrumb items={breadcrumbItems} />
-        </div>
-
-        <div className="animate-pulse space-y-3">
-          <div className="h-28 rounded-xl border border-erp-border bg-erp-surface" />
-
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-            <div className="h-56 rounded-xl border border-erp-border bg-erp-surface" />
-            <div className="h-56 rounded-xl border border-erp-border bg-erp-surface" />
-            <div className="h-64 rounded-xl border border-erp-border bg-erp-surface" />
-            <div className="h-64 rounded-xl border border-erp-border bg-erp-surface" />
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-w-0 space-y-3 text-erp-text">
+    <div className="min-w-0 space-y-4 text-erp-text">
       {toast && <Toast toast={toast} onClose={closeToast} />}
 
-      {/* Breadcrumb and actions */}
-      <div className="flex min-h-10 min-w-0 flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
-      
+      {/* Header */}
+      <section className={`overflow-hidden rounded-xl border shadow-erp-card ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-surface' : 'border-erp-border bg-erp-surface'}`}>
+        <div className={`h-1 ${isInactive ? 'bg-erp-disabled' : 'bg-erp-primary'}`} />
+
+        <div className="flex min-w-0 flex-col gap-4 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 flex-1 overflow-hidden">
             <BreadCrumb items={breadcrumbItems} />
           </div>
-        </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <button type="button" onClick={() => fetchRole(true)} disabled={refreshing} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
-            <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-            Refresh
-          </button>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {role && (
+              <span className={`${buttonBase} ${isInactive ? 'border border-erp-disabled-border bg-erp-disabled-light text-erp-disabled-text' : 'bg-erp-primary-light text-erp-primary-dark'}`}>
+                {isInactive ? <Ban size={14} /> : <LockKeyhole size={14} />}
 
-          {role && !isPredefined && (
-            <button type="button" onClick={handleEdit} className={`${buttonBase} bg-erp-primary text-white hover:bg-erp-primary-hover`}>
+                {isInactive ? 'Inactive Role' : `${rolePermissions.length} Permissions`}
+              </span>
+            )}
+
+            <button type="button" onClick={() => fetchRole(true)} disabled={loading || refreshing} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-50`}>
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleEdit}
+              disabled={loading || refreshing || !role || isInactive}
+              title={isInactive ? 'Inactive roles cannot be edited here.' : 'Edit role'}
+              className={`${buttonBase} ${isInactive ? 'border border-erp-disabled-border bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary text-white hover:bg-erp-primary-hover'}`}
+            >
               <Pencil size={14} />
               Edit
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Error / not found */}
-      {error || !role ? (
-        <section className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-erp-border bg-erp-surface p-5 text-center shadow-erp-card">
-          <AlertCircle size={32} className="text-erp-text-muted" />
+      {/* Loading */}
+      {loading && <Loading label="Loading role details..." />}
 
-          <h2 className="mt-3 text-sm font-bold">Role details unavailable</h2>
+      {/* Error */}
+      {!loading && error && (
+        <section className="flex items-start gap-3 rounded-xl border border-erp-danger-border bg-erp-danger-light p-4">
+          <AlertCircle size={20} className="mt-0.5 shrink-0 text-erp-danger" />
 
-          <p className="mt-1 max-w-md text-xs text-erp-text-secondary">Check your access or refresh the role details to try again.</p>
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-erp-danger">Unable to load role</h2>
 
-          <button type="button" onClick={() => fetchRole()} className={`${buttonBase} mt-4 bg-erp-primary text-white hover:bg-erp-primary-hover`}>
-            <RefreshCw size={14} />
-            Try Again
-          </button>
+            <p className="mt-1 text-sm text-erp-danger">Check your access or refresh to try again.</p>
+
+            <button type="button" onClick={() => fetchRole()} className="mt-3 rounded-lg border border-erp-danger-border bg-erp-surface px-3 py-2 text-xs font-semibold text-erp-danger hover:bg-erp-danger-light">
+              Try again
+            </button>
+          </div>
         </section>
-      ) : (
+      )}
+
+      {/* Role Details */}
+      {!loading && !error && role && (
         <>
-          {/* Role profile summary */}
-          <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
-            <div className="h-1 bg-erp-primary" />
+          {/* Inactive Notice */}
+          {isInactive && (
+            <section className="flex items-start gap-3 rounded-xl border border-erp-disabled-border bg-erp-disabled-light p-4">
+              <Ban size={19} className="mt-0.5 shrink-0 text-erp-disabled" />
 
-            <div className="flex min-w-0 flex-col justify-between gap-3 p-3 sm:flex-row sm:items-center sm:p-4">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary sm:h-16 sm:w-16">
-                  <ShieldCheck size={30} strokeWidth={1.5} />
-                </div>
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold text-erp-disabled-text">This role is inactive</h2>
 
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h1 className="break-words text-base font-bold sm:text-lg">{role.name || 'Unnamed Role'}</h1>
-
-                    <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${isPredefined ? 'bg-erp-primary-light text-erp-primary-dark' : 'bg-erp-success-light text-erp-success'}`}>{role.type || 'Custom'}</span>
-                  </div>
-
-                  <p className="mt-1 break-words text-xs text-erp-text-secondary">{role.description || 'No description provided.'}</p>
-
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center gap-1 rounded-md bg-erp-primary-light px-2 py-1 text-[11px] font-semibold text-erp-primary-dark">
-                      <LockKeyhole size={12} />
-                      {rolePermissions.length} permissions
-                    </span>
-
-                    <span className="inline-flex items-center gap-1 rounded-md border border-erp-border bg-erp-surface-secondary px-2 py-1 text-[11px] font-medium text-erp-text-secondary">
-                      <Users size={12} />
-                      {isPredefined ? 'System Role' : 'Company Role'}
-                    </span>
-                  </div>
-                </div>
+                <p className="mt-1 text-xs leading-5 text-erp-disabled-text">This role is displayed in read-only mode. Editing is disabled while its status is inactive.</p>
               </div>
-            </div>
-          </section>
+            </section>
+          )}
 
-          <div className="grid min-w-0 grid-cols-1 items-start gap-3 xl:grid-cols-2">
-            {/* Role information */}
-            <SectionCard icon={ShieldCheck} title="Role Information" description="Basic role details.">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <DetailItem label="Role Name" value={role.name} icon={ShieldCheck} />
+          {/* Role Information + Role Activity */}
+          <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+            {/* Role Information */}
+            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
+              <SectionHeader icon={ShieldCheck} title="Role Information" description="Basic role details" inactive={isInactive} />
 
-                <DetailItem label="Role Type" value={role.type || 'Custom'} icon={Settings2} />
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <DetailItem label="Role Name" value={role.name} icon={ShieldCheck} inactive={isInactive} />
+
+                <DetailItem label="Role Type" value={role.type || 'Custom'} icon={Settings2} inactive={isInactive} />
 
                 <div className="sm:col-span-2">
-                  <DetailItem label="Description" value={role.description || 'No description provided.'} icon={FileText} />
+                  <DetailItem label="Description" value={role.description || 'No description provided.'} icon={FileText} inactive={isInactive} />
                 </div>
               </div>
 
-              <p className="mt-3 text-[11px] text-erp-text-muted">{isPredefined ? 'This is a predefined system role.' : 'Use Edit to update this custom role.'}</p>
-            </SectionCard>
+              <p className="mt-4 text-xs text-erp-text-muted">{isInactive ? 'This role is inactive and shown in read-only mode.' : isPredefined ? 'This is a predefined system role.' : 'Use Edit to update this custom role.'}</p>
+            </section>
 
-            {/* Permission summary */}
-            <SectionCard
-              icon={LockKeyhole}
-              title="Permission Summary"
-              description="Overview of assigned access."
-              action={<span className="shrink-0 rounded-md bg-erp-primary-light px-2 py-1 text-[10px] font-semibold text-erp-primary-dark">{rolePermissions.length} total</span>}
-            >
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-lg border border-erp-border p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
-                      <LockKeyhole size={16} />
-                    </div>
+            {/* Role Activity */}
+            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
+              <SectionHeader icon={LockKeyhole} title="Role Activity" description="Role creation and last modification details" inactive={isInactive} />
 
-                    <span className="text-xs text-erp-text-secondary">Permissions</span>
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border' : 'border-erp-border'}`}>
+                  <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBoxClass}`}>
+                    <LockKeyhole size={16} />
                   </div>
 
-                  <p className="mt-3 text-xl font-bold">{rolePermissions.length}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-erp-text-secondary">Created On</p>
+
+                    <p className="mt-1 break-words text-sm font-semibold text-erp-text">{formatDate(role.createdAt)}</p>
+                  </div>
                 </div>
 
-                <div className="rounded-lg border border-erp-border p-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-success-light text-erp-success">
-                      <CheckCircle2 size={16} />
-                    </div>
-
-                    <span className="text-xs text-erp-text-secondary">Role Type</span>
+                <div className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border' : 'border-erp-border'}`}>
+                  <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBoxClass}`}>
+                    <CheckCircle2 size={16} />
                   </div>
 
-                  <p className="mt-3 break-words text-sm font-bold">{isPredefined ? 'Predefined' : 'Custom'}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-erp-text-secondary">Last Updated</p>
+
+                    <p className="mt-1 break-words text-sm font-semibold text-erp-text">{formatDate(role.updatedAt)}</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-3 rounded-lg bg-erp-surface-secondary/60 p-2.5">
-                <p className="text-xs text-erp-text-secondary">
-                  <ShieldCheck size={14} className="mr-1 inline text-erp-text-muted" />
-                  {isPredefined ? 'Permissions are determined by the system role configuration.' : 'Permissions define the actions available to employees assigned this role.'}
+              <div className="sm:col-span-2 my-3 w-fit">
+                <div className={`flex items-center justify-between gap-5 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light' : 'border-erp-border bg-erp-surface'}`}>
+                  <span className="text-xs font-medium text-erp-text-secondary">Current Status</span>
+
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                      isInactive ? 'border-erp-disabled-border bg-erp-disabled-surface text-erp-disabled-text' : 'border-erp-success-border bg-erp-success-light text-erp-success'
+                    }`}
+                  >
+                    {isInactive ? <Ban size={13} /> : <CircleCheck size={13} />}
+                    {role.status || 'Active'}
+                  </span>
+                </div>
+              </div>
+
+              <div className={`mt-3 flex items-start gap-2 rounded-lg px-3 py-2.5 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
+                <ShieldCheck size={15} className="mt-0.5 shrink-0 text-erp-text-muted" />
+
+                <p className="text-xs leading-5 text-erp-text-secondary">
+                  {isInactive
+                    ? 'This role is inactive. Its saved permissions are shown below for reference.'
+                    : isPredefined
+                      ? 'This is a system-defined role. Its permissions follow the system role configuration.'
+                      : 'This is a custom role. Its permissions determine the actions available to assigned employees.'}
                 </p>
               </div>
-            </SectionCard>
-
-            {/* Permissions list */}
-            <div className="xl:col-span-2">
-              <SectionCard
-                icon={LockKeyhole}
-                title="Permissions Overview"
-                description="Actions assigned to this role."
-                action={<span className="shrink-0 rounded-md border border-erp-border bg-erp-surface-secondary px-2 py-1 text-[10px] font-semibold text-erp-text-secondary">Read only</span>}
-              >
-                {rolePermissions.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-erp-border px-3 py-8 text-center">
-                    <LockKeyhole size={26} className="mx-auto text-erp-text-muted" />
-
-                    <p className="mt-2 text-sm font-semibold">No permissions found</p>
-
-                    <p className="mt-1 text-xs text-erp-text-secondary">This API response does not contain any permissions for this role.</p>
-                  </div>
-                ) : (
-                  <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                    {rolePermissions.map((permission, index) => (
-                      <div key={`${permission}-${index}`} className="flex min-w-0 items-start gap-2.5 rounded-lg border border-erp-border p-3 transition-colors hover:bg-erp-hover">
-                        <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-erp-success-light text-erp-success">
-                          <CheckCircle2 size={15} />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <p className="break-words text-xs font-semibold text-erp-text">{formatPermission(permission)}</p>
-
-                          <p className="mt-1 break-all text-[10px] text-erp-text-secondary">{permission}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <p className="mt-3 text-[11px] text-erp-text-muted">{isPredefined ? 'Predefined role permissions are managed by the system.' : 'Use Edit to change this custom role permissions.'}</p>
-              </SectionCard>
-            </div>
+            </section>
           </div>
+
+          {/* Permissions Overview */}
+          <section className={`min-w-0 w-full rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
+            <SectionHeader icon={LockKeyhole} title="Permissions Overview" description="Permissions grouped by module" inactive={isInactive} />
+
+            {rolePermissions.length > 0 ? (
+              <div className="grid min-w-0 grid-cols-1 items-start gap-4 lg:grid-cols-2">
+                {Object.entries(
+                  rolePermissions.reduce((groups, permission) => {
+                    const module = permission.split(':')[0] || 'Other'
+
+                    if (!groups[module]) groups[module] = []
+
+                    groups[module].push(permission)
+                    return groups
+                  }, {}),
+                ).map(([module, permissions]) => (
+                  <div key={module} className={`min-w-0 overflow-hidden rounded-xl border ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-surface' : 'border-erp-border bg-erp-surface'}`}>
+                    {/* Module title */}
+                    <div className={`flex items-center gap-3 border-b px-4 py-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light' : 'border-erp-border bg-erp-surface-secondary/60'}`}>
+                      <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBoxClass}`}>
+                        <LockKeyhole size={17} />
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-bold text-erp-text">{module}</h3>
+
+                        <p className="mt-0.5 text-xs text-erp-text-secondary">{permissions.length} permissions</p>
+                      </div>
+                    </div>
+
+                    {/* Module permissions */}
+                    <div className="space-y-2 p-3">
+                      {permissions.map((permission) => (
+                        <div key={permission} className={`flex min-w-0 items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light' : 'border-erp-border hover:bg-erp-hover'}`}>
+                          <CheckCircle2 size={16} className={`shrink-0 ${isInactive ? 'text-erp-disabled' : 'text-erp-success'}`} />
+
+                          <div className="min-w-0 flex-1">
+                            <p className={`break-words text-xs font-semibold ${isInactive ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{formatPermission(permission)}</p>
+
+                            <p className="mt-0.5 break-all text-[10px] text-erp-text-secondary">{permission}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="flex min-h-40 flex-col items-center justify-center rounded-lg border border-dashed border-erp-border px-4 py-8 text-center">
+                <LockKeyhole size={28} className="text-erp-text-muted" />
+
+                <p className="mt-3 text-sm font-semibold text-erp-text">No permissions found</p>
+
+                <p className="mt-1 text-xs text-erp-text-secondary">No permissions are assigned to this role.</p>
+              </div>
+            )}
+
+            <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
+              <LockKeyhole size={14} className="mt-0.5 shrink-0 text-erp-text-muted" />
+
+              <p className="text-xs text-erp-text-secondary">
+                {isInactive ? 'This role is inactive. Permissions are displayed for reference.' : isPredefined ? 'Predefined role permissions are managed by the system.' : 'Use Edit to change this custom role permissions.'}
+              </p>
+            </div>
+          </section>
         </>
       )}
     </div>
