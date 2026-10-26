@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, UserRound, Mail, Phone, LockKeyhole, Eye, EyeOff, ShieldCheck, Users, Package, ShoppingCart, Warehouse, FileText, Settings, Check, Save, LoaderCircle, Search, Info, CircleCheck } from 'lucide-react'
+import { ArrowLeft, UserRound, Mail, Phone, LockKeyhole, Eye, EyeOff, ShieldCheck, Users, Package, ShoppingCart, Warehouse, FileText, Settings, Check, Save, LoaderCircle, Search, Info, CircleCheck, View } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 const sectionIcons = {
   Employee: Users,
@@ -119,6 +120,10 @@ export default function EmployeeForm() {
   const { id } = useParams()
 
   const isEdit = Boolean(id)
+
+  const { permissions } = useAuth()
+
+  const canViewEmployee = hasPermission(permissions, 'employee:view')
 
   const [form, setForm] = useState({
     name: '',
@@ -371,6 +376,21 @@ export default function EmployeeForm() {
     ]
   }
 
+  if (loading) {
+    return (
+      <div className="min-w-0 space-y-3">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex h-[calc(100%-4px)] items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <Loading label={isEdit ? 'Loading employee details' : 'Preparing employee form'} description="Fetching employee information, roles and permissions..." />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {toast && <Toast toast={toast} onClose={closeToast} />}
@@ -385,15 +405,22 @@ export default function EmployeeForm() {
             <BreadCrumb items={items} />
           </div>
 
-          {/* Access Control */}
-          <div className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary">
-            <ShieldCheck size={14} />
-            <span>Access Control</span>
-          </div>
+          {/* view Control */}
+          {isEdit && canViewEmployee && (
+            <button
+              type="button"
+              onClick={() => navigate(`/company/employees/${id}`)}
+              title="View employee details"
+              aria-label="View employee details"
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary/5"
+            >
+              <Eye size={14} />
+              <span>View</span>
+            </button>
+          )}
         </div>
       </section>
 
-      {loading && <Loading label={isEdit ? 'Loading employee details' : 'Preparing employee form'} description="Fetching employee information, roles and permissions..." />}
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">

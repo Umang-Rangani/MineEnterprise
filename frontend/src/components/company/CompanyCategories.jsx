@@ -27,6 +27,7 @@ export default function CompanyCategories() {
   const canView = hasPermission(permissions, 'category:view')
   const canCreate = hasPermission(permissions, 'category:create')
   const canUpdate = hasPermission(permissions, 'category:update')
+  const canUpdateStatus = hasPermission(permissions, 'category:update-status')
   const canDelete = hasPermission(permissions, 'category:delete')
   const canExport = hasPermission(permissions, 'category:export')
 
@@ -233,7 +234,7 @@ export default function CompanyCategories() {
   }
 
   const handleToggleStatus = async () => {
-    if (!statusTarget?._id || updatingStatusId) return
+    if (!canUpdateStatus || !statusTarget?._id || updatingStatusId) return
 
     const category = statusTarget
     const nextStatus = category.status === 'Active' ? 'Inactive' : 'Active'
@@ -534,7 +535,7 @@ export default function CompanyCategories() {
                                   </button>
                                 )}
 
-                                {canUpdate && (
+                                {canUpdateStatus && (
                                   <button
                                     type="button"
                                     onClick={() => setStatusTarget(category)}
@@ -615,7 +616,7 @@ export default function CompanyCategories() {
                           </button>
                         )}
 
-                        {canUpdate && (
+                        {canUpdateStatus && (
                           <button
                             type="button"
                             onClick={() => setStatusTarget(category)}

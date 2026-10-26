@@ -1,18 +1,14 @@
-હા, સમજાયું. આપણે MineERP માં Permissions ના બધા buttons cover થયા છે કે નહીં એ audit કરવાનું છે.
+
+=> category  is demo , tena jevi layoute , same Ui , searchbar, selectbar, pagination, APi, header, export view active-deactive, create button 
 
 
-
-આટલું કરીને CategoryDetails.jsx save કરો અને done લખો. પછી આપણે CompaniesRoute.jsx માં Category ની routes માટે permission guard ચકાસીશું, જેથી સીધું URL નાખીને પણ અનધિકૃત page ખોલી ન શકાય.
-
-
-
-
-but ek problem sol nhi thyo, 
-
-Employee login krta tene permission hoy tej roles & permissionOverrides dekhava joye,
-
-mare all roles & permissionOverrides  aave che,  aa problem sol krva no che
-
+=> UI CompanyCategories.jsx ના demo પ્રમાણે રાખ્યું છે,  
 
 => chnage  kri ne full API aapo
 => chnage  kri ne full code aapo
+
+
+=> permission-based setup
+
+
+=> problem em che k admin e role & permission ma permission ne change kre to , F5 vagar permission aavi javi joye

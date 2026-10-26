@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, FolderTree, LoaderCircle, Save, Tag, FileText, CheckCircle2, AlertCircle } from 'lucide-react'
+import { ArrowLeft, FolderTree, LoaderCircle, Save, Tag, FileText, CheckCircle2, AlertCircle, Eye } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
@@ -19,11 +19,11 @@ export default function CategoryForm() {
 
   const canCreate = hasPermission(permissions, 'category:create')
   const canUpdate = hasPermission(permissions, 'category:update')
+  const canUpdateStatus = hasPermission(permissions, 'category:update-status')
   const canView = hasPermission(permissions, 'category:view')
 
-  const hasFormPermission = isEdit ? canView && canUpdate : canCreate
+  const hasFormPermission = isEdit ? canView && (canUpdate || canUpdateStatus) : canCreate
 
-  
   const [form, setForm] = useState({
     name: '',
     code: '',
@@ -36,6 +36,11 @@ export default function CategoryForm() {
   const [errors, setErrors] = useState({})
   const [apiError, setApiError] = useState('')
   const [toast, setToast] = useState(null)
+
+  const openDetailsPage = () => {
+    if (!id) return
+    navigate(`/company/categories/${id}`)
+  }
 
   const items = [
     { title: 'Categories', link: '/company/categories' },
@@ -217,10 +222,30 @@ export default function CategoryForm() {
             <BreadCrumb items={items} />
           </div>
 
-          <div className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary">
-            <FolderTree size={14} />
-            <span>{isEdit ? 'Edit Category' : 'New Category'}</span>
-          </div>
+          {/* {isEdit && canView && (
+            <button
+              type="button"
+              onClick={openDetailsPage}
+              title="View category"
+              aria-label="View category"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+            >
+              <Eye size={15} />
+            </button>
+          )} */}
+
+          {isEdit && canView  && (
+            <button
+              type="button"
+              onClick={openDetailsPage}
+              title="View category"
+              aria-label="View category"
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary/5"
+            >
+              <Eye size={16} />
+              <span>View</span>
+            </button>
+          )}
         </div>
       </section>
 
@@ -329,12 +354,11 @@ export default function CategoryForm() {
               <label htmlFor="category-status" className="block text-xs font-semibold text-erp-text-secondary">
                 Status
               </label>
-
               <select
                 id="category-status"
                 value={form.status}
                 onChange={(event) => updateField('status', event.target.value)}
-                disabled={saving}
+                disabled={saving || (isEdit ? !canUpdateStatus : !canCreate)}
                 className="h-10 w-full rounded-lg border border-erp-border bg-erp-surface px-3 text-xs text-erp-text outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
               >
                 <option value="Active">Active</option>

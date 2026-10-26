@@ -6,6 +6,7 @@ import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 const buttonBase = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -100,6 +101,13 @@ function SectionHeader({ icon: Icon, title, description, inactive }) {
 export default function RoleDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
+
+  const { permissions } = useAuth()
+
+  const canView = hasPermission(permissions, 'role:view')
+  const canUpdate = hasPermission(permissions, 'role:update')
+
+  const canEdit = canUpdate 
 
   const [role, setRole] = useState(null)
   const [availablePermissions, setAvailablePermissions] = useState({})
@@ -228,7 +236,7 @@ export default function RoleDetails() {
   }, [id])
 
   function handleEdit() {
-    if (!role || isInactive) return
+    if (!canEdit || !role || isInactive) return
 
     navigate(`/company/roles/${encodeURIComponent(role._id || role.name)}/edit`, {
       state: {
@@ -243,6 +251,22 @@ export default function RoleDetails() {
     { title: 'Roles & Permissions', link: '/company/roles' },
     { title: role?.name || 'Role Details', link: null },
   ]
+
+  if (!canView) {
+    return (
+      <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-erp-border bg-erp-surface px-6 py-10 text-center">
+        <AlertCircle size={28} className="text-rose-500" />
+
+        <h2 className="mt-4 text-lg font-bold text-erp-text">Access Denied</h2>
+
+        <p className="mt-2 max-w-md text-sm text-erp-text-secondary">You do not have permission to view role details.</p>
+
+        <button type="button" onClick={() => navigate('/company/roles')} className="mt-4 rounded-lg bg-erp-primary px-4 py-2 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+          Back to Roles
+        </button>
+      </div>
+    )
+  }
 
   return (
     <div className="min-w-0 space-y-4 text-erp-text">
@@ -271,16 +295,18 @@ export default function RoleDetails() {
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
 
-            <button
-              type="button"
-              onClick={handleEdit}
-              disabled={loading || refreshing || !role || isInactive}
-              title={isInactive ? 'Inactive roles cannot be edited here.' : 'Edit role'}
-              className={`${buttonBase} ${isInactive ? 'border border-erp-disabled-border bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary text-white hover:bg-erp-primary-hover'}`}
-            >
-              <Pencil size={14} />
-              Edit
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={handleEdit}
+                disabled={loading || refreshing || !role || isInactive}
+                title={isInactive ? 'Inactive roles cannot be edited.' : 'Edit role permissions'}
+                className={`${buttonBase} ${isInactive ? 'border border-erp-disabled-border bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary text-white hover:bg-erp-primary-hover'}`}
+              >
+                <Pencil size={14} />
+                Edit
+              </button>
+            )}
           </div>
         </div>
       </section>

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronRight, ShieldCheck, LoaderCircle, AlertCircle, Trash2, Save, Search, RefreshCw, LockKeyhole, CheckCircle2, Info, Users } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronRight, ShieldCheck, LoaderCircle, AlertCircle, Trash2, Save, Search, RefreshCw, LockKeyhole, CheckCircle2, Info, Users, View, Eye } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import TrashBox from '../../TrashBox/TrashBox'
 import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 function normalizePermissionGroups(permissions) {
   if (Array.isArray(permissions)) {
@@ -108,6 +109,21 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
   const navigate = useNavigate()
   const location = useLocation()
   const { id } = useParams()
+
+  const { permissions } = useAuth()
+
+  const canView = hasPermission(permissions, 'role:view')
+
+  const openDetailsPage = (role) => {
+    if (!canView || !role) return
+
+    navigate(`/company/roles/${encodeURIComponent(id)}`, {
+      state: {
+        role,
+        availablePermissions,
+      },
+    })
+  }
 
   const routeRole = location.state?.role || initialRole
 
@@ -446,10 +462,19 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
             <BreadCrumb items={items} />
           </div>
 
-          <div className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary">
-            <ShieldCheck size={14} />
-            <span>Access Control</span>
-          </div>
+
+          {isEdit && canView && routeRole && (
+            <button
+              type="button"
+              onClick={() => openDetailsPage(routeRole)}
+              title="View role details"
+              aria-label="View role details"
+              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary/5"
+            >
+              <Eye size={16} />
+              <span>View</span>
+            </button>
+          )}
         </div>
       </section>
 

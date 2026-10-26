@@ -7,6 +7,7 @@ import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import Loading from '../Loading/Loading'
 import { hasPermission, useAuth } from '../../context/AuthContext'
+import TrashBox from '../../TrashBox/TrashBox'
 
 const buttonBase = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 
@@ -62,6 +63,7 @@ export default function CategoryDetails() {
 
   const canView = hasPermission(permissions, 'category:view')
   const canUpdate = hasPermission(permissions, 'category:update')
+  const canUpdateStatus = hasPermission(permissions, 'category:update-status')
   const canDelete = hasPermission(permissions, 'category:delete')
 
   const [category, setCategory] = useState(null)
@@ -214,12 +216,19 @@ export default function CategoryDetails() {
               <button
                 type="button"
                 onClick={handleEdit}
-                disabled={loading || refreshing || deleting || !category || isInactive}
+                disabled={loading || refreshing || deleting || !category}
                 title={isInactive ? 'Inactive categories cannot be edited.' : 'Edit category'}
                 className={`${buttonBase} ${isInactive ? 'cursor-not-allowed bg-erp-disabled-light text-erp-disabled-text' : 'bg-erp-primary text-white hover:bg-erp-primary-hover'}`}
               >
                 <Pencil size={14} />
                 Edit
+              </button>
+            )}
+
+            {canDelete && (
+              <button type="button" onClick={() => setShowDeleteModal(true)} disabled={loading || refreshing || deleting || !category} className={`${buttonBase} border border-red-200 bg-red-50 text-red-600 hover:bg-red-100`}>
+                <Trash2 size={14} />
+                Delete
               </button>
             )}
           </div>
@@ -348,51 +357,24 @@ export default function CategoryDetails() {
         </>
       )}
 
-      {/* Delete Confirmation Modal */}
-      {showDeleteModal && category && canDelete && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !deleting) {
-              setShowDeleteModal(false)
-            }
-          }}
-        >
-          <section role="dialog" aria-modal="true" aria-labelledby="delete-category-title" className="w-full max-w-md rounded-xl border border-erp-border bg-erp-surface p-5 shadow-xl">
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
-                <Trash2 size={19} />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <h2 id="delete-category-title" className="text-sm font-bold text-erp-text">
-                  Delete Category?
-                </h2>
-
-                <p className="mt-1 break-words text-xs leading-5 text-erp-text-secondary">
-                  Are you sure you want to delete <span className="font-bold text-erp-text">{category.name}</span>? This action cannot be undone.
-                </p>
-              </div>
-
-              <button type="button" onClick={() => setShowDeleteModal(false)} disabled={deleting} aria-label="Close dialog" className="rounded-lg p-1.5 text-erp-text-secondary hover:bg-erp-hover disabled:opacity-50">
-                <X size={17} />
-              </button>
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowDeleteModal(false)} disabled={deleting} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
-                Cancel
-              </button>
-
-              <button type="button" onClick={handleDelete} disabled={deleting} className={`${buttonBase} bg-red-600 text-white hover:bg-red-700`}>
-                {deleting ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
-
-                {deleting ? 'Deleting...' : 'Delete Category'}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      {/* Delete Confirmation */}
+      <TrashBox
+        isOpen={showDeleteModal && Boolean(category) && canDelete}
+        onClose={() => {
+          if (!deleting) setShowDeleteModal(false)
+        }}
+        title="Delete Category?"
+        message={
+          <>
+            Are you sure you want to delete <strong className="font-bold text-slate-900">{category?.name || 'this category'}</strong>?
+          </>
+        }
+        actionButtonText="Delete Category"
+        cancelButtonText="Cancel"
+        onAction={handleDelete}
+        isProcessing={deleting}
+        variant="delete"
+      />
     </div>
   )
 }

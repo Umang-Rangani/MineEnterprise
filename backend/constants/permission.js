@@ -23,8 +23,8 @@ const SECTION_KEYS = {
   Dashboard: 'Dashboard',
   Employee: 'Employee',
   Role: 'Role',
-  Product: 'Product',
   Category: 'Category',
+  Product: 'Product',
   Inventory: 'Inventory',
   Warehouse: 'Warehouse',
   Supplier: 'Supplier',
@@ -51,8 +51,9 @@ const ACTIONS = {
     UPDATE: 'employee:update',
     UPDATE_STATUS: 'employee:update-status',
     DELETE: 'employee:delete',
-    ASSIGN_ROLE: 'employee:assign-role',
-    MANAGE_PERMISSIONS: 'employee:manage-permissions',
+    // ASSIGN_ROLE: 'employee:assign-role',
+    // MANAGE_PERMISSIONS: 'employee:manage-permissions',
+    EXPORT: 'employee:export',
   },
 
   Role: {
@@ -60,18 +61,8 @@ const ACTIONS = {
     VIEW: 'role:view',
     CREATE: 'role:create',
     UPDATE: 'role:update',
+    UPDATE_STATUS: 'role:update-status',
     DELETE: 'role:delete',
-    ASSIGN: 'role:assign',
-    MANAGE_PERMISSIONS: 'role:manage-permissions',
-  },
-
-  Product: {
-    LIST: 'product:list',
-    VIEW: 'product:view',
-    CREATE: 'product:create',
-    UPDATE: 'product:update',
-    DELETE: 'product:delete',
-    EXPORT: 'product:export',
   },
 
   Category: {
@@ -79,8 +70,19 @@ const ACTIONS = {
     VIEW: 'category:view',
     CREATE: 'category:create',
     UPDATE: 'category:update',
+    UPDATE_STATUS: 'category:update-status',
     DELETE: 'category:delete',
     EXPORT: 'category:export',
+  },
+
+  Product: {
+    LIST: 'product:list',
+    VIEW: 'product:view',
+    CREATE: 'product:create',
+    UPDATE: 'product:update',
+    UPDATE_STATUS: 'product:update-status',
+    DELETE: 'product:delete',
+    EXPORT: 'product:export',
   },
 
   Inventory: {
@@ -205,7 +207,7 @@ const ROLE_DEFAULT_PERMISSIONS = {
   [ROLES.MANAGER]: {
     ...READ_ONLY_PERMISSIONS,
     [SECTION_KEYS.Employee]: [ACTIONS.Employee.LIST, ACTIONS.Employee.VIEW],
-    [SECTION_KEYS.Role]: [ACTIONS.Role.LIST, ACTIONS.Role.VIEW],
+    [SECTION_KEYS.Role]: [ACTIONS.Role.LIST, ACTIONS.Role.VIEW, ACTIONS.Role.UPDATE_STATUS],
     [SECTION_KEYS.Purchase]: Object.values(ACTIONS.Purchase),
     [SECTION_KEYS.Sales]: Object.values(ACTIONS.Sales),
     [SECTION_KEYS.Invoice]: Object.values(ACTIONS.Invoice),

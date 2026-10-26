@@ -208,93 +208,103 @@ router.post('/', permissionMiddleware('Category', 'CREATE'), async (req, res, ne
 })
 
 // PATCH /erp/categories/:id - Update category
-router.patch('/:id', permissionMiddleware('Category', 'UPDATE'), async (req, res, next) => {
-  try {
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({ success: false, message: 'Invalid category ID.' })
-    }
-
-    const category = await Category.findOne({
-      _id: req.params.id,
-      companyId: req.user.companyId,
-    })
-
-    if (!category) {
-      return res.status(404).json({ success: false, message: 'Category not found.' })
-    }
-
-    if (req.body.name !== undefined) {
-      if (typeof req.body.name !== 'string' || !req.body.name.trim()) {
-        return res.status(400).json({ success: false, message: 'Category name is required.' })
-      }
-      category.name = req.body.name.trim()
-    }
-
-    if (req.body.description !== undefined) {
-      if (typeof req.body.description !== 'string' || req.body.description.trim().length > 500) {
-        return res.status(400).json({ success: false, message: 'Invalid category description.' })
-      }
-      category.description = req.body.description.trim()
-    }
-
-    if (req.body.code !== undefined) {
-      if (typeof req.body.code !== 'string' || req.body.code.trim().length > 40) {
-        return res.status(400).json({ success: false, message: 'Invalid category code.' })
-      }
-      category.code = req.body.code.trim().toUpperCase()
-    }
-
+router.patch(
+  '/:id',
+  (req, res, next) => {
     if (req.body.status !== undefined) {
-      if (!['Active', 'Inactive'].includes(req.body.status)) {
-        return res.status(400).json({ success: false, message: 'Invalid category status.' })
+      return permissionMiddleware('Category', 'UPDATE_STATUS')(req, res, next)
+    }
+
+    return permissionMiddleware('Category', 'UPDATE')(req, res, next)
+  },
+  async (req, res, next) => {
+    try {
+      if (!mongoose.isValidObjectId(req.params.id)) {
+        return res.status(400).json({ success: false, message: 'Invalid category ID.' })
       }
-      category.status = req.body.status
-    }
 
-    if (category.name.length > 100) {
-      return res.status(400).json({ success: false, message: 'Category name cannot exceed 100 characters.' })
-    }
+      const category = await Category.findOne({
+        _id: req.params.id,
+        companyId: req.user.companyId,
+      })
 
-    const duplicateName = await Category.findOne({
-      _id: { $ne: category._id },
-      companyId: req.user.companyId,
-      name: { $regex: `^${category.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
-    }).lean()
+      if (!category) {
+        return res.status(404).json({ success: false, message: 'Category not found.' })
+      }
 
-    if (duplicateName) {
-      return res.status(409).json({ success: false, message: 'A category with this name already exists.' })
-    }
+      if (req.body.name !== undefined) {
+        if (typeof req.body.name !== 'string' || !req.body.name.trim()) {
+          return res.status(400).json({ success: false, message: 'Category name is required.' })
+        }
+        category.name = req.body.name.trim()
+      }
 
-    if (category.code) {
-      const duplicateCode = await Category.findOne({
+      if (req.body.description !== undefined) {
+        if (typeof req.body.description !== 'string' || req.body.description.trim().length > 500) {
+          return res.status(400).json({ success: false, message: 'Invalid category description.' })
+        }
+        category.description = req.body.description.trim()
+      }
+
+      if (req.body.code !== undefined) {
+        if (typeof req.body.code !== 'string' || req.body.code.trim().length > 40) {
+          return res.status(400).json({ success: false, message: 'Invalid category code.' })
+        }
+        category.code = req.body.code.trim().toUpperCase()
+      }
+
+      if (req.body.status !== undefined) {
+        if (!['Active', 'Inactive'].includes(req.body.status)) {
+          return res.status(400).json({ success: false, message: 'Invalid category status.' })
+        }
+        category.status = req.body.status
+      }
+
+      if (category.name.length > 100) {
+        return res.status(400).json({ success: false, message: 'Category name cannot exceed 100 characters.' })
+      }
+
+      const duplicateName = await Category.findOne({
         _id: { $ne: category._id },
         companyId: req.user.companyId,
-        code: category.code,
+        name: { $regex: `^${category.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' },
       }).lean()
 
-      if (duplicateCode) {
-        return res.status(409).json({ success: false, message: 'A category with this code already exists.' })
+      if (duplicateName) {
+        return res.status(409).json({ success: false, message: 'A category with this name already exists.' })
       }
-    }
 
-    category.updatedBy = req.user.userId
-    await category.save()
+      if (category.code) {
+        const duplicateCode = await Category.findOne({
+          _id: { $ne: category._id },
+          companyId: req.user.companyId,
+          code: category.code,
+        }).lean()
 
-    return res.status(200).json({
-      success: true,
-      message: 'Category updated successfully.',
-      category,
-    })
-  } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({ success: false, message: 'A category with this value already exists.' })
+        if (duplicateCode) {
+          return res.status(409).json({ success: false, message: 'A category with this code already exists.' })
+        }
+      }
+
+      category.updatedBy = req.user.userId
+      await category.save()
+
+      return res.status(200).json({
+        success: true,
+        message: 'Category updated successfully.',
+        category,
+      })
+    } catch (error) {
+      if (error.code === 11000) {
+        return res.status(409).json({ success: false, message: 'A category with this value already exists.' })
+      }
+      if (error.name === 'ValidationError') {
+        return res.status(400).json({ success: false, message: error.message })
+      }
+      return next(error)
     }
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({ success: false, message: error.message })
-    }
-    return next(error)
-  }
-})
+  },
+)
 
 // DELETE /erp/categories/:id - Delete category
 router.delete('/:id', permissionMiddleware('Category', 'DELETE'), async (req, res, next) => {

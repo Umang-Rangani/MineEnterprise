@@ -1,768 +1,914 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Search, Plus, Package, Pencil, Trash2, X, RefreshCw, ChevronLeft, ChevronRight, AlertCircle, Boxes, IndianRupee, Filter, Eye } from 'lucide-react'
-import axiosInstance from '../../api/axiosInstance'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Plus, RefreshCw, Search, Pencil, Trash2, Eye, Package, ChevronLeft, ChevronRight, Filter, FilterX, LoaderCircle, Power, Download } from 'lucide-react'
 
-const initialForm = {
-  name: '',
-  sku: '',
-  description: '',
-  categoryId: '',
-  barcode: '',
-  unit: 'Piece',
-  costPrice: '0',
-  sellingPrice: '0',
-  taxRate: '0',
-  openingStock: '0',
-  minStockLevel: '0',
-  imageUrl: '',
-  status: 'Active',
+import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import Toast from '../../Toast/Toast'
+import TrashBox from '../../TrashBox/TrashBox'
+import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
+
+function getProductKey(product) {
+  return product?._id ? String(product._id) : product?.sku || product?.name
+}
+
+function getErrorMessage(error, fallback) {
+  return error.response?.data?.message || error.message || fallback
+}
+
+function formatPrice(value) {
+  return Number(value || 0).toLocaleString('en-IN', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+}
+
+function getCategoryName(product, categories) {
+  if (product?.categoryId && typeof product.categoryId === 'object') {
+    return product.categoryId.name || 'Uncategorized'
+  }
+
+  return categories.find((category) => String(category._id) === String(product?.categoryId))?.name || 'Uncategorized'
 }
 
 export default function CompanyProducts() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { permissions } = useAuth()
+
+  const canList = hasPermission(permissions, 'product:list')
+  const canView = hasPermission(permissions, 'product:view')
+  const canCreate = hasPermission(permissions, 'product:create')
+  const canUpdate = hasPermission(permissions, 'product:update')
+  const canUpdateStatus = hasPermission(permissions, 'product:update-status')
+  const canDelete = hasPermission(permissions, 'product:delete')
+  const canExport = hasPermission(permissions, 'product:export')
+
+  const canShowActions = canView || canUpdate || canUpdateStatus || canDelete
+
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
+
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('')
-  const [page, setPage] = useState(1)
+  const [statusFilter, setStatusFilter] = useState('All')
+  const [categoryFilter, setCategoryFilter] = useState('All')
+
+  const [pageSize, setPageSize] = useState(5)
+  const [currentPage, setCurrentPage] = useState(1)
+
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 10,
+    limit: 5,
     total: 0,
     totalPages: 1,
   })
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingProduct, setEditingProduct] = useState(null)
-  const [form, setForm] = useState(initialForm)
-  const [deleteProduct, setDeleteProduct] = useState(null)
-  const [viewProduct, setViewProduct] = useState(null)
 
-  const loadProducts = useCallback(async () => {
-    setLoading(true)
-    setError('')
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    inactive: 0,
+  })
 
-    try {
-      const response = await axiosInstance.get('/erp/products', {
-        params: {
-          page,
-          limit: 10,
-          search: search.trim() || undefined,
-          status: statusFilter || undefined,
-          categoryId: categoryFilter || undefined,
-        },
-      })
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [isFetching, setIsFetching] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-      const data = response.data
-      setProducts(data.products || data.data?.products || [])
+  const [deletingProduct, setDeletingProduct] = useState(null)
+  const [deletingId, setDeletingId] = useState('')
+  const [statusTarget, setStatusTarget] = useState(null)
+  const [updatingStatusId, setUpdatingStatusId] = useState('')
 
-      console.log('PRODUCT DATA:', data.products || data.data?.products || [])
-      setPagination(
-        data.pagination || {
-          page,
-          limit: 10,
-          total: data.total || 0,
-          totalPages: data.totalPages || 1,
-        },
-      )
-    } catch (err) {
-      setError(err.response?.data?.message || 'Products load કરવામાં સમસ્યા આવી. Backend API અને permissions તપાસો.')
-    } finally {
-      setLoading(false)
-    }
-  }, [page, search, statusFilter, categoryFilter])
+  const [toast, setToast] = useState(null)
+  const [error, setError] = useState('')
+
+  const items = [{ title: 'Products', link: null }]
+
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All' || categoryFilter !== 'All'
+
+  const showToast = (type, message, duration = 3000) => {
+    setToast({ id: Date.now(), type, message, duration })
+  }
+
+  const closeToast = () => setToast(null)
 
   useEffect(() => {
-    loadProducts()
-  }, [loadProducts])
-
-  useEffect(() => {
-    const loadCategories = async () => {
-      try {
-        const response = await axiosInstance.get('/erp/categories')
-        setCategories(response.data.categories || response.data.data?.categories || response.data.data || [])
-      } catch {
-        setCategories([])
-      }
-    }
-
-    loadCategories()
+    document.title = 'Products | MineERP'
   }, [])
 
+  // Load categories for the category filter and product display.
   useEffect(() => {
-    if (success) {
-      const timeout = setTimeout(() => setSuccess(''), 3000)
-      return () => clearTimeout(timeout)
+    let cancelled = false
+
+    async function fetchCategories() {
+      try {
+        const { data } = await axiosInstance.get('/erp/categories')
+
+        if (cancelled) return
+
+        const list = Array.isArray(data.categories) ? data.categories : Array.isArray(data.data?.categories) ? data.data.categories : Array.isArray(data.data) ? data.data : []
+
+        setCategories(list)
+      } catch {
+        if (!cancelled) setCategories([])
+      }
     }
-  }, [success])
 
-  const openCreateModal = () => {
-    setEditingProduct(null)
-    setForm(initialForm)
-    setError('')
-    setModalOpen(true)
-  }
+    fetchCategories()
 
-  const openEditModal = (product) => {
-    setEditingProduct(product)
-    setForm({
-      name: product.name || '',
-      sku: product.sku || '',
-      description: product.description || '',
-      categoryId: product.categoryId?._id || product.categoryId || '',
-      barcode: product.barcode || '',
-      unit: product.unit || 'Piece',
-      costPrice: String(product.costPrice ?? 0),
-      sellingPrice: String(product.sellingPrice ?? 0),
-      taxRate: String(product.taxRate ?? 0),
-      openingStock: String(product.openingStock ?? 0),
-      minStockLevel: String(product.minStockLevel ?? 0),
-      imageUrl: product.imageUrl || '',
-      status: product.status || 'Active',
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  // Fetch products and summary statistics.
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchProducts() {
+      setIsFetching(true)
+      setError('')
+
+      try {
+        const { data } = await axiosInstance.get('/erp/products', {
+          params: {
+            search: search.trim() || undefined,
+            status: statusFilter === 'All' ? undefined : statusFilter,
+            categoryId: categoryFilter === 'All' ? undefined : categoryFilter,
+            page: currentPage,
+            limit: pageSize,
+          },
+        })
+
+        if (data.success === false) {
+          throw new Error(data.message || 'Unable to load products.')
+        }
+
+        if (cancelled) return
+
+        const list = Array.isArray(data.products) ? data.products : Array.isArray(data.data?.products) ? data.data.products : []
+
+        setProducts(list)
+
+        const serverPagination = data.pagination || data.data?.pagination || {}
+
+        const total = Number(serverPagination.total ?? data.total ?? 0)
+        const totalPages = Math.max(1, Number(serverPagination.totalPages ?? data.totalPages ?? 1))
+
+        setPagination({
+          page: Number(serverPagination.page) || currentPage,
+          limit: Number(serverPagination.limit) || pageSize,
+          total,
+          totalPages,
+        })
+
+        // Prefer backend-wide counts when available.
+        // Otherwise use the records returned by the current request.
+        const serverStats = data.stats || data.data?.stats
+
+        setStats({
+          total: Number(serverStats?.total ?? total),
+          active: Number(serverStats?.active ?? list.filter((product) => product.status === 'Active').length),
+          inactive: Number(serverStats?.inactive ?? list.filter((product) => product.status === 'Inactive').length),
+        })
+
+        const serverPage = Number(serverPagination.page) || currentPage
+
+        if (serverPage !== currentPage) {
+          setCurrentPage(serverPage)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(getErrorMessage(err, 'Unable to load products.'))
+        }
+      } finally {
+        if (!cancelled) {
+          setInitialLoading(false)
+          setIsFetching(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    if (canList) {
+      fetchProducts()
+    } else {
+      setInitialLoading(false)
+      setIsFetching(false)
+    }
+
+    return () => {
+      cancelled = true
+    }
+  }, [canList, search, statusFilter, categoryFilter, currentPage, pageSize, refreshKey])
+
+  // Display success messages passed back from create, edit or details pages.
+  useEffect(() => {
+    if (!location.state?.successMessage) return
+
+    showToast('success', location.state.successMessage)
+
+    navigate(location.pathname, {
+      replace: true,
+      state: null,
     })
-    setError('')
-    setModalOpen(true)
+  }, [location.state, location.pathname, navigate])
+
+  const handleRefresh = () => {
+    if (isFetching) return
+
+    setRefreshing(true)
+    setRefreshKey((key) => key + 1)
   }
 
-  const handleFormChange = (event) => {
-    const { name, value } = event.target
-    setForm((current) => ({ ...current, [name]: value }))
+  const resetFilters = () => {
+    setSearch('')
+    setStatusFilter('All')
+    setCategoryFilter('All')
+    setCurrentPage(1)
   }
 
-  const handleSubmit = async (event) => {
-    event.preventDefault()
-    setSaving(true)
-    setError('')
-    setSuccess('')
+  const openCreatePage = () => {
+    navigate('/company/products/new')
+  }
 
-    const payload = {
-      ...form,
-      categoryId: form.categoryId || null,
-      costPrice: Number(form.costPrice),
-      sellingPrice: Number(form.sellingPrice),
-      taxRate: Number(form.taxRate),
-      openingStock: Number(form.openingStock),
-      minStockLevel: Number(form.minStockLevel),
-    }
+  const openDetailsPage = (product) => {
+    if (!product?._id) return
+    navigate(`/company/products/${product._id}`)
+  }
+
+  const openEditPage = (product) => {
+    if (!product?._id) return
+    navigate(`/company/products/${product._id}/edit`)
+  }
+
+  const handleExportProducts = async () => {
+    if (!canExport || isExporting) return
+
+    setIsExporting(true)
 
     try {
-      if (editingProduct) {
-        await axiosInstance.patch(`/erp/products/${editingProduct._id}`, payload)
-        setSuccess('Product successfully updated.')
+      const response = await axiosInstance.get('/erp/products/export', {
+        params: {
+          search: search.trim() || undefined,
+          status: statusFilter === 'All' ? undefined : statusFilter,
+          categoryId: categoryFilter === 'All' ? undefined : categoryFilter,
+        },
+        responseType: 'blob',
+      })
+
+      const blob = new Blob([response.data], {
+        type: 'text/csv;charset=utf-8;',
+      })
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = url
+      link.download = `products-${new Date().toISOString().slice(0, 10)}.csv`
+
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      showToast('success', 'Products exported successfully.')
+    } catch (err) {
+      let message = 'Unable to export products.'
+
+      if (err.response?.data instanceof Blob) {
+        try {
+          const errorData = JSON.parse(await err.response.data.text())
+          message = errorData.message || message
+        } catch {
+          // Use the fallback message.
+        }
       } else {
-        await axiosInstance.post('/erp/products', payload)
-        setSuccess('Product successfully created.')
+        message = getErrorMessage(err, message)
       }
 
-      setModalOpen(false)
-      setEditingProduct(null)
-      setForm(initialForm)
-      await loadProducts()
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Product save કરવામાં સમસ્યા આવી.')
+      showToast('error', message)
     } finally {
-      setSaving(false)
+      setIsExporting(false)
     }
   }
 
-  const handleDelete = async () => {
-    if (!deleteProduct) return
+  const handleToggleStatus = async () => {
+    if (!canUpdateStatus || !statusTarget?._id || updatingStatusId) return
 
-    setSaving(true)
-    setError('')
+    const product = statusTarget
+    const productId = String(product._id)
+    const nextStatus = product.status === 'Active' ? 'Inactive' : 'Active'
+
+    setUpdatingStatusId(productId)
 
     try {
-      await axiosInstance.delete(`/erp/products/${deleteProduct._id}`)
-      setDeleteProduct(null)
-      setSuccess('Product successfully deleted.')
+      const { data } = await axiosInstance.patch(`/erp/products/${productId}/status`, { status: nextStatus })
 
-      if (products.length === 1 && page > 1) {
-        setPage((current) => current - 1)
-      } else {
-        await loadProducts()
+      if (data.success === false) {
+        throw new Error(data.message || 'Unable to update product status.')
       }
+
+      setStatusTarget(null)
+      showToast('success', data.message || `Product ${nextStatus.toLowerCase()} successfully.`)
+      setRefreshKey((key) => key + 1)
     } catch (err) {
-      setError(err.response?.data?.message || 'Product delete કરવામાં સમસ્યા આવી.')
+      showToast('error', getErrorMessage(err, 'Unable to update product status.'))
     } finally {
-      setSaving(false)
+      setUpdatingStatusId('')
     }
   }
 
-  const formatPrice = (value) =>
-    Number(value || 0).toLocaleString('en-IN', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
+  const handleDeleteProduct = async () => {
+    if (!deletingProduct?._id || deletingId) return
 
-  const getCategoryName = (product) => {
-    if (product.categoryId && typeof product.categoryId === 'object') {
-      return product.categoryId.name || 'Uncategorized'
+    const productId = String(deletingProduct._id)
+    setDeletingId(productId)
+
+    try {
+      const { data } = await axiosInstance.delete(`/erp/products/${productId}`)
+
+      if (data.success === false) {
+        throw new Error(data.message || 'Unable to delete product.')
+      }
+
+      setDeletingProduct(null)
+      showToast('success', data.message || 'Product deleted successfully.')
+
+      if (products.length === 1 && currentPage > 1) {
+        setCurrentPage((page) => page - 1)
+      } else {
+        setRefreshKey((key) => key + 1)
+      }
+    } catch (err) {
+      showToast('error', getErrorMessage(err, 'Unable to delete product.'))
+    } finally {
+      setDeletingId('')
     }
+  }
 
-    return categories.find((category) => category._id === product.categoryId)?.name || 'Uncategorized'
+  const totalPages = Math.max(1, Number(pagination.totalPages) || 1)
+  const safePage = Math.min(currentPage, totalPages)
+  const totalProducts = Number(pagination.total) || 0
+  const startItem = totalProducts === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const endItem = Math.min(safePage * pageSize, totalProducts)
+
+  if (!canList) {
+    return (
+      <div className="rounded-xl border border-rose-200 bg-white p-6 text-center">
+        <h2 className="text-base font-semibold text-slate-800">Access Denied</h2>
+        <p className="mt-1 text-sm text-slate-500">You do not have permission to view products.</p>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-erp-muted">
-            <Package size={16} />
-            <span>Inventory Management</span>
-            <span>/</span>
-            <span className="text-erp-text">Products</span>
+    <div className="min-w-0 space-y-4 text-sm">
+      <Toast toast={toast} onClose={closeToast} />
+
+      {/* Header — follows the Categories demo */}
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
+
+        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <BreadCrumb items={items} />
           </div>
 
-          <h1 className="mt-2 text-2xl font-bold text-erp-text">Products</h1>
-          <p className="mt-1 text-sm text-erp-muted">Manage your product catalogue, pricing and stock details.</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={loadProducts}
-            disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-4 py-2.5 text-sm font-medium text-erp-text transition hover:bg-erp-hover disabled:opacity-60"
-          >
-            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-
-          <button type="button" onClick={openCreateModal} className="inline-flex items-center justify-center gap-2 rounded-xl bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-erp-primary-hover">
-            <Plus size={17} />
-            Add Product
-          </button>
-        </div>
-      </div>
-
-      {success && (
-        <div className="flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-          <Package size={17} />
-          {success}
-        </div>
-      )}
-
-      {error && !modalOpen && (
-        <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          <AlertCircle size={18} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-erp-muted">Total Products</p>
-              <p className="mt-2 text-2xl font-bold text-erp-text">{pagination.total ?? products.length}</p>
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-erp-border px-3">
+              <span className="text-xs text-slate-500">Total</span>
+              <span className="text-sm font-bold text-slate-900">{stats.total}</span>
             </div>
-            <div className="rounded-xl bg-erp-primary-light p-3 text-erp-primary">
-              <Package size={22} />
+
+            <div className="hidden h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-emerald-200 px-3 sm:flex">
+              <span className="text-xs text-emerald-700">Active</span>
+              <span className="text-sm font-bold text-slate-900">{stats.active}</span>
             </div>
+
+            <div className="hidden h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-rose-200 px-3 md:flex">
+              <span className="text-xs text-rose-700">Inactive</span>
+              <span className="text-sm font-bold text-slate-900">{stats.inactive}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={isFetching}
+              title="Refresh products"
+              aria-label="Refresh products"
+              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleExportProducts}
+                disabled={isExporting}
+                title="Export products to CSV"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-700 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isExporting ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
+                <span>{isExporting ? 'Exporting...' : 'Export'}</span>
+              </button>
+            )}
+
+            {canCreate && (
+              <button
+                type="button"
+                onClick={openCreatePage}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+              >
+                <Plus size={15} />
+                <span>Create Product</span>
+              </button>
+            )}
           </div>
         </div>
+      </section>
 
-        <div className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-erp-muted">Active on This Page</p>
-              <p className="mt-2 text-2xl font-bold text-erp-text">{products.filter((product) => product.status === 'Active').length}</p>
-            </div>
-            <div className="rounded-xl bg-green-50 p-3 text-green-700">
-              <Boxes size={22} />
-            </div>
-          </div>
-        </div>
+      {/* Products list */}
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        {/* Search and filters */}
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-3 sm:px-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-1 lg:flex-wrap lg:justify-between">
+            <div className="flex min-w-0 gap-3 sm:gap-5">
+              <div className="relative min-w-0 flex-1 lg:w-100 lg:flex-none">
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
-        <div className="rounded-2xl border border-erp-border bg-erp-surface p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-erp-muted">Selling Value on This Page</p>
-              <p className="mt-2 flex items-center gap-1 text-2xl font-bold text-erp-text">
-                <IndianRupee size={21} />
-                {formatPrice(products.reduce((total, product) => total + Number(product.sellingPrice || 0) * Number(product.openingStock || 0), 0))}
-              </p>
-            </div>
-            <div className="rounded-xl bg-erp-primary-light p-3 text-erp-primary">
-              <IndianRupee size={22} />
-            </div>
-          </div>
-        </div>
-      </div>
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => {
+                    setSearch(event.target.value)
+                    setCurrentPage(1)
+                  }}
+                  placeholder="Search product name, SKU or barcode..."
+                  aria-label="Search products"
+                  className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-3 text-xs outline-none transition placeholder:text-slate-400 focus:border-erp-primary focus:bg-white focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
+                />
+              </div>
 
-      <div className="rounded-2xl border border-erp-border bg-erp-surface p-4 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
-            <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-muted" />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value)
-                setPage(1)
-              }}
-              placeholder="Search product name, SKU or barcode..."
-              className="w-full rounded-xl border border-erp-border bg-erp-bg py-2.5 pl-10 pr-4 text-sm text-erp-text outline-none transition placeholder:text-erp-muted focus:border-erp-primary"
-            />
-          </div>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  title="Clear filters"
+                  aria-label="Clear filters"
+                  className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:text-sm"
+                >
+                  <FilterX size={14} />
+                </button>
+              )}
+            </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="flex items-center gap-2">
-              <Filter size={17} className="shrink-0 text-erp-muted" />
+            <div className="flex flex-wrap gap-3 sm:gap-5">
               <select
                 value={categoryFilter}
                 onChange={(event) => {
                   setCategoryFilter(event.target.value)
-                  setPage(1)
+                  setCurrentPage(1)
                 }}
-                className="min-w-40 rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 text-sm text-erp-text outline-none focus:border-erp-primary"
+                aria-label="Filter products by category"
+                className="h-9 min-w-0 max-w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
               >
-                <option value="">All Categories</option>
+                <option value="All">All Categories</option>
                 {categories.map((category) => (
                   <option key={category._id} value={category._id}>
                     {category.name}
                   </option>
                 ))}
               </select>
-            </div>
 
-            <select
-              value={statusFilter}
-              onChange={(event) => {
-                setStatusFilter(event.target.value)
-                setPage(1)
-              }}
-              className="rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 text-sm text-erp-text outline-none focus:border-erp-primary"
-            >
-              <option value="">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-sm">
-        <div className="flex items-center justify-between border-b border-erp-border px-5 py-4">
-          <div>
-            <h2 className="font-semibold text-erp-text">Product Catalogue</h2>
-            <p className="mt-1 text-xs text-erp-muted">{pagination.total ?? products.length} product(s) found</p>
-          </div>
-          <span className="rounded-lg bg-erp-bg px-3 py-1.5 text-xs font-medium text-erp-muted">
-            Page {pagination.page || page} of {pagination.totalPages || 1}
-          </span>
-        </div>
-
-        {loading ? (
-          <div className="flex min-h-64 flex-col items-center justify-center gap-3 text-erp-muted">
-            <RefreshCw size={26} className="animate-spin text-erp-primary" />
-            <p className="text-sm">Loading products...</p>
-          </div>
-        ) : products.length === 0 ? (
-          <div className="flex min-h-64 flex-col items-center justify-center px-5 text-center">
-            <div className="rounded-2xl bg-erp-bg p-4 text-erp-muted">
-              <Package size={30} />
-            </div>
-            <h3 className="mt-4 font-semibold text-erp-text">No products found</h3>
-            <p className="mt-1 max-w-sm text-sm text-erp-muted">Add your first product or change your search and filters.</p>
-            <button type="button" onClick={openCreateModal} className="mt-4 inline-flex items-center gap-2 rounded-xl bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover">
-              <Plus size={16} />
-              Add Product
-            </button>
-          </div>
-        ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left">
-                <thead className="bg-erp-bg text-xs uppercase tracking-wide text-erp-muted">
-                  <tr>
-                    <th className="px-5 py-4 font-semibold">Product</th>
-                    <th className="px-4 py-4 font-semibold">SKU</th>
-                    <th className="px-4 py-4 font-semibold">Category</th>
-                    <th className="px-4 py-4 font-semibold">Cost Price</th>
-                    <th className="px-4 py-4 font-semibold">Selling Price</th>
-                    <th className="px-4 py-4 font-semibold">Opening Stock</th>
-                    <th className="px-4 py-4 font-semibold">Status</th>
-                    <th className="px-5 py-4 text-right font-semibold">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-erp-border">
-                  {products.map((product) => (
-                    <tr key={product._id} className="transition hover:bg-erp-hover">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
-                          {product.imageUrl ? (
-                            <img src={product.imageUrl} alt={product.name} className="h-11 w-11 rounded-xl border border-erp-border object-cover" />
-                          ) : (
-                            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-                              <Package size={20} />
-                            </div>
-                          )}
-                          <div className="max-w-56">
-                            <p className="truncate text-sm font-semibold text-erp-text">{product.name}</p>
-                            <p className="mt-1 truncate text-xs text-erp-muted">{product.barcode || 'No barcode'}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-sm font-medium text-erp-text">{product.sku}</td>
-                      <td className="px-4 py-4 text-sm text-erp-muted">{getCategoryName(product)}</td>
-                      <td className="px-4 py-4 text-sm text-erp-text">₹{formatPrice(product.costPrice)}</td>
-                      <td className="px-4 py-4 text-sm font-semibold text-erp-text">₹{formatPrice(product.sellingPrice)}</td>
-                      <td className="px-4 py-4 text-sm text-erp-text">
-                        {Number(product.openingStock || 0)} <span className="text-erp-muted">{product.unit || 'Piece'}</span>
-                      </td>
-                      <td className="px-4 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${product.status === 'Active' ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{product.status}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setViewProduct(product)}
-                            title="View product"
-                            className="rounded-lg border border-erp-border p-2 text-erp-muted transition hover:border-erp-primary hover:bg-erp-primary-light hover:text-erp-primary"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(product)}
-                            title="Edit product"
-                            className="rounded-lg border border-erp-border p-2 text-erp-muted transition hover:border-erp-primary hover:bg-erp-primary-light hover:text-erp-primary"
-                          >
-                            <Pencil size={16} />
-                          </button>
-                          <button type="button" onClick={() => setDeleteProduct(product)} title="Delete product" className="rounded-lg border border-erp-border p-2 text-erp-muted transition hover:border-red-200 hover:bg-red-50 hover:text-red-600">
-                            <Trash2 size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-erp-border px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-erp-muted">
-                Showing {products.length} of {pagination.total ?? products.length} products
-              </p>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={page <= 1}
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  className="inline-flex items-center gap-1 rounded-lg border border-erp-border px-3 py-2 text-sm text-erp-text hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <ChevronLeft size={16} />
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  disabled={page >= (pagination.totalPages || 1)}
-                  onClick={() => setPage((current) => Math.min(pagination.totalPages || 1, current + 1))}
-                  className="inline-flex items-center gap-1 rounded-lg border border-erp-border px-3 py-2 text-sm text-erp-text hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Next
-                  <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <div className="my-auto w-full max-w-3xl overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-erp-border px-5 py-4 sm:px-6">
-              <div>
-                <h2 className="text-lg font-bold text-erp-text">{editingProduct ? 'Edit Product' : 'Add Product'}</h2>
-                <p className="mt-1 text-sm text-erp-muted">Enter the product details below.</p>
-              </div>
-              <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg p-2 text-erp-muted hover:bg-erp-hover hover:text-erp-text">
-                <X size={20} />
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit}>
-              <div className="grid max-h-[65vh] grid-cols-1 gap-4 overflow-y-auto p-5 sm:grid-cols-2 sm:p-6">
-                {error && (
-                  <div className="col-span-full flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    <AlertCircle size={17} className="mt-0.5 shrink-0" />
-                    {error}
-                  </div>
-                )}
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Product Name *
-                  <input
-                    required
-                    maxLength={150}
-                    name="name"
-                    value={form.name}
-                    onChange={handleFormChange}
-                    placeholder="e.g. Wireless Keyboard"
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  SKU *
-                  <input
-                    required
-                    maxLength={80}
-                    name="sku"
-                    value={form.sku}
-                    onChange={handleFormChange}
-                    placeholder="e.g. KEY-001"
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal uppercase outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Category
-                  <select name="categoryId" value={form.categoryId} onChange={handleFormChange} className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary">
-                    <option value="">Uncategorized</option>
-                    {categories.map((category) => (
-                      <option key={category._id} value={category._id}>
-                        {category.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Barcode
-                  <input
-                    name="barcode"
-                    value={form.barcode}
-                    onChange={handleFormChange}
-                    placeholder="Enter barcode"
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Cost Price (₹) *
-                  <input
-                    required
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    name="costPrice"
-                    value={form.costPrice}
-                    onChange={handleFormChange}
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Selling Price (₹) *
-                  <input
-                    required
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    name="sellingPrice"
-                    value={form.sellingPrice}
-                    onChange={handleFormChange}
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Tax Rate (%)
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.01"
-                    name="taxRate"
-                    value={form.taxRate}
-                    onChange={handleFormChange}
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Unit
-                  <input
-                    name="unit"
-                    maxLength={30}
-                    value={form.unit}
-                    onChange={handleFormChange}
-                    placeholder="Piece, Kg, Box..."
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Opening Stock
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    name="openingStock"
-                    value={form.openingStock}
-                    onChange={handleFormChange}
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Minimum Stock Level
-                  <input
-                    type="number"
-                    min="0"
-                    step="1"
-                    name="minStockLevel"
-                    value={form.minStockLevel}
-                    onChange={handleFormChange}
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Status
-                  <select name="status" value={form.status} onChange={handleFormChange} className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary">
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text">
-                  Image URL
-                  <input
-                    type="url"
-                    name="imageUrl"
-                    value={form.imageUrl}
-                    onChange={handleFormChange}
-                    placeholder="https://..."
-                    className="w-full rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-
-                <label className="space-y-1.5 text-sm font-medium text-erp-text sm:col-span-2">
-                  Description
-                  <textarea
-                    rows={3}
-                    maxLength={2000}
-                    name="description"
-                    value={form.description}
-                    onChange={handleFormChange}
-                    placeholder="Product description..."
-                    className="w-full resize-y rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 font-normal outline-none focus:border-erp-primary"
-                  />
-                </label>
-              </div>
-
-              <div className="flex flex-col-reverse gap-2 border-t border-erp-border px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
-                <button type="button" onClick={() => setModalOpen(false)} disabled={saving} className="rounded-xl border border-erp-border px-5 py-2.5 text-sm font-semibold text-erp-text hover:bg-erp-hover disabled:opacity-60">
-                  Cancel
-                </button>
-                <button type="submit" disabled={saving} className="rounded-xl bg-erp-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60">
-                  {saving ? 'Saving...' : editingProduct ? 'Update Product' : 'Create Product'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {deleteProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-erp-border bg-erp-surface p-6 shadow-2xl">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
-              <Trash2 size={22} />
-            </div>
-            <h2 className="mt-4 text-lg font-bold text-erp-text">Delete Product?</h2>
-            <p className="mt-2 text-sm leading-6 text-erp-muted">
-              Are you sure you want to delete <span className="font-semibold text-erp-text">{deleteProduct.name}</span>? This action cannot be undone.
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setDeleteProduct(null)} disabled={saving} className="rounded-xl border border-erp-border px-4 py-2.5 text-sm font-semibold text-erp-text hover:bg-erp-hover">
-                Cancel
-              </button>
-              <button type="button" onClick={handleDelete} disabled={saving} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60">
-                {saving ? 'Deleting...' : 'Delete Product'}
-              </button>
+              <select
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value)
+                  setCurrentPage(1)
+                }}
+                aria-label="Filter products by status"
+                className="h-9 min-w-0 rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
+              >
+                <option value="All">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
             </div>
           </div>
         </div>
-      )}
 
-      {viewProduct && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4">
-          <div className="my-auto w-full max-w-2xl overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-2xl">
-            <div className="flex items-center justify-between border-b border-erp-border px-5 py-4">
-              <div>
-                <h2 className="text-lg font-bold text-erp-text">Product Details</h2>
-                <p className="mt-1 text-sm text-erp-muted">Complete product information.</p>
-              </div>
-              <button type="button" onClick={() => setViewProduct(null)} className="rounded-lg p-2 text-erp-muted hover:bg-erp-hover hover:text-erp-text">
-                <X size={20} />
-              </button>
+        {/* Table and loading */}
+        <div className="relative min-h-[220px]">
+          {initialLoading ? (
+            <div className="flex min-h-[280px] items-center justify-center">
+              <Loading fullScreen={false} label="Loading products" description="Fetching product records..." className="!h-full min-h-[220px]" />
             </div>
+          ) : products.length === 0 ? (
+            <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
+                <Package size={24} />
+              </div>
 
-            <div className="max-h-[70vh] space-y-5 overflow-y-auto p-5">
-              {viewProduct.imageUrl && (
-                <div className="flex justify-center">
-                  <img src={viewProduct.imageUrl} alt={viewProduct.name} className="h-36 w-36 rounded-2xl border border-erp-border object-cover" />
-                </div>
+              <h3 className="mt-3 text-sm font-bold text-slate-800">{hasActiveFilters ? 'No matching products' : 'No products available'}</h3>
+
+              <p className="mt-1 max-w-xs text-xs text-slate-500">{hasActiveFilters ? 'Try another search or change your filters.' : 'Create a product to start managing your catalogue and stock.'}</p>
+
+              {hasActiveFilters ? (
+                <button type="button" onClick={resetFilters} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <Filter size={14} />
+                  Clear filters
+                </button>
+              ) : (
+                canCreate && (
+                  <button type="button" onClick={openCreatePage} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                    <Plus size={15} />
+                    Create Product
+                  </button>
+                )
               )}
+            </div>
+          ) : (
+            <>
+              {/* Desktop table */}
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full min-w-[1050px] text-left">
+                  <thead className="bg-slate-50">
+                    <tr className="border-b border-slate-100">
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Product</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">SKU</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Category</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Cost Price</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Selling Price</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Stock</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+                      {canShowActions && <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>}
+                    </tr>
+                  </thead>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {[
-                  ['Product Name', viewProduct.name],
-                  ['SKU', viewProduct.sku],
-                  ['Category', getCategoryName(viewProduct)],
-                  ['Barcode', viewProduct.barcode || '—'],
-                  ['Cost Price', `₹${formatPrice(viewProduct.costPrice)}`],
-                  ['Selling Price', `₹${formatPrice(viewProduct.sellingPrice)}`],
-                  ['Tax Rate', `${Number(viewProduct.taxRate || 0)}%`],
-                  ['Opening Stock', `${Number(viewProduct.openingStock || 0)} ${viewProduct.unit || 'Piece'}`],
-                  ['Minimum Stock Level', `${Number(viewProduct.minStockLevel || 0)} ${viewProduct.unit || 'Piece'}`],
-                  ['Status', viewProduct.status || '—'],
-                  ['Created At', viewProduct.createdAt ? new Date(viewProduct.createdAt).toLocaleString('en-IN') : '—'],
-                  ['Updated At', viewProduct.updatedAt ? new Date(viewProduct.updatedAt).toLocaleString('en-IN') : '—'],
-                ].map(([label, value]) => (
-                  <div key={label} className="rounded-xl border border-erp-border bg-erp-bg p-3">
-                    <p className="text-xs font-medium text-erp-muted">{label}</p>
-                    <p className="mt-1 break-words text-sm font-semibold text-erp-text">{value}</p>
-                  </div>
-                ))}
+                  <tbody className="divide-y divide-slate-100">
+                    {products.map((product) => {
+                      const isInactive = product.status === 'Inactive'
+                      const productId = String(product._id || '')
+                      const isLowStock = Number(product.openingStock || 0) <= Number(product.minStockLevel || 0)
 
-                <div className="rounded-xl border border-erp-border bg-erp-bg p-3 sm:col-span-2">
-                  <p className="text-xs font-medium text-erp-muted">Description</p>
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-erp-text">{viewProduct.description || 'No description available.'}</p>
-                </div>
+                      return (
+                        <tr key={getProductKey(product)} className="transition hover:bg-slate-50/70">
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-2.5">
+                              {product.imageUrl ? (
+                                <img src={product.imageUrl} alt={product.name || 'Product'} className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                              ) : (
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                                  <Package size={17} />
+                                </div>
+                              )}
+
+                              <div className="min-w-0">
+                                <p className="max-w-52 truncate text-xs font-semibold text-slate-800 sm:text-sm">{product.name || 'Unnamed product'}</p>
+                                <p className="mt-0.5 max-w-52 truncate text-[10px] text-slate-400">{product.barcode || 'No barcode'}</p>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="inline-flex max-w-32 truncate rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">{product.sku || '—'}</span>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="text-xs text-slate-600">{getCategoryName(product, categories)}</span>
+                          </td>
+
+                          <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-700">₹{formatPrice(product.costPrice)}</td>
+
+                          <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-slate-800">₹{formatPrice(product.sellingPrice)}</td>
+
+                          <td className="px-4 py-3">
+                            <div className="flex flex-col gap-1">
+                              <span className={`whitespace-nowrap text-xs font-medium ${isLowStock ? 'text-orange-700' : 'text-slate-700'}`}>
+                                {Number(product.openingStock || 0)} {product.unit || 'Piece'}
+                              </span>
+                              {isLowStock && <span className="text-[10px] font-medium text-orange-600">Low stock</span>}
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ${isInactive ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${isInactive ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                              {isInactive ? 'Inactive' : 'Active'}
+                            </span>
+                          </td>
+
+                          {canShowActions && (
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {canView && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openDetailsPage(product)}
+                                    title="View product"
+                                    aria-label={`View ${product.name || 'product'}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Eye size={15} />
+                                  </button>
+                                )}
+
+                                {canUpdate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditPage(product)}
+                                    title="Edit product"
+                                    aria-label={`Edit ${product.name || 'product'}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                )}
+
+                                {canUpdateStatus && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setStatusTarget(product)}
+                                    disabled={Boolean(updatingStatusId)}
+                                    title={isInactive ? 'Activate product' : 'Deactivate product'}
+                                    aria-label={`${isInactive ? 'Activate' : 'Deactivate'} ${product.name || 'product'}`}
+                                    className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                                    }`}
+                                  >
+                                    {updatingStatusId === productId ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
+                                  </button>
+                                )}
+
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingProduct(product)}
+                                    disabled={Boolean(deletingId)}
+                                    title="Delete product"
+                                    aria-label={`Delete ${product.name || 'product'}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    {deletingId === productId ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile cards */}
+              <div className="divide-y divide-slate-100 md:hidden">
+                {products.map((product) => {
+                  const isInactive = product.status === 'Inactive'
+                  const productId = String(product._id || '')
+                  const isLowStock = Number(product.openingStock || 0) <= Number(product.minStockLevel || 0)
+
+                  return (
+                    <div key={getProductKey(product)} className="space-y-3 p-3">
+                      <div className="flex items-start gap-2.5">
+                        {product.imageUrl ? (
+                          <img src={product.imageUrl} alt={product.name || 'Product'} className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+                            <Package size={18} />
+                          </div>
+                        )}
+
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-semibold text-slate-900">{product.name || 'Unnamed product'}</p>
+                          <p className="mt-1 break-words text-xs text-slate-500">SKU: {product.sku || '—'}</p>
+                          <p className="mt-1 break-words text-xs text-slate-500">Category: {getCategoryName(product, categories)}</p>
+                          <p className="mt-1 text-xs text-slate-500">Barcode: {product.barcode || '—'}</p>
+                        </div>
+
+                        <span className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[10px] font-semibold ${isInactive ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${isInactive ? 'bg-rose-500' : 'bg-emerald-500'}`} />
+                          {isInactive ? 'Inactive' : 'Active'}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
+                        <div>
+                          <p className="text-[10px] text-slate-500">Cost Price</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-800">₹{formatPrice(product.costPrice)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500">Selling Price</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-800">₹{formatPrice(product.sellingPrice)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500">Stock</p>
+                          <p className={`mt-1 text-xs font-semibold ${isLowStock ? 'text-orange-700' : 'text-slate-800'}`}>
+                            {Number(product.openingStock || 0)} {product.unit || 'Piece'}
+                            {isLowStock ? ' · Low stock' : ''}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-500">Tax Rate</p>
+                          <p className="mt-1 text-xs font-semibold text-slate-800">{Number(product.taxRate || 0)}%</p>
+                        </div>
+                      </div>
+
+                      {canShowActions && (
+                        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2.5">
+                          {canView && (
+                            <button
+                              type="button"
+                              onClick={() => openDetailsPage(product)}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              <Eye size={14} />
+                              View
+                            </button>
+                          )}
+
+                          {canUpdate && (
+                            <button
+                              type="button"
+                              onClick={() => openEditPage(product)}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15"
+                            >
+                              <Pencil size={14} />
+                              Edit
+                            </button>
+                          )}
+
+                          {canUpdateStatus && (
+                            <button
+                              type="button"
+                              onClick={() => setStatusTarget(product)}
+                              disabled={Boolean(updatingStatusId)}
+                              className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold disabled:opacity-50 ${
+                                isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-orange-200 bg-orange-50 text-orange-600'
+                              }`}
+                            >
+                              <Power size={14} />
+                              {updatingStatusId === productId ? 'Updating...' : isInactive ? 'Activate' : 'Deactivate'}
+                            </button>
+                          )}
+
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => setDeletingProduct(product)}
+                              disabled={Boolean(deletingId)}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                            >
+                              {deletingId === productId ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Loading overlay */}
+          {!initialLoading && isFetching && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
+              <Loading fullScreen={false} label="Updating products" description="Refreshing product records..." className="!h-full min-h-[220px]" />
+            </div>
+          )}
+
+          {/* Fetch error */}
+          {!initialLoading && error && products.length === 0 && (
+            <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-center">
+              <p className="text-xs text-rose-700">{error}</p>
+              <button type="button" onClick={handleRefresh} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">
+                <RefreshCw size={13} />
+                Try again
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        {!initialLoading && (
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs text-slate-500 sm:text-sm">
+                Showing{' '}
+                <span className="font-semibold text-slate-700">
+                  {startItem}–{endItem}
+                </span>{' '}
+                of <span className="font-semibold text-slate-700">{totalProducts}</span> products
+              </p>
+
+              <div className="flex items-center gap-2">
+                <label htmlFor="product-page-size" className="whitespace-nowrap text-xs text-slate-500">
+                  Rows:
+                </label>
+
+                <select
+                  id="product-page-size"
+                  value={pageSize}
+                  onChange={(event) => {
+                    setPageSize(Number(event.target.value))
+                    setCurrentPage(1)
+                  }}
+                  disabled={isFetching}
+                  className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
+                >
+                  <option value={5}>5</option>
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                </select>
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-erp-border px-5 py-4">
-              <button type="button" onClick={() => setViewProduct(null)} className="rounded-xl border border-erp-border px-5 py-2.5 text-sm font-semibold text-erp-text hover:bg-erp-hover">
-                Close
-              </button>
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => {
-                  const product = viewProduct
-                  setViewProduct(null)
-                  openEditModal(product)
-                }}
-                className="inline-flex items-center gap-2 rounded-xl bg-erp-primary px-5 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover"
+                disabled={safePage <= 1 || isFetching}
+                onClick={() => setCurrentPage(1)}
+                aria-label="First page"
+                className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                <Pencil size={15} />
-                Edit Product
+                1
+              </button>
+
+              <button
+                type="button"
+                disabled={safePage <= 1 || isFetching}
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                aria-label="Previous page"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              <span className="min-w-20 px-1 text-center text-xs text-slate-600 sm:text-sm">
+                Page {safePage} of {totalPages}
+              </span>
+
+              <button
+                type="button"
+                disabled={safePage >= totalPages || isFetching}
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                aria-label="Next page"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronRight size={16} />
+              </button>
+
+              <button
+                type="button"
+                disabled={safePage >= totalPages || isFetching}
+                onClick={() => setCurrentPage(totalPages)}
+                aria-label="Last page"
+                className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {totalPages}
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </section>
+
+      {/* Delete confirmation */}
+      <TrashBox
+        isOpen={Boolean(deletingProduct)}
+        onClose={() => {
+          if (!deletingId) setDeletingProduct(null)
+        }}
+        title="Delete Product"
+        message={`Are you sure you want to delete "${deletingProduct?.name || 'this product'}"? This action cannot be undone.`}
+        actionButtonText="Delete Product"
+        cancelButtonText="Cancel"
+        onAction={handleDeleteProduct}
+        isProcessing={Boolean(deletingId)}
+      />
+
+      {/* Activate / Deactivate confirmation */}
+      <TrashBox
+        isOpen={Boolean(statusTarget)}
+        onClose={() => {
+          if (!updatingStatusId) setStatusTarget(null)
+        }}
+        title={statusTarget?.status === 'Inactive' ? 'Activate Product' : 'Deactivate Product'}
+        message={statusTarget?.status === 'Inactive' ? `Are you sure you want to activate "${statusTarget?.name}"?` : `Are you sure you want to deactivate "${statusTarget?.name}"?`}
+        actionButtonText={statusTarget?.status === 'Inactive' ? 'Activate Product' : 'Deactivate Product'}
+        cancelButtonText="Cancel"
+        onAction={handleToggleStatus}
+        isProcessing={Boolean(updatingStatusId)}
+        variant={statusTarget?.status === 'Inactive' ? 'activate' : 'deactivate'}
+      />
     </div>
   )
 }

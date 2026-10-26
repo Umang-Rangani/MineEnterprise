@@ -10,8 +10,6 @@ const { getEffectivePermissions } = require('../utils/permission')
 
 const router = express.Router()
 
-const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
-
 const getCompanyForUser = async (user) => {
   if (!user.companyId || !mongoose.isValidObjectId(user.companyId)) {
     return null
@@ -34,11 +32,11 @@ router.get('/my-permissions', authMiddleware, async (req, res, next) => {
       })
     }
 
-    console.log('MY PERMISSIONS USER:', {
-      id: req.user.id || req.user.userId,
-      role: req.user.role,
-      companyId: req.user.companyId,
-    })
+    // console.log('MY PERMISSIONS USER:', {
+    //   id: req.user.id || req.user.userId,
+    //   role: req.user.role,
+    //   companyId: req.user.companyId,
+    // })
 
     const company = await getCompanyForUser(req.user)
 
@@ -59,13 +57,13 @@ router.get('/my-permissions', authMiddleware, async (req, res, next) => {
       })
     }
 
-    console.log('USER ROLE:', req.user.role)
-    console.log('USER OVERRIDES:', req.user.permissionOverrides)
-    console.log('USER ROLES:', req.user.roles)
+    // console.log('USER ROLE:', req.user.role)
+    // console.log('USER OVERRIDES:', req.user.permissionOverrides)
+    // console.log('USER ROLES:', req.user.roles)
 
     const permissions = getEffectivePermissions(req.user, company)
 
-    console.log('FINAL EFFECTIVE PERMISSIONS:', permissions)
+    // console.log('FINAL EFFECTIVE PERMISSIONS:', permissions)
 
     return res.status(200).json({
       success: true,

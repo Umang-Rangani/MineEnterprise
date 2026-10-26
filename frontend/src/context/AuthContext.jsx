@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import axiosInstance from '../api/axiosInstance'
 
 const AuthContext = createContext(null)
@@ -40,7 +40,7 @@ export function AuthProvider({ children }) {
 
       const effectivePermissions = response.data.permissions ?? {}
 
-      console.log('effectivePermissions', effectivePermissions)
+      // console.log('effectivePermissions', effectivePermissions)
 
       setPermissions(effectivePermissions)
       return effectivePermissions
@@ -56,9 +56,6 @@ export function AuthProvider({ children }) {
     for (const endpoint of endpoints) {
       try {
         const response = await axiosInstance.get(endpoint)
-
-
-        
 
         if (response.data?.success && response.data?.user) {
           const currentUser = response.data.user
@@ -147,6 +144,35 @@ export function AuthProvider({ children }) {
 
     restoreSession()
   }, [])
+
+  const permissionsIntervalRef = useRef(null)
+
+  useEffect(() => {
+    if (loading || !user || user.role === 'SuperAdmin') {
+      return
+    }
+
+    const refreshPermissions = async () => {
+      try {
+        const response = await axiosInstance.get('/erp/my-permissions')
+
+        if (response.data?.success) {
+          setPermissions(response.data.permissions ?? {})
+        }
+      } catch (error) {
+        console.error('Unable to refresh permissions:', error)
+      }
+    }
+
+    permissionsIntervalRef.current = setInterval(refreshPermissions, 10000)
+
+    return () => {
+      if (permissionsIntervalRef.current) {
+        clearInterval(permissionsIntervalRef.current)
+        permissionsIntervalRef.current = null
+      }
+    }
+  }, [loading, user?._id, user?.role])
 
   return (
     <AuthContext.Provider

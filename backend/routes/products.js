@@ -72,6 +72,80 @@ router.get('/', permissionMiddleware('Product', 'LIST'), async (req, res, next) 
   }
 })
 
+// GET /erp/products/export
+router.get('/export', permissionMiddleware('Product', 'EXPORT'), async (req, res, next) => {
+  try {
+    const companyId = req.user.companyId
+
+    if (!companyId || !mongoose.isValidObjectId(companyId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Valid company access is required',
+      })
+    }
+
+    const filter = { companyId }
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
+
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+      filter.$or = [{ name: { $regex: escapedSearch, $options: 'i' } }, { sku: { $regex: escapedSearch, $options: 'i' } }, { barcode: { $regex: escapedSearch, $options: 'i' } }]
+    }
+
+    if (['Active', 'Inactive'].includes(req.query.status)) {
+      filter.status = req.query.status
+    }
+
+    if (req.query.categoryId) {
+      if (!mongoose.isValidObjectId(req.query.categoryId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid category ID',
+        })
+      }
+
+      filter.categoryId = req.query.categoryId
+    }
+
+    const products = await Product.find(filter).sort({ createdAt: -1 }).lean()
+
+    const columns = [
+      ['Name', 'name'],
+      ['SKU', 'sku'],
+      ['Barcode', 'barcode'],
+      ['Category ID', 'categoryId'],
+      ['Unit', 'unit'],
+      ['Cost Price', 'costPrice'],
+      ['Selling Price', 'sellingPrice'],
+      ['Tax Rate', 'taxRate'],
+      ['Opening Stock', 'openingStock'],
+      ['Minimum Stock', 'minStockLevel'],
+      ['Status', 'status'],
+    ]
+
+    const escapeCsv = (value) => {
+      let text = value == null ? '' : String(value)
+
+      // Prevent spreadsheet formula injection in text fields.
+      if (/^[\s]*[=+\-@]/.test(text)) {
+        text = `'${text}`
+      }
+
+      return `"${text.replace(/"/g, '""')}"`
+    }
+
+    const csv = [columns.map(([label]) => escapeCsv(label)).join(','), ...products.map((product) => columns.map(([, key]) => escapeCsv(product[key])).join(','))].join('\r\n')
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="products.csv"')
+
+    return res.status(200).send('\uFEFF' + csv)
+  } catch (error) {
+    return next(error)
+  }
+})  
+
 // GET /erp/products/:id
 router.get('/:id', permissionMiddleware('Product', 'VIEW'), async (req, res, next) => {
   try {
@@ -284,6 +358,67 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
   }
 })
 
+// PATCH /erp/products/:id/status
+router.patch('/:id/status', permissionMiddleware('Product', 'UPDATE_STATUS'), async (req, res, next) => {
+  try {
+    const companyId = req.user.companyId
+    const { status } = req.body
+
+    if (!companyId || !mongoose.isValidObjectId(companyId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Valid company access is required',
+      })
+    }
+
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID',
+      })
+    }
+
+    if (!['Active', 'Inactive'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status must be Active or Inactive',
+      })
+    }
+
+    const product = await Product.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        companyId,
+      },
+      {
+        $set: {
+          status,
+          updatedBy: req.user.userId,
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    )
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found',
+      })
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Product status updated successfully',
+      product,
+    })
+  } catch (error) {
+    return next(error)
+  }
+})
+
 // PATCH /erp/products/:id
 router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res, next) => {
   try {
@@ -303,7 +438,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       })
     }
 
-    const allowedFields = ['name', 'sku', 'description', 'categoryId', 'barcode', 'unit', 'costPrice', 'sellingPrice', 'taxRate', 'openingStock', 'minStockLevel', 'imageUrl', 'status']
+    const allowedFields = ['name', 'sku', 'description', 'categoryId', 'barcode', 'unit', 'costPrice', 'sellingPrice', 'taxRate', 'openingStock', 'minStockLevel', 'imageUrl']
 
     const data = {}
 

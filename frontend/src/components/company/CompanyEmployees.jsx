@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { UserRoundPlus, Search, RefreshCw, Eye, Pencil, Trash2, ShieldCheck, Mail, Phone, LoaderCircle, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX } from 'lucide-react'
+import { UserRoundPlus, Search, RefreshCw, Eye, Pencil, Trash2, ShieldCheck, Mail, Phone, LoaderCircle, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, Power, Download } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import TrashBox from '../../TrashBox/TrashBox'
 import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 const STORAGE_KEY = 'mineerp_employees_preferences'
 const SEARCH_STORAGE_KEY = 'mineerp_employee_search'
@@ -55,15 +56,6 @@ function getEmployeeRoles(employee) {
   return (employee.roles || []).map((role) => (typeof role === 'string' ? role : role?.name)).filter(Boolean)
 }
 
-function getEmployeeRoleKey(role) {
-  if (typeof role === 'string') return role
-
-  if (role?.type === 'Custom' && role.customRoleId) {
-    return `Custom:${role.customRoleId}`
-  }
-
-  return role?.name || ''
-}
 
 function getEmployeeRoleOptions(roles) {
   return roles
@@ -84,6 +76,18 @@ export default function CompanyEmployees() {
   const navigate = useNavigate()
   const location = useLocation()
 
+  const { permissions } = useAuth()
+
+  const canList = hasPermission(permissions, 'employee:list')
+  const canView = hasPermission(permissions, 'employee:view')
+  const canCreate = hasPermission(permissions, 'employee:create')
+  const canUpdate = hasPermission(permissions, 'employee:update')
+  const canUpdateStatus = hasPermission(permissions, 'employee:update-status')
+  const canDelete = hasPermission(permissions, 'employee:delete')
+  const canExport = hasPermission(permissions, 'employee:export')
+
+  const canShowActions = canView || canUpdate || canDelete
+
   const [employees, setEmployees] = useState([])
   const [availableRoles, setAvailableRoles] = useState([])
 
@@ -95,6 +99,11 @@ export default function CompanyEmployees() {
   const [roleFilter, setRoleFilter] = useState(initialPreferences.roleFilter)
   const [pageSize, setPageSize] = useState(initialPreferences.pageSize)
   const [currentPage, setCurrentPage] = useState(1)
+
+  const [statusTarget, setStatusTarget] = useState(null)
+  const [updatingStatusId, setUpdatingStatusId] = useState('')
+
+  const [isExporting, setIsExporting] = useState(false)
 
   const [stats, setStats] = useState({
     total: 0,
@@ -261,6 +270,85 @@ export default function CompanyEmployees() {
     setRefreshKey((key) => key + 1)
   }
 
+  const handleExportEmployees = async () => {
+    if (!canExport || isExporting) return
+
+    setIsExporting(true)
+
+    try {
+      const response = await axiosInstance.get('/erp/employees/export', {
+        params: {
+          search: debouncedSearch || undefined,
+          status: statusFilter === 'All' ? undefined : statusFilter,
+          role: roleFilter === 'All' ? undefined : roleFilter,
+        },
+        responseType: 'blob',
+      })
+
+      const blob = new Blob([response.data], {
+        type: 'text/csv;charset=utf-8;',
+      })
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = url
+      link.download = `employees-${new Date().toISOString().slice(0, 10)}.csv`
+
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      showToast('success', 'Employees exported successfully.')
+    } catch (error) {
+      let message = 'Unable to export employees.'
+
+      if (error.response?.data instanceof Blob) {
+        try {
+          const errorData = JSON.parse(await error.response.data.text())
+          message = errorData.message || message
+        } catch {
+          // Use fallback error message.
+        }
+      } else {
+        message = getErrorMessage(error, message)
+      }
+
+      showToast('error', message)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const handleToggleStatus = async () => {
+    if (!statusTarget?._id || updatingStatusId) return
+
+    const employeeId = statusTarget._id
+    const nextStatus = statusTarget.status === 'Active' ? 'Inactive' : 'Active'
+
+    setUpdatingStatusId(employeeId)
+
+    try {
+      const response = await axiosInstance.patch(`/erp/employees/${employeeId}`, { status: nextStatus })
+
+      if (response.data?.success === false) {
+        throw new Error(response.data.message || 'Unable to update employee status.')
+      }
+
+      setStatusTarget(null)
+
+      showToast('success', response.data?.message || `Employee ${nextStatus.toLowerCase()} successfully.`)
+
+      setRefreshKey((key) => key + 1)
+    } catch (error) {
+      showToast('error', error.response?.data?.message || error.message || 'Unable to update employee status.')
+    } finally {
+      setUpdatingStatusId('')
+    }
+  }
+
   const handleDelete = async () => {
     if (!confirmEmployee?._id || deletingId) return
 
@@ -363,19 +451,35 @@ export default function CompanyEmployees() {
               <span>Refresh</span>
             </button>
 
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleExportEmployees}
+                disabled={isExporting}
+                title="Export employees to CSV"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-700 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isExporting ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
+
+                <span>{isExporting ? 'Exporting...' : 'Export'}</span>
+              </button>
+            )}
+
             {/* Add Employee Button */}
-            <button
-              type="button"
-              onClick={openCreate}
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
-            >
-              <UserRoundPlus size={15} />
-              <span>Add Employee</span>
-            </button>
+            {canCreate && (
+              <button
+                type="button"
+                onClick={openCreate}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+              >
+                <UserRoundPlus size={15} />
+                <span>Add Employee</span>
+              </button>
+            )}
           </div>
         </div>
       </section>
-      
+
       {/* Employee list */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         {/* Search and filters */}
@@ -532,36 +636,57 @@ export default function CompanyEmployees() {
 
                           <td className="px-4 py-3">
                             <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => openDetails(employee)}
-                                title="View employee"
-                                aria-label={`View ${employee.name}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                              >
-                                <Eye size={15} />
-                              </button>
+                              {canView && (
+                                <button
+                                  type="button"
+                                  onClick={() => openDetails(employee)}
+                                  title="View employee"
+                                  aria-label={`View ${employee.name}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                >
+                                  <Eye size={15} />
+                                </button>
+                              )}
 
-                              <button
-                                type="button"
-                                onClick={() => openEdit(employee)}
-                                title="Edit employee"
-                                aria-label={`Edit ${employee.name}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                              >
-                                <Pencil size={14} />
-                              </button>
+                              {canUpdate && (
+                                <button
+                                  type="button"
+                                  onClick={() => openEdit(employee)}
+                                  title="Edit employee"
+                                  aria-label={`Edit ${employee.name}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                >
+                                  <Pencil size={14} />
+                                </button>
+                              )}
 
-                              <button
-                                type="button"
-                                onClick={() => setConfirmEmployee(employee)}
-                                disabled={Boolean(deletingId)}
-                                title="Delete employee"
-                                aria-label={`Delete ${employee.name}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {deletingId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                              </button>
+                              {canUpdateStatus && (
+                                <button
+                                  type="button"
+                                  onClick={() => setStatusTarget(employee)}
+                                  disabled={Boolean(updatingStatusId) || Boolean(deletingId)}
+                                  title={employee.status === 'Active' ? 'Deactivate employee' : 'Activate employee'}
+                                  aria-label={`${employee.status === 'Active' ? 'Deactivate' : 'Activate'} ${employee.name}`}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                    employee.status === 'Active' ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                                  }`}
+                                >
+                                  {updatingStatusId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
+                                </button>
+                              )}
+
+                              {canDelete && (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmEmployee(employee)}
+                                  disabled={Boolean(deletingId)}
+                                  title="Delete employee"
+                                  aria-label={`Delete ${employee.name}`}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {deletingId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -612,6 +737,22 @@ export default function CompanyEmployees() {
                           <Pencil size={14} />
                           Edit
                         </button>
+
+                        {canUpdateStatus && (
+                          <button
+                            type="button"
+                            onClick={() => setStatusTarget(employee)}
+                            disabled={Boolean(updatingStatusId) || Boolean(deletingId)}
+                            title={employee.status === 'Active' ? 'Deactivate employee' : 'Activate employee'}
+                            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              employee.status === 'Active' ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                            }`}
+                          >
+                            {updatingStatusId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Power size={14} />}
+
+                            {employee.status === 'Active' ? 'Deactivate' : 'Activate'}
+                          </button>
+                        )}
 
                         <button
                           type="button"
@@ -730,6 +871,23 @@ export default function CompanyEmployees() {
         cancelButtonText="Cancel"
         onAction={handleDelete}
         isProcessing={Boolean(deletingId)}
+      />
+
+      {/* Activate / Deactivate confirmation */}
+      <TrashBox
+        isOpen={Boolean(statusTarget)}
+        variant={statusTarget?.status === 'Active' ? 'deactivate' : 'activate'}
+        onClose={() => {
+          if (!updatingStatusId) setStatusTarget(null)
+        }}
+        title={statusTarget?.status === 'Active' ? 'Deactivate Employee' : 'Activate Employee'}
+        message={
+          statusTarget?.status === 'Active' ? `Are you sure you want to deactivate "${statusTarget?.name || 'this employee'}"? They may lose access to the company ERP.` : `Are you sure you want to activate "${statusTarget?.name || 'this employee'}"?`
+        }
+        actionButtonText={statusTarget?.status === 'Active' ? 'Deactivate Employee' : 'Activate Employee'}
+        cancelButtonText="Cancel"
+        onAction={handleToggleStatus}
+        isProcessing={Boolean(updatingStatusId)}
       />
     </div>
   )

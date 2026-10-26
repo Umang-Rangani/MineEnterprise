@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Plus, ShieldCheck, RefreshCw, Search, Pencil, Trash2, AlertTriangle, X, Users, Eye, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, LockKeyhole, LoaderCircle, Power } from 'lucide-react'
+import { Plus, ShieldCheck, RefreshCw, Search, Pencil, Trash2, Users, Eye, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, LockKeyhole, LoaderCircle, Power, ShieldAlert } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import TrashBox from '../../TrashBox/TrashBox'
 import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 function getRolePermissions(role) {
   if (Array.isArray(role?.permissions)) return role.permissions
@@ -30,6 +31,20 @@ function humanize(value) {
 export default function CompanyRoles() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { permissions } = useAuth()
+
+  const canList = hasPermission(permissions, 'role:list')
+  const canView = hasPermission(permissions, 'role:view')
+  const canCreate = hasPermission(permissions, 'role:create')
+
+  const canUpdate = hasPermission(permissions, 'role:update')
+  const canChangeStatus = hasPermission(permissions, 'role:update-status')
+  const canDelete = hasPermission(permissions, 'role:delete')
+
+  // Edit permissions ne role:update thi control karo.
+  const canEdit = canUpdate
+
+  const canShowActions = canView || canEdit || canDelete || canChangeStatus
 
   const [roles, setRoles] = useState([])
   const [availablePermissions, setAvailablePermissions] = useState([])
@@ -68,7 +83,6 @@ export default function CompanyRoles() {
   const [roleStatusTarget, setRoleStatusTarget] = useState(null)
 
   const items = [{ title: 'Roles & Permissions', link: null }]
-
   const hasActiveFilters = Boolean(search.trim()) || typeFilter !== 'All'
 
   const showToast = (type, message, duration = 3000) => {
@@ -88,11 +102,18 @@ export default function CompanyRoles() {
     document.title = 'Roles & Permissions | MineERP'
   }, [])
 
-  // Fetch roles using server-side search, filter and pagination.
   useEffect(() => {
     let cancelled = false
 
     async function fetchRoles() {
+      if (!canList) {
+        setRoles([])
+        setInitialLoading(false)
+        setIsFetching(false)
+        setRefreshing(false)
+        return
+      }
+
       setIsFetching(true)
       setError('')
 
@@ -113,7 +134,6 @@ export default function CompanyRoles() {
         if (cancelled) return
 
         setRoles(Array.isArray(data.roles) ? data.roles : [])
-
         setAvailablePermissions(Array.isArray(data.availablePermissions) ? data.availablePermissions : [])
 
         if (data.stats) {
@@ -127,12 +147,10 @@ export default function CompanyRoles() {
         if (data.pagination) {
           setPagination(data.pagination)
 
-          // The backend may correct the requested page if it is out of range.
           if (Number.isInteger(data.pagination.page) && data.pagination.page !== currentPage) {
             setCurrentPage(data.pagination.page)
           }
         } else {
-          // Compatibility fallback if the server has not been updated yet.
           setPagination({
             page: currentPage,
             limit: pageSize,
@@ -163,9 +181,8 @@ export default function CompanyRoles() {
     return () => {
       cancelled = true
     }
-  }, [search, typeFilter, currentPage, pageSize, refreshKey])
+  }, [canList, search, typeFilter, currentPage, pageSize, refreshKey])
 
-  // Show a success message passed from another page.
   useEffect(() => {
     if (!location.state?.successMessage) return
 
@@ -178,20 +195,22 @@ export default function CompanyRoles() {
   }, [location.state, location.pathname, navigate])
 
   const handleRefresh = () => {
-    if (isFetching) return
+    if (isFetching || !canList) return
 
     setRefreshing(true)
     setRefreshKey((key) => key + 1)
   }
 
   const openCreatePage = () => {
+    if (!canCreate) return
+
     navigate('/company/roles/new', {
       state: { availablePermissions },
     })
   }
 
   const openDetailsPage = (role) => {
-    if (!role) return
+    if (!canView || !role) return
 
     const identifier = role._id || role.name
 
@@ -201,7 +220,7 @@ export default function CompanyRoles() {
   }
 
   const openEditPage = (role) => {
-    if (!role) return
+    if (!canEdit || !role) return
 
     const identifier = role._id || role.name
 
@@ -214,8 +233,8 @@ export default function CompanyRoles() {
     })
   }
 
-  const handleTogglePredefinedRole = async () => {
-    if (!roleStatusTarget || togglingRole) return
+  const handleToggleRoleStatus = async () => {
+    if (!roleStatusTarget || togglingRole || !canChangeStatus) return
 
     const role = roleStatusTarget
     const nextIsActive = role.isActive === false
@@ -223,7 +242,15 @@ export default function CompanyRoles() {
     setTogglingRole(role.name)
 
     try {
-      const { data } = await axiosInstance.patch(`/erp/roles/predefined/${encodeURIComponent(role.name)}`, { isActive: nextIsActive })
+      let data
+
+      if (role.type === 'Custom') {
+        const response = await axiosInstance.patch(`/erp/roles/${encodeURIComponent(role._id)}`, { isActive: nextIsActive })
+        data = response.data
+      } else {
+        const response = await axiosInstance.patch(`/erp/roles/predefined/${encodeURIComponent(role.name)}`, { isActive: nextIsActive })
+        data = response.data
+      }
 
       if (data.success === false) {
         throw new Error(data.message || 'Unable to update role status.')
@@ -241,7 +268,7 @@ export default function CompanyRoles() {
   }
 
   const handleDeleteRole = async () => {
-    if (!deletingRole?._id || deletingId) return
+    if (!deletingRole?._id || deletingId || !canDelete) return
 
     if (deletingRole.type !== 'Custom') {
       showToast('error', 'Only custom roles can be deleted.')
@@ -262,7 +289,6 @@ export default function CompanyRoles() {
       setDeletingRole(null)
       showToast('success', data.message || 'Custom role deleted successfully.')
 
-      // If the last row on this page was deleted, move to the previous page.
       if (roles.length === 1 && currentPage > 1) {
         setCurrentPage((page) => page - 1)
       } else {
@@ -276,19 +302,27 @@ export default function CompanyRoles() {
   }
 
   const totalPages = Math.max(1, Number(pagination.totalPages) || 0)
-
   const safePage = Math.min(currentPage, totalPages)
-
   const totalFilteredRoles = Number(pagination.totalRoles) || 0
-
   const startItem = totalFilteredRoles === 0 ? 0 : (safePage - 1) * pageSize + 1
-
   const endItem = Math.min(safePage * pageSize, totalFilteredRoles)
 
   const resetFilters = () => {
     setSearch('')
     setTypeFilter('All')
     setCurrentPage(1)
+  }
+
+  if (!canList) {
+    return (
+      <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+          <ShieldAlert size={28} />
+        </div>
+        <h2 className="mt-4 text-lg font-bold text-slate-800">Access Denied</h2>
+        <p className="mt-2 max-w-md text-sm leading-6 text-slate-500">You do not have permission to view Roles & Permissions.</p>
+      </div>
+    )
   }
 
   return (
@@ -332,14 +366,16 @@ export default function CompanyRoles() {
               <span className="hidden sm:inline">Refresh</span>
             </button>
 
-            <button
-              type="button"
-              onClick={openCreatePage}
-              className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
-            >
-              <Plus size={15} />
-              <span>Create Role</span>
-            </button>
+            {canCreate && (
+              <button
+                type="button"
+                onClick={openCreatePage}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+              >
+                <Plus size={15} />
+                <span>Create Role</span>
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -351,7 +387,6 @@ export default function CompanyRoles() {
             <div className="flex min-w-0 gap-3 sm:gap-5">
               <div className="relative min-w-0 flex-1 lg:w-100 lg:flex-none">
                 <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-
                 <input
                   type="search"
                   value={search}
@@ -418,10 +453,12 @@ export default function CompanyRoles() {
                   Clear filters
                 </button>
               ) : (
-                <button type="button" onClick={openCreatePage} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
-                  <Plus size={15} />
-                  Create Custom Role
-                </button>
+                canCreate && (
+                  <button type="button" onClick={openCreatePage} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                    <Plus size={15} />
+                    Create Custom Role
+                  </button>
+                )
               )}
             </div>
           ) : (
@@ -435,15 +472,21 @@ export default function CompanyRoles() {
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Type</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Permissions</th>
-                      <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
+                      {canShowActions && <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>}
                     </tr>
                   </thead>
 
                   <tbody className="divide-y divide-slate-100">
                     {roles.map((role) => {
-                      const permissions = getRolePermissions(role)
+                      const rolePermissions = getRolePermissions(role)
                       const isPredefined = role.type === 'Predefined'
-                      const isInactive = isPredefined && role.isActive === false
+                      const isCustom = role.type === 'Custom'
+                      const isInactive = role.isActive === false
+
+                     
+
+                      const canToggleThisRole = canChangeStatus
+                      const canDeleteThisRole = isCustom && canDelete
 
                       return (
                         <tr key={getRoleKey(role)} className="transition hover:bg-slate-50/70">
@@ -455,10 +498,8 @@ export default function CompanyRoles() {
 
                               <div className="min-w-0">
                                 <p className="max-w-48 truncate text-xs font-semibold text-slate-800 sm:text-sm">{role.name || 'Unnamed role'}</p>
-                                {/* <p className="mt-0.5 text-[10px] text-slate-400">ID: {String(role._id || role.name).slice(-8)}</p> */}
-                                {isPredefined && (
-                                  <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${isInactive ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{isInactive ? 'Inactive' : 'Active'}</span>
-                                )}
+
+                                <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${isInactive ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{isInactive ? 'Inactive' : 'Active'}</span>
                               </div>
                             </div>
                           </td>
@@ -477,64 +518,68 @@ export default function CompanyRoles() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-1.5 text-xs text-slate-700">
                               <ShieldCheck size={14} className="shrink-0 text-slate-400" />
-                              <span className="font-semibold tabular-nums">{permissions.length}</span>
+                              <span className="font-semibold tabular-nums">{rolePermissions.length}</span>
                               <span className="text-slate-500">permissions</span>
                             </div>
                           </td>
 
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => openDetailsPage(role)}
-                                title="View role"
-                                aria-label={`View ${role.name}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                              >
-                                <Eye size={15} />
-                              </button>
+                          {canShowActions && (
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {canView && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openDetailsPage(role)}
+                                    title="View role"
+                                    aria-label={`View ${role.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Eye size={15} />
+                                  </button>
+                                )}
 
-                              <button
-                                type="button"
-                                onClick={() => openEditPage(role)}
-                                title="Edit role permissions"
-                                aria-label={`Edit ${role.name}`}
-                                className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                              >
-                                <Pencil size={14} />
-                              </button>
+                                {canEdit && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditPage(role)}
+                                    title="Edit role permissions"
+                                    aria-label={`Edit ${role.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                )}
 
-                              {/* Delete Custom Role — only for Custom roles */}
-                              {!isPredefined && (
-                                <button
-                                  type="button"
-                                  onClick={() => setDeletingRole(role)}
-                                  disabled={Boolean(deletingId)}
-                                  title="Delete custom role"
-                                  aria-label={`Delete ${role.name}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  {deletingId === String(role._id) ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                                </button>
-                              )}
+                                {canToggleThisRole && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRoleStatusTarget(role)}
+                                    disabled={Boolean(togglingRole)}
+                                    title={isInactive ? 'Activate role' : 'Deactivate role'}
+                                    aria-label={`${isInactive ? 'Activate' : 'Deactivate'} ${role.name}`}
+                                    className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                                    }`}
+                                  >
+                                    {togglingRole === role.name ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
+                                  </button>
+                                )}
 
-                              {/* Activate / Deactivate Predefined Role */}
-                              {isPredefined && (
-                                <button
-                                  type="button"
-                                  onClick={() => setRoleStatusTarget(role)}
-                                  disabled={Boolean(togglingRole)}
-                                  title={isInactive ? 'Activate role' : 'Deactivate role'}
-                                  aria-label={`${isInactive ? 'Activate' : 'Deactivate'} ${role.name}`}
-                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                    isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
-                                  }`}
-                                >
-                                  {togglingRole === role.name ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                                {canDeleteThisRole && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setDeletingRole(role)}
+                                    disabled={Boolean(deletingId)}
+                                    title="Delete custom role"
+                                    aria-label={`Delete ${role.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-600 transition hover:border-rose-300 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    {deletingId === String(role._id) ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
@@ -545,9 +590,10 @@ export default function CompanyRoles() {
               {/* Mobile cards */}
               <div className="divide-y divide-slate-100 md:hidden">
                 {roles.map((role) => {
-                  const permissions = getRolePermissions(role)
+                  const rolePermissions = getRolePermissions(role)
                   const isPredefined = role.type === 'Predefined'
-                  const isInactive = isPredefined && role.isActive === false
+                  const isCustom = role.type === 'Custom'
+                  const isInactive = role.isActive === false
 
                   return (
                     <div key={getRoleKey(role)} className="space-y-3 p-3">
@@ -558,9 +604,9 @@ export default function CompanyRoles() {
 
                         <div className="min-w-0 flex-1">
                           <p className="break-words text-sm font-semibold text-slate-900">{role.name || 'Unnamed role'}</p>
-                          {isPredefined && (
-                            <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${isInactive ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{isInactive ? 'Inactive' : 'Active'}</span>
-                          )}
+
+                          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${isInactive ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{isInactive ? 'Inactive' : 'Active'}</span>
+
                           <p className="mt-0.5 break-words text-xs text-slate-500">{role.description || 'No description provided.'}</p>
                         </div>
 
@@ -575,34 +621,52 @@ export default function CompanyRoles() {
                           <ShieldCheck size={13} />
                           Permissions
                         </span>
-                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">{permissions.length}</span>
+                        <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-700">{rolePermissions.length}</span>
                       </div>
 
-                      <div className="flex gap-2 border-t border-slate-100 pt-2.5">
-                        <button type="button" onClick={() => openDetailsPage(role)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                          <Eye size={14} />
-                          View
-                        </button>
+                      {canShowActions && (
+                        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2.5">
+                          {canView && (
+                            <button type="button" onClick={() => openDetailsPage(role)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                              <Eye size={14} />
+                              View
+                            </button>
+                          )}
 
-                        <button type="button" onClick={() => openEditPage(role)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
-                          <Pencil size={14} />
-                          Edit
-                        </button>
+                          {canEdit && (
+                            <button type="button" onClick={() => openEditPage(role)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
+                              <Pencil size={14} />
+                              Edit
+                            </button>
+                          )}
 
-                        {!isPredefined && (
-                          <button
-                            type="button"
-                            onClick={() => setDeletingRole(role)}
-                            disabled={Boolean(deletingId)}
-                            title="Delete custom role"
-                            aria-label={`Delete ${role.name}`}
-                            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {deletingId === String(role._id) ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                            Delete
-                          </button>
-                        )}
-                      </div>
+                          {canChangeStatus && canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => setRoleStatusTarget(role)}
+                              disabled={Boolean(togglingRole)}
+                              className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                                isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100'
+                              }`}
+                            >
+                              {togglingRole === role.name ? <LoaderCircle size={14} className="animate-spin" /> : <Power size={14} />}
+                              {isInactive ? 'Activate' : 'Deactivate'}
+                            </button>
+                          )}
+
+                          {isCustom && canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => setDeletingRole(role)}
+                              disabled={Boolean(deletingId)}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-600 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {deletingId === String(role._id) ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -610,7 +674,6 @@ export default function CompanyRoles() {
             </>
           )}
 
-          {/* Loading overlay */}
           {!initialLoading && isFetching && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
               <Loading fullScreen={false} label="Updating roles" description="Refreshing role records..." className="!h-full min-h-[220px]" />
@@ -729,7 +792,7 @@ export default function CompanyRoles() {
         }
         actionButtonText={roleStatusTarget?.isActive === false ? 'Activate Role' : 'Deactivate Role'}
         cancelButtonText="Cancel"
-        onAction={handleTogglePredefinedRole}
+        onAction={handleToggleRoleStatus}
         isProcessing={Boolean(togglingRole)}
         variant={roleStatusTarget?.isActive === false ? 'activate' : 'deactivate'}
       />
