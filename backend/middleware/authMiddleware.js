@@ -72,8 +72,8 @@ const authMiddleware = async (req, res, next) => {
           message: 'Invalid SuperAdmin authentication',
         })
       }
-
       req.user = {
+        _id: user._id.toString(),
         userId: user._id.toString(),
         companyId: null,
         name: user.name,
@@ -115,9 +115,11 @@ const authMiddleware = async (req, res, next) => {
         message: 'Company is not approved or is unavailable.',
       })
     }
+
     req.user = {
+      _id: user._id.toString(),
       userId: user._id.toString(),
-      companyId: user.companyId.toString(), // ✅ Fixed
+      companyId: user.companyId.toString(),
       name: user.name,
       email: user.email,
       role: user.role,

@@ -236,7 +236,7 @@ export default function ProductsDetails() {
     }
   }
 
-  const categoryName = typeof product?.categoryId === 'object' ? product.categoryId?.name : product?.categoryName
+  const categoryName = typeof product?.categoryId === 'object' ? product.categoryId?.name : product?.categoryName || ''
 
   const breadcrumbItems = [
     { title: 'Products', link: '/company/products' },
@@ -363,7 +363,7 @@ export default function ProductsDetails() {
                 <DetailItem label="Barcode" value={product.barcode} icon={Barcode} inactive={isInactive} />
 
                 <DetailItem label="Category" value={categoryName || 'Uncategorized'} icon={Boxes} inactive={isInactive} />
-
+                
                 <div className="sm:col-span-2">
                   <DetailItem label="Description" value={product.description || 'No description provided.'} icon={FileText} inactive={isInactive} />
                 </div>

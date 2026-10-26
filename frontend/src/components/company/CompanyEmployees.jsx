@@ -56,7 +56,6 @@ function getEmployeeRoles(employee) {
   return (employee.roles || []).map((role) => (typeof role === 'string' ? role : role?.name)).filter(Boolean)
 }
 
-
 function getEmployeeRoleOptions(roles) {
   return roles
     .map((role) => {
@@ -578,7 +577,8 @@ export default function CompanyEmployees() {
                   <thead className="bg-slate-50">
                     <tr className="border-b border-slate-100">
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Employee</th>
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Contact</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Email</th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Phone</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Roles</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
                       <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
@@ -597,7 +597,7 @@ export default function CompanyEmployees() {
 
                               <div className="min-w-0">
                                 <p className="max-w-48 truncate text-xs font-semibold text-slate-800 sm:text-sm">{employee.name || 'Unnamed employee'}</p>
-                                <p className="mt-0.5 text-[10px] text-slate-400">ID: {String(employee._id).slice(-8)}</p>
+                                {/* <p className="mt-0.5 text-[10px] text-slate-400">ID: {String(employee._id).slice(-8)}</p> */}
                               </div>
                             </div>
                           </td>
@@ -607,13 +607,13 @@ export default function CompanyEmployees() {
                               <Mail size={13} className="shrink-0 text-slate-400" />
                               <span className="truncate">{employee.email}</span>
                             </div>
+                          </td>
 
-                            {employee.phone && (
-                              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500">
-                                <Phone size={12} className="shrink-0 text-slate-400" />
-                                <span>{employee.phone}</span>
-                              </div>
-                            )}
+                          <td className="px-4 py-3">
+                            <div className="flex max-w-56 items-center gap-1.5 text-xs text-slate-700">
+                              <Phone size={13} className="shrink-0 text-slate-400" />
+                              <span className="truncate">{employee.phone}</span>
+                            </div>
                           </td>
 
                           <td className="px-4 py-3">

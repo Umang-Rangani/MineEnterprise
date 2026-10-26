@@ -17,7 +17,6 @@ const allowedPredefinedRoles = [ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.ACCOUNTANT,
 const validPermissions = new Set(Object.values(ACTIONS).flatMap((sectionActions) => Object.values(sectionActions)))
 
 // GET /erp/roles — search, filter and pagination
-
 router.get('/', authMiddleware, permissionMiddleware('Role', 'LIST'), async (req, res, next) => {
   try {
     // 1. Validate company access

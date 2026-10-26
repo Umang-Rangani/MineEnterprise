@@ -51,8 +51,8 @@ const ACTIONS = {
     UPDATE: 'employee:update',
     UPDATE_STATUS: 'employee:update-status',
     DELETE: 'employee:delete',
-    // ASSIGN_ROLE: 'employee:assign-role',
-    // MANAGE_PERMISSIONS: 'employee:manage-permissions',
+    ASSIGN_ROLE: 'employee:assign-role',
+    MANAGE_PERMISSIONS: 'employee:manage-permissions',
     EXPORT: 'employee:export',
   },
 

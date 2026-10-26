@@ -124,6 +124,18 @@ export default function EmployeeForm() {
   const { permissions } = useAuth()
 
   const canViewEmployee = hasPermission(permissions, 'employee:view')
+  const canCreateEmployee = hasPermission(permissions, 'employee:create')
+  const canUpdateEmployee = hasPermission(permissions, 'employee:update')
+  const canAssignRoles = hasPermission(permissions, 'employee:assign-role')
+  const canManagePermissions = hasPermission(permissions, 'employee:manage-permissions')
+
+  const EMPLOYEE_UPDATE = 'employee:update'
+  const EMPLOYEE_ASSIGN_ROLE = 'employee:assign-role'
+  const EMPLOYEE_MANAGE_PERMISSIONS = 'employee:manage-permissions'
+
+  const dependentPermissions = [EMPLOYEE_ASSIGN_ROLE, EMPLOYEE_MANAGE_PERMISSIONS]
+
+  const canSubmitForm = isEdit ? canUpdateEmployee : canCreateEmployee
 
   const [form, setForm] = useState({
     name: '',
@@ -217,7 +229,15 @@ export default function EmployeeForm() {
 
           const rolePermissions = getRolePermissions(employeeRoles, roles)
 
-          setSelectedPermissions(Array.isArray(employee.permissionOverrides) ? employee.permissionOverrides : rolePermissions)
+          const initialPermissions = Array.isArray(employee.permissionOverrides) ? employee.permissionOverrides : rolePermissions
+
+          const normalizedPermissions = new Set(initialPermissions)
+
+          if (dependentPermissions.some((permission) => normalizedPermissions.has(permission))) {
+            normalizedPermissions.add(EMPLOYEE_UPDATE)
+          }
+
+          setSelectedPermissions([...normalizedPermissions])
         }
       } catch (requestError) {
         if (!cancelled) {
@@ -261,7 +281,27 @@ export default function EmployeeForm() {
   }
 
   const togglePermission = (permission) => {
-    setSelectedPermissions((current) => (current.includes(permission) ? current.filter((item) => item !== permission) : [...current, permission]))
+    setSelectedPermissions((current) => {
+      const next = new Set(current)
+
+      if (next.has(permission)) {
+        next.delete(permission)
+
+        // UPDATE OFF થાય તો બંને dependent permissions પણ OFF.
+        if (permission === EMPLOYEE_UPDATE) {
+          dependentPermissions.forEach((item) => next.delete(item))
+        }
+      } else {
+        next.add(permission)
+
+        // Role assignment અથવા permission management માટે UPDATE જરૂરી.
+        if (dependentPermissions.includes(permission)) {
+          next.add(EMPLOYEE_UPDATE)
+        }
+      }
+
+      return [...next]
+    })
   }
 
   const validateForm = () => {
@@ -302,6 +342,11 @@ export default function EmployeeForm() {
   const handleSubmit = async (event) => {
     event.preventDefault()
 
+    if (!canSubmitForm) {
+      showToast('error', `You do not have permission to ${isEdit ? 'edit' : 'create'} employees.`)
+      return
+    }
+
     if (!validateForm()) return
 
     setSaving(true)
@@ -310,9 +355,22 @@ export default function EmployeeForm() {
       name: form.name.trim(),
       email: form.email.trim(),
       phone: form.phone.trim(),
-      roles: selectedRoles,
-      permissionOverrides: [...new Set(selectedPermissions)],
-      status: form.status,
+    }
+
+    if (canAssignRoles) {
+      payload.roles = selectedRoles
+    }
+
+    if (canManagePermissions) {
+      payload.permissionOverrides = [...new Set(selectedPermissions)]
+    }
+
+    if (isEdit) {
+      payload.status = form.status
+    }
+
+    if (!isEdit || form.password) {
+      payload.password = form.password
     }
 
     if (!isEdit || form.password) {
@@ -420,7 +478,6 @@ export default function EmployeeForm() {
           )}
         </div>
       </section>
-
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -531,6 +588,8 @@ export default function EmployeeForm() {
           <div className="p-3">
             {fieldErrors.roles && <p className="mb-2 text-xs text-red-600">{fieldErrors.roles}</p>}
 
+            {!canAssignRoles && <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">You can view assigned roles, but you do not have permission to change them.</p>}
+
             {availableRoles.length === 0 ? (
               <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">No assignable roles were returned by the server.</p>
             ) : (
@@ -545,9 +604,15 @@ export default function EmployeeForm() {
                     <button
                       key={key}
                       type="button"
-                      onClick={() => toggleRole(role)}
+                      onClick={() => {
+                        if (canAssignRoles) toggleRole(role)
+                      }}
+                      disabled={!canAssignRoles}
                       aria-pressed={selected}
-                      className={`rounded-lg border p-2.5 text-left transition ${selected ? 'border-erp-primary bg-erp-primary/[0.04] ring-1 ring-erp-primary/10' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}
+                      title={!canAssignRoles ? 'You do not have permission to assign roles.' : ''}
+                      className={`rounded-lg border p-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        selected ? 'border-erp-primary bg-erp-primary/[0.04] ring-1 ring-erp-primary/10' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                      }`}
                     >
                       <div className="flex items-center justify-between gap-2">
                         <div className="flex min-w-0 items-center gap-2">
@@ -595,6 +660,8 @@ export default function EmployeeForm() {
           </div>
 
           <div className="space-y-3 p-3">
+            {!canManagePermissions && <p className="rounded-lg border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">You can view assigned permissions, but you do not have permission to change them.</p>}
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="relative w-full sm:max-w-xs">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -606,7 +673,22 @@ export default function EmployeeForm() {
                 />
               </div>
 
-              <button type="button" onClick={() => setSelectedPermissions(allPermissionKeys)} className="text-xs font-semibold text-erp-primary hover:underline">
+              <button
+                type="button"
+                disabled={!canManagePermissions}
+                onClick={() => {
+                  if (!canManagePermissions) return
+
+                  const next = new Set(allPermissionKeys)
+
+                  if (dependentPermissions.some((permission) => next.has(permission))) {
+                    next.add(EMPLOYEE_UPDATE)
+                  }
+
+                  setSelectedPermissions([...next])
+                }}
+                className="text-xs font-semibold text-erp-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+              >
                 Enable all
               </button>
             </div>
@@ -648,22 +730,33 @@ export default function EmployeeForm() {
 
                         <button
                           type="button"
+                          disabled={!canManagePermissions}
                           onClick={() => {
+                            if (!canManagePermissions) return
+
                             setSelectedPermissions((current) => {
                               const next = new Set(current)
 
-                              section.permissions.forEach((permission) => {
-                                if (allEnabled) {
-                                  next.delete(permission)
-                                } else {
-                                  next.add(permission)
-                                }
-                              })
+                              if (allEnabled) {
+                                section.permissions.forEach((permission) => next.delete(permission))
+                              } else {
+                                section.permissions.forEach((permission) => next.add(permission))
+                              }
+
+                              // Dependent permissions mate employee:update compulsory
+                              if (dependentPermissions.some((permission) => next.has(permission))) {
+                                next.add(EMPLOYEE_UPDATE)
+                              }
+
+                              // employee:update OFF hoy to dependent permissions pan OFF
+                              if (!next.has(EMPLOYEE_UPDATE)) {
+                                dependentPermissions.forEach((permission) => next.delete(permission))
+                              }
 
                               return [...next]
                             })
                           }}
-                          className="shrink-0 text-[10px] font-semibold text-erp-primary hover:underline"
+                          className="shrink-0 text-[10px] font-semibold text-erp-primary hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
                         >
                           {allEnabled ? 'Disable all' : 'Enable all'}
                         </button>
@@ -684,8 +777,13 @@ export default function EmployeeForm() {
                                 type="button"
                                 role="switch"
                                 aria-checked={enabled}
-                                onClick={() => togglePermission(permission)}
-                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-erp-primary/30 ${enabled ? 'bg-erp-primary' : 'bg-slate-300'}`}
+                                disabled={!canManagePermissions}
+                                onClick={() => {
+                                  if (canManagePermissions) togglePermission(permission)
+                                }}
+                                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-erp-primary/30 disabled:cursor-not-allowed disabled:opacity-50 ${
+                                  enabled ? 'bg-erp-primary' : 'bg-slate-300'
+                                }`}
                               >
                                 <span className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-4' : 'translate-x-0'}`} />
                               </button>
@@ -709,7 +807,7 @@ export default function EmployeeForm() {
 
           <button
             type="submit"
-            disabled={saving}
+            disabled={saving || !canSubmitForm}
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-erp-primary px-4 text-xs font-bold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}

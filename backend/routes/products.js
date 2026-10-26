@@ -144,7 +144,7 @@ router.get('/export', permissionMiddleware('Product', 'EXPORT'), async (req, res
   } catch (error) {
     return next(error)
   }
-})  
+})
 
 // GET /erp/products/:id
 router.get('/:id', permissionMiddleware('Product', 'VIEW'), async (req, res, next) => {
@@ -168,7 +168,12 @@ router.get('/:id', permissionMiddleware('Product', 'VIEW'), async (req, res, nex
     const product = await Product.findOne({
       _id: req.params.id,
       companyId,
-    }).lean()
+    })
+      .populate({
+        path: 'categoryId',
+        select: 'name',
+      })
+      .lean()
 
     if (!product) {
       return res.status(404).json({
