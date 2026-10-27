@@ -68,6 +68,12 @@ const navigationItems = [
     icon: Boxes,
     actions: ['inventory:view', 'inventory:view-stock'],
   },
+    {
+    label: 'Warehouse',
+    path: '/company/warehouses',
+    icon: Warehouse,
+    actions: ['warehouse:list'],
+  },
   {
     label: 'Suppliers',
     path: '/company/suppliers',
@@ -110,12 +116,7 @@ const navigationItems = [
     icon: Receipt,
     actions: ['expense:list'],
   },
-  {
-    label: 'Warehouse',
-    path: '/company/warehouses',
-    icon: Warehouse,
-    actions: ['warehouse:list'],
-  },
+
   {
     label: 'Reports',
     path: '/company/reports',
