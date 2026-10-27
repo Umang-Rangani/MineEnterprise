@@ -17,6 +17,19 @@ const inventoryMovementSchema = new mongoose.Schema(
       index: true,
     },
 
+    warehouseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WarehouseMineERP',
+      required: true,
+      index: true,
+    },
+
+    destinationWarehouseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WarehouseMineERP',
+      default: null,
+    },
+
     type: {
       type: String,
       enum: ['STOCK_IN', 'STOCK_OUT', 'ADJUSTMENT', 'TRANSFER'],

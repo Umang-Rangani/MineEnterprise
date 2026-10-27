@@ -36,6 +36,9 @@ export default function InventoryStockForm() {
   const [apiError, setApiError] = useState('')
   const [toast, setToast] = useState(null)
 
+  const [warehouses, setWarehouses] = useState([])
+  const [warehouseId, setWarehouseId] = useState('')
+
   const items = [
     {
       title: 'Inventory',
@@ -54,7 +57,7 @@ export default function InventoryStockForm() {
   useEffect(() => {
     let active = true
 
-    async function loadInventory() {
+    async function loadInitialData() {
       if (!hasFormPermission) {
         setLoading(false)
         return
@@ -64,6 +67,18 @@ export default function InventoryStockForm() {
       setApiError('')
 
       try {
+        // Step 1: Load active warehouses
+        const { data: warehouseData } = await axiosInstance.get('/erp/warehouses', {
+          params: { status: 'Active' },
+        })
+
+        const warehouseList = warehouseData.warehouses || warehouseData.data?.warehouses || warehouseData.data || []
+
+        if (active) {
+          setWarehouses(Array.isArray(warehouseList) ? warehouseList : [])
+        }
+
+        // Step 2: Load product/inventory details
         const { data } = await axiosInstance.get(`/erp/inventory/${id}`)
 
         if (data.success === false) {
@@ -81,7 +96,7 @@ export default function InventoryStockForm() {
         }
       } catch (error) {
         if (active) {
-          setApiError(error.response?.data?.message || error.message || 'Unable to load inventory details.')
+          setApiError(error.response?.data?.message || error.message || 'Unable to load warehouses or inventory details.')
         }
       } finally {
         if (active) {
@@ -90,7 +105,7 @@ export default function InventoryStockForm() {
       }
     }
 
-    loadInventory()
+    loadInitialData()
 
     return () => {
       active = false
@@ -165,6 +180,10 @@ export default function InventoryStockForm() {
       nextErrors.reference = 'Reference cannot exceed 100 characters.'
     }
 
+    if (!warehouseId) {
+      nextErrors.warehouseId = 'Please select a warehouse.'
+    }
+
     setErrors(nextErrors)
 
     return Object.keys(nextErrors).length === 0
@@ -185,8 +204,11 @@ export default function InventoryStockForm() {
     setApiError('')
 
     try {
+    
+
       const payload = {
         productId: id,
+        warehouseId,
         quantity: Number(quantity),
         reason: reason.trim(),
         reference: reference.trim(),
@@ -340,6 +362,41 @@ export default function InventoryStockForm() {
           </div>
 
           <div className="space-y-4 p-3 sm:p-4">
+            <div className="min-w-0 space-y-1.5">
+              <label htmlFor="stock-warehouse" className={labelClass}>
+                Warehouse <span className="text-erp-danger">*</span>
+              </label>
+
+              <div className="relative">
+                <Boxes size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-muted" />
+
+                <select
+                  id="stock-warehouse"
+                  value={warehouseId}
+                  onChange={(event) => {
+                    setWarehouseId(event.target.value)
+                    setErrors((current) => ({
+                      ...current,
+                      warehouseId: '',
+                    }))
+                  }}
+                  required
+                  disabled={saving}
+                  className={`${inputClass('warehouseId')} pl-9`}
+                >
+                  <option value="">Select warehouse</option>
+
+                  {warehouses.map((warehouse) => (
+                    <option key={warehouse._id} value={warehouse._id}>
+                      {warehouse.name || warehouse.warehouseName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {errorText('warehouseId')}
+            </div>
+
             {/* Quantity */}
             <div className="min-w-0 space-y-1.5">
               <label htmlFor="stock-quantity" className={labelClass}>

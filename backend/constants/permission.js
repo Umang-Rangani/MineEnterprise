@@ -98,7 +98,9 @@ const ACTIONS = {
     VIEW: 'warehouse:view',
     CREATE: 'warehouse:create',
     UPDATE: 'warehouse:update',
+    UPDATE_STATUS: 'warehouse:update-status',
     DELETE: 'warehouse:delete',
+    EXPORT: 'warehouse:export',
   },
 
   Supplier: {

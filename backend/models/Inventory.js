@@ -16,6 +16,13 @@ const inventorySchema = new mongoose.Schema(
       required: true,
     },
 
+    warehouseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WarehouseMineERP',
+      required: true,
+      index: true,
+    },
+
     currentStock: {
       type: Number,
       required: true,
@@ -46,7 +53,7 @@ const inventorySchema = new mongoose.Schema(
   },
 )
 
-inventorySchema.index({ companyId: 1, productId: 1 }, { unique: true })
+inventorySchema.index({ companyId: 1, warehouseId: 1, productId: 1 }, { unique: true })
 
 inventorySchema.virtual('availableStock').get(function () {
   return Math.max(0, this.currentStock - this.reservedStock)

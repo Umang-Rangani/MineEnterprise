@@ -52,6 +52,20 @@ const warehouseSchema = new mongoose.Schema(
       default: '',
     },
 
+    manager: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Manager name cannot exceed 100 characters'],
+      default: '',
+    },
+
+    managerPhone: {
+      type: String,
+      trim: true,
+      maxlength: [20, 'Manager phone cannot exceed 20 characters'],
+      default: '',
+    },
+
     contactPerson: {
       type: String,
       trim: true,
@@ -66,6 +80,19 @@ const warehouseSchema = new mongoose.Schema(
       default: '',
     },
 
+    capacity: {
+      type: Number,
+      min: [0, 'Capacity cannot be negative'],
+      default: 0,
+    },
+
+    description: {
+      type: String,
+      trim: true,
+      maxlength: [1000, 'Description cannot exceed 1000 characters'],
+      default: '',
+    },
+
     status: {
       type: String,
       enum: ['Active', 'Inactive'],
@@ -76,7 +103,7 @@ const warehouseSchema = new mongoose.Schema(
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'UserEnterPrise',
-      required: true,
+      required: [true, 'Creator is required'],
     },
 
     updatedBy: {
@@ -92,6 +119,10 @@ const warehouseSchema = new mongoose.Schema(
 
 warehouseSchema.index({ companyId: 1, code: 1 }, { unique: true })
 
-warehouseSchema.index({ companyId: 1, status: 1, name: 1 })
+warehouseSchema.index({
+  companyId: 1,
+  status: 1,
+  name: 1,
+})
 
 module.exports = mongoose.models.WarehouseMineERP || mongoose.model('WarehouseMineERP', warehouseSchema)

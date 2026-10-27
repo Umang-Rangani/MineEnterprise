@@ -17,10 +17,11 @@ const employeeAuthRouter = require('./routes/employeeAuth')
 const employeesRouter = require('./routes/employees')
 const rolesRouter = require('./routes/roles')
 
+const erpRouter = require('./routes/erp')
 const productsRouter = require('./routes/products')
 const categoriesRouter = require('./routes/categories')
 const inventoryRouter = require('./routes/inventory')
-const erpRouter = require('./routes/erp')
+const warehousesRoutes = require('./routes/warehouses')
 
 var app = express()
 
@@ -56,6 +57,7 @@ app.use('/erp/roles', rolesRouter)
 app.use('/erp/products', productsRouter)
 app.use('/erp/categories', categoriesRouter)
 app.use('/erp/inventory', inventoryRouter)
+app.use('/erp/warehouses', warehousesRoutes)
 
 // Roles and My Permissions remain in erp.js
 app.use('/erp', erpRouter)

@@ -12,3 +12,31 @@
 
 
 => problem em che k admin e role & permission ma permission ne change kre to , F5 vagar permission aavi javi joye
+
+
+
+No.	Route	Component
+1	/company/warehouses	CompanyWarehouses.jsx
+2	/company/warehouses/create	WarehouseForm.jsx
+3	/company/warehouses/:id/edit	WarehouseForm.jsx
+4	/company/warehouses/:id	WarehouseDetails.jsx
+5	/company/warehouses/:id/stock	Warehouse stock component
+6	/company/warehouses/:id/history	Warehouse history component
+
+
+
+1. Stock — Warehouse માં અત્યારે કેટલો stock છે.
+2. Capacity — Warehouse માં વધુમાં વધુ કેટલો stock રાખી શકાય.
+આ બંનેને Inventory ના Transfer Stock સાથે જોડીને બનાવવું પડશે.
+\
+
+
+
+
+'new product ma hu stoack 100 nakhu , pachi kevi rute kya warehoser ma mare stock ne 
+
+W-A ma 40 & W-A ma 60 warehouser ma nakhvo
+
+stockin & stockout e product mate kevi rite - + krvo k warehouser mate kevi rite - + krvo
+
+Product ma stock - + hoy to Product modul ma pn upload thavojoye

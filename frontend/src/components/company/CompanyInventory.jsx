@@ -1,20 +1,6 @@
-
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import {
-  Search,
-  Package,
-  RefreshCw,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  History,
-  AlertCircle,
-  ChevronLeft,
-  ChevronRight,
-  Filter,
-  FilterX,
-  Warehouse,
-} from 'lucide-react'
+import { Search, Package, RefreshCw, ArrowDownToLine, ArrowUpFromLine, History, AlertCircle, ChevronLeft, ChevronRight, Filter, FilterX, Warehouse } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
@@ -41,23 +27,11 @@ function getProduct(item) {
 function getProductKey(item) {
   const product = getProduct(item)
 
-  return String(
-    product?._id ||
-      item?._id ||
-      product?.sku ||
-      product?.name ||
-      'unknown',
-  )
+  return String(product?._id || item?._id || product?.sku || product?.name || 'unknown')
 }
 
 function getStock(item) {
-  return Number(
-    item?.currentStock ??
-      item?.stock ??
-      item?.openingStock ??
-      getProduct(item)?.openingStock ??
-      0,
-  )
+  return Number(item?.currentStock ?? item?.stock ?? item?.openingStock ?? getProduct(item)?.openingStock ?? 0)
 }
 
 function getReservedStock(item) {
@@ -65,9 +39,7 @@ function getReservedStock(item) {
 }
 
 function getAvailableStock(item) {
-  return Number(
-    item?.availableStock ?? getStock(item) - getReservedStock(item),
-  )
+  return Number(item?.availableStock ?? getStock(item) - getReservedStock(item))
 }
 
 function getMinimumStock(item) {
@@ -110,13 +82,7 @@ function formatQuantity(value) {
 }
 
 function getInventoryList(data) {
-  const result =
-    data.inventory ??
-    data.items ??
-    data.data?.inventory ??
-    data.data?.items ??
-    data.data ??
-    []
+  const result = data.inventory ?? data.items ?? data.data?.inventory ?? data.data?.items ?? data.data ?? []
 
   return Array.isArray(result) ? result : []
 }
@@ -163,8 +129,7 @@ export default function CompanyInventory() {
 
   const breadcrumbItems = [{ title: 'Inventory', link: null }]
 
-  const hasActiveFilters =
-    Boolean(search.trim()) || statusFilter !== 'All'
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All'
 
   const showToast = (type, message, duration = 3000) => {
     setToast({
@@ -223,17 +188,11 @@ export default function CompanyInventory() {
 
         setItems(list)
 
-        const serverPagination =
-          data.pagination || data.data?.pagination || {}
+        const serverPagination = data.pagination || data.data?.pagination || {}
 
-        const total = Number(
-          serverPagination.total ?? data.total ?? list.length,
-        )
+        const total = Number(serverPagination.total ?? data.total ?? list.length)
 
-        const totalPages = Math.max(
-          1,
-          Number(serverPagination.totalPages ?? data.totalPages ?? 1),
-        )
+        const totalPages = Math.max(1, Number(serverPagination.totalPages ?? data.totalPages ?? 1))
 
         setPagination({
           page: Number(serverPagination.page) || currentPage,
@@ -264,14 +223,8 @@ export default function CompanyInventory() {
 
         setStats({
           total: Number(serverStats?.total ?? total),
-          lowStock: Number(
-            serverStats?.lowStock ?? serverStats?.lowStockCount ?? lowStockCount,
-          ),
-          outOfStock: Number(
-            serverStats?.outOfStock ??
-              serverStats?.outOfStockCount ??
-              outOfStockCount,
-          ),
+          lowStock: Number(serverStats?.lowStock ?? serverStats?.lowStockCount ?? lowStockCount),
+          outOfStock: Number(serverStats?.outOfStock ?? serverStats?.outOfStockCount ?? outOfStockCount),
         })
       } catch (err) {
         if (!cancelled) {
@@ -296,14 +249,7 @@ export default function CompanyInventory() {
     return () => {
       cancelled = true
     }
-  }, [
-    canView,
-    search,
-    statusFilter,
-    currentPage,
-    pageSize,
-    refreshKey,
-  ])
+  }, [canView, search, statusFilter, currentPage, pageSize, refreshKey])
 
   const handleRefresh = () => {
     if (isFetching) return
@@ -357,33 +303,40 @@ export default function CompanyInventory() {
     navigate(`/company/inventory/${product._id}/history`)
   }
 
-  const openTransfer = () => {
-    showToast('info', 'Stock transfer route હજુ connect કરેલ નથી.')
+  const openTransfer = (item) => {
+    if (!canTransferStock) return
+
+    const product = getProduct(item)
+
+    if (!product?._id) {
+      showToast('error', 'Product is not availableStock.')
+      return
+    }
+
+    navigate('/company/inventory/stock-transfer', {
+      state: {
+        productId: product._id,
+        productName: product.name || '',
+        sku: product.sku || '',
+      },
+    })
   }
 
-  const totalPages = Math.max(
-    1,
-    Number(pagination.totalPages) || 1,
-  )
+  const totalPages = Math.max(1, Number(pagination.totalPages) || 1)
 
   const safePage = Math.min(currentPage, totalPages)
   const totalItems = Number(pagination.total) || 0
 
-  const startItem =
-    totalItems === 0 ? 0 : (safePage - 1) * pageSize + 1
+  const startItem = totalItems === 0 ? 0 : (safePage - 1) * pageSize + 1
 
   const endItem = Math.min(safePage * pageSize, totalItems)
 
   if (!canView) {
     return (
       <div className="rounded-xl border border-erp-border bg-erp-surface p-6 text-center">
-        <h2 className="text-base font-semibold text-erp-text">
-          Access Denied
-        </h2>
+        <h2 className="text-base font-semibold text-erp-text">Access Denied</h2>
 
-        <p className="mt-1 text-sm text-erp-muted">
-          You do not have permission to view inventory.
-        </p>
+        <p className="mt-1 text-sm text-erp-muted">You do not have permission to view inventory.</p>
       </div>
     )
   }
@@ -404,23 +357,17 @@ export default function CompanyInventory() {
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-erp-border px-3">
               <span className="text-xs text-slate-500">Total</span>
-              <span className="text-sm font-bold text-slate-900">
-                {stats.total}
-              </span>
+              <span className="text-sm font-bold text-slate-900">{stats.total}</span>
             </div>
 
             <div className="hidden h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-amber-200 px-3 sm:flex">
               <span className="text-xs text-amber-700">Low Stock</span>
-              <span className="text-sm font-bold text-slate-900">
-                {stats.lowStock}
-              </span>
+              <span className="text-sm font-bold text-slate-900">{stats.lowStock}</span>
             </div>
 
             <div className="hidden h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-rose-200 px-3 md:flex">
               <span className="text-xs text-rose-700">Out of Stock</span>
-              <span className="text-sm font-bold text-slate-900">
-                {stats.outOfStock}
-              </span>
+              <span className="text-sm font-bold text-slate-900">{stats.outOfStock}</span>
             </div>
 
             <button
@@ -431,10 +378,7 @@ export default function CompanyInventory() {
               aria-label="Refresh inventory"
               className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <RefreshCw
-                size={14}
-                className={refreshing ? 'animate-spin' : ''}
-              />
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
               <span className="hidden sm:inline">Refresh</span>
             </button>
           </div>
@@ -448,10 +392,7 @@ export default function CompanyInventory() {
           <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-1 lg:flex-wrap lg:justify-between">
             <div className="flex min-w-0 gap-3 sm:gap-5">
               <div className="relative min-w-0 flex-1 lg:w-100 lg:flex-none">
-                <Search
-                  size={16}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
+                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
                 <input
                   type="search"
@@ -502,12 +443,7 @@ export default function CompanyInventory() {
         <div className="relative min-h-[220px]">
           {initialLoading ? (
             <div className="flex min-h-[280px] items-center justify-center">
-              <Loading
-                fullScreen={false}
-                label="Loading inventory"
-                description="Fetching stock records..."
-                className="!h-full min-h-[220px]"
-              />
+              <Loading fullScreen={false} label="Loading inventory" description="Fetching stock records..." className="!h-full min-h-[220px]" />
             </div>
           ) : items.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
@@ -515,24 +451,12 @@ export default function CompanyInventory() {
                 <Package size={24} />
               </div>
 
-              <h3 className="mt-3 text-sm font-bold text-slate-800">
-                {hasActiveFilters
-                  ? 'No matching inventory'
-                  : 'No inventory found'}
-              </h3>
+              <h3 className="mt-3 text-sm font-bold text-slate-800">{hasActiveFilters ? 'No matching inventory' : 'No inventory found'}</h3>
 
-              <p className="mt-1 max-w-xs text-xs text-slate-500">
-                {hasActiveFilters
-                  ? 'Try another search term or change your stock status filter.'
-                  : 'Create a product first to start managing stock.'}
-              </p>
+              <p className="mt-1 max-w-xs text-xs text-slate-500">{hasActiveFilters ? 'Try another search term or change your stock status filter.' : 'Create a product first to start managing stock.'}</p>
 
               {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
+                <button type="button" onClick={resetFilters} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                   <Filter size={14} />
                   Clear filters
                 </button>
@@ -545,39 +469,23 @@ export default function CompanyInventory() {
                 <table className="w-full min-w-[1050px] text-left">
                   <thead className="bg-slate-50">
                     <tr className="border-b border-slate-100">
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        Product
-                      </th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Product</th>
 
-                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                        SKU
-                      </th>
+                      <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">SKU</th>
 
                       {canViewStock && (
                         <>
-                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Current Stock
-                          </th>
+                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Current Stock</th>
 
-                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Reserved
-                          </th>
+                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Reserved</th>
 
-                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Available
-                          </th>
+                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Available</th>
 
-                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Status
-                          </th>
+                          <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
                         </>
                       )}
 
-                      {(canAdjustStock || canViewHistory || canTransferStock) && (
-                        <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                          Actions
-                        </th>
-                      )}
+                      {(canAdjustStock || canViewHistory || canTransferStock) && <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>}
                     </tr>
                   </thead>
 
@@ -590,18 +498,11 @@ export default function CompanyInventory() {
                       const status = getStockStatus(item)
 
                       return (
-                        <tr
-                          key={getProductKey(item)}
-                          className="transition hover:bg-slate-50/70"
-                        >
+                        <tr key={getProductKey(item)} className="transition hover:bg-slate-50/70">
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5">
                               {product.imageUrl ? (
-                                <img
-                                  src={product.imageUrl}
-                                  alt={product.name || 'Product'}
-                                  className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover"
-                                />
+                                <img src={product.imageUrl} alt={product.name || 'Product'} className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover" />
                               ) : (
                                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
                                   <Package size={17} />
@@ -609,21 +510,15 @@ export default function CompanyInventory() {
                               )}
 
                               <div className="min-w-0">
-                                <p className="max-w-52 truncate text-xs font-semibold text-slate-800 sm:text-sm">
-                                  {product.name || 'Unnamed product'}
-                                </p>
+                                <p className="max-w-52 truncate text-xs font-semibold text-slate-800 sm:text-sm">{product.name || 'Unnamed product'}</p>
 
-                                <p className="mt-0.5 max-w-52 truncate text-[10px] text-slate-400">
-                                  Unit: {product.unit || 'Piece'}
-                                </p>
+                                <p className="mt-0.5 max-w-52 truncate text-[10px] text-slate-400">Unit: {product.unit || 'Piece'}</p>
                               </div>
                             </div>
                           </td>
 
                           <td className="px-4 py-3">
-                            <span className="inline-flex max-w-32 truncate rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
-                              {product.sku || '—'}
-                            </span>
+                            <span className="inline-flex max-w-32 truncate rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">{product.sku || '—'}</span>
                           </td>
 
                           {canViewStock && (
@@ -632,21 +527,15 @@ export default function CompanyInventory() {
                                 {formatQuantity(stock)} {product.unit || 'Piece'}
                               </td>
 
-                              <td className="px-4 py-3 text-xs text-slate-600">
-                                {formatQuantity(reserved)}
-                              </td>
+                              <td className="px-4 py-3 text-xs text-slate-600">{formatQuantity(reserved)}</td>
 
                               <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-slate-800">
                                 {formatQuantity(available)} {product.unit || 'Piece'}
                               </td>
 
                               <td className="px-4 py-3">
-                                <span
-                                  className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ${status.className}`}
-                                >
-                                  <span
-                                    className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`}
-                                  />
+                                <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2 py-1 text-[11px] font-semibold ${status.className}`}>
+                                  <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
                                   {status.label}
                                 </span>
                               </td>
@@ -696,7 +585,7 @@ export default function CompanyInventory() {
                                 {canTransferStock && (
                                   <button
                                     type="button"
-                                    onClick={openTransfer}
+                                    onClick={() => openTransfer(item)}
                                     title="Transfer Stock"
                                     aria-label={`Transfer stock for ${product.name || 'product'}`}
                                     className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
@@ -724,17 +613,10 @@ export default function CompanyInventory() {
                   const status = getStockStatus(item)
 
                   return (
-                    <div
-                      key={getProductKey(item)}
-                      className="space-y-3 p-3"
-                    >
+                    <div key={getProductKey(item)} className="space-y-3 p-3">
                       <div className="flex items-start gap-2.5">
                         {product.imageUrl ? (
-                          <img
-                            src={product.imageUrl}
-                            alt={product.name || 'Product'}
-                            className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover"
-                          />
+                          <img src={product.imageUrl} alt={product.name || 'Product'} className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover" />
                         ) : (
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
                             <Package size={18} />
@@ -742,26 +624,16 @@ export default function CompanyInventory() {
                         )}
 
                         <div className="min-w-0 flex-1">
-                          <p className="break-words text-sm font-semibold text-slate-900">
-                            {product.name || 'Unnamed product'}
-                          </p>
+                          <p className="break-words text-sm font-semibold text-slate-900">{product.name || 'Unnamed product'}</p>
 
-                          <p className="mt-1 break-words text-xs text-slate-500">
-                            SKU: {product.sku || '—'}
-                          </p>
+                          <p className="mt-1 break-words text-xs text-slate-500">SKU: {product.sku || '—'}</p>
 
-                          <p className="mt-1 text-xs text-slate-500">
-                            Unit: {product.unit || 'Piece'}
-                          </p>
+                          <p className="mt-1 text-xs text-slate-500">Unit: {product.unit || 'Piece'}</p>
                         </div>
 
                         {canViewStock && (
-                          <span
-                            className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold ${status.className}`}
-                          >
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`}
-                            />
+                          <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-semibold ${status.className}`}>
+                            <span className={`h-1.5 w-1.5 rounded-full ${status.dotClass}`} />
                             {status.label}
                           </span>
                         )}
@@ -770,9 +642,7 @@ export default function CompanyInventory() {
                       {canViewStock && (
                         <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3">
                           <div>
-                            <p className="text-[10px] text-slate-500">
-                              Current Stock
-                            </p>
+                            <p className="text-[10px] text-slate-500">Current Stock</p>
 
                             <p className="mt-1 text-xs font-semibold text-slate-800">
                               {formatQuantity(stock)} {product.unit || 'Piece'}
@@ -780,19 +650,13 @@ export default function CompanyInventory() {
                           </div>
 
                           <div>
-                            <p className="text-[10px] text-slate-500">
-                              Reserved
-                            </p>
+                            <p className="text-[10px] text-slate-500">Reserved</p>
 
-                            <p className="mt-1 text-xs font-semibold text-slate-800">
-                              {formatQuantity(reserved)}
-                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-800">{formatQuantity(reserved)}</p>
                           </div>
 
                           <div>
-                            <p className="text-[10px] text-slate-500">
-                              Available
-                            </p>
+                            <p className="text-[10px] text-slate-500">Available</p>
 
                             <p className="mt-1 text-xs font-semibold text-slate-800">
                               {formatQuantity(available)} {product.unit || 'Piece'}
@@ -800,13 +664,9 @@ export default function CompanyInventory() {
                           </div>
 
                           <div>
-                            <p className="text-[10px] text-slate-500">
-                              Minimum Stock
-                            </p>
+                            <p className="text-[10px] text-slate-500">Minimum Stock</p>
 
-                            <p className="mt-1 text-xs font-semibold text-slate-800">
-                              {formatQuantity(getMinimumStock(item))}
-                            </p>
+                            <p className="mt-1 text-xs font-semibold text-slate-800">{formatQuantity(getMinimumStock(item))}</p>
                           </div>
                         </div>
                       )}
@@ -837,22 +697,14 @@ export default function CompanyInventory() {
                           )}
 
                           {canViewHistory && (
-                            <button
-                              type="button"
-                              onClick={() => openHistory(item)}
-                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
+                            <button type="button" onClick={() => openHistory(item)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                               <History size={14} />
                               History
                             </button>
                           )}
 
                           {canTransferStock && (
-                            <button
-                              type="button"
-                              onClick={openTransfer}
-                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
+                            <button type="button" onClick={openTransfer} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                               <Warehouse size={14} />
                               Transfer
                             </button>
@@ -869,12 +721,7 @@ export default function CompanyInventory() {
           {/* Updating overlay */}
           {!initialLoading && isFetching && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
-              <Loading
-                fullScreen={false}
-                label="Updating inventory"
-                description="Refreshing stock records..."
-                className="!h-full min-h-[220px]"
-              />
+              <Loading fullScreen={false} label="Updating inventory" description="Refreshing stock records..." className="!h-full min-h-[220px]" />
             </div>
           )}
 
@@ -910,18 +757,11 @@ export default function CompanyInventory() {
                 <span className="font-semibold text-slate-700">
                   {startItem}–{endItem}
                 </span>{' '}
-                of{' '}
-                <span className="font-semibold text-slate-700">
-                  {totalItems}
-                </span>{' '}
-                inventory items
+                of <span className="font-semibold text-slate-700">{totalItems}</span> inventory items
               </p>
 
               <div className="flex items-center gap-2">
-                <label
-                  htmlFor="inventory-page-size"
-                  className="whitespace-nowrap text-xs text-slate-500"
-                >
+                <label htmlFor="inventory-page-size" className="whitespace-nowrap text-xs text-slate-500">
                   Rows:
                 </label>
 
@@ -956,9 +796,7 @@ export default function CompanyInventory() {
               <button
                 type="button"
                 disabled={safePage <= 1 || isFetching}
-                onClick={() =>
-                  setCurrentPage((page) => Math.max(1, page - 1))
-                }
+                onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 aria-label="Previous page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -972,11 +810,7 @@ export default function CompanyInventory() {
               <button
                 type="button"
                 disabled={safePage >= totalPages || isFetching}
-                onClick={() =>
-                  setCurrentPage((page) =>
-                    Math.min(totalPages, page + 1),
-                  )
-                }
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 aria-label="Next page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >

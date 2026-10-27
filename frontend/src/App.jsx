@@ -57,6 +57,7 @@ import ProductsForm from './components/company/ProductsForm'
 import ProductsDetails from './components/company/ProductsDetails'
 import InventoryStockForm from './components/company/InventoryStockForm'
 import InventoryHistory from './components/company/InventoryHistory'
+import StockTransfer from './components/company/StockTransfer'
 
 export default function App() {
   return (
@@ -109,6 +110,14 @@ export default function App() {
           <Route path="inventory/:id/stock-in" element={<InventoryStockForm />} />
           <Route path="inventory/:id/stock-out" element={<InventoryStockForm />} />
           <Route path="inventory/:id/history" element={<InventoryHistory />} />
+          
+          <Route path="/company/inventory/stock-transfer" element={<StockTransfer />} />
+
+          {/* Warehouses */}
+          <Route path="warehouses" element={<CompanyWarehouses />} />
+          <Route path="warehouses/new" element={<WarehouseForm />} />
+          <Route path="warehouses/:id" element={<WarehouseDetails />} />
+          <Route path="warehouses/:id/edit" element={<WarehouseForm />} />
 
           {/* Suppliers */}
           <Route path="suppliers" element={<CompanySuppliers />} />
@@ -151,12 +160,6 @@ export default function App() {
           <Route path="expenses/new" element={<ExpenseForm />} />
           <Route path="expenses/:id" element={<ExpenseDetails />} />
           <Route path="expenses/:id/edit" element={<ExpenseForm />} />
-
-          {/* Warehouses */}
-          <Route path="warehouses" element={<CompanyWarehouses />} />
-          <Route path="warehouses/new" element={<WarehouseForm />} />
-          <Route path="warehouses/:id" element={<WarehouseDetails />} />
-          <Route path="warehouses/:id/edit" element={<WarehouseForm />} />
 
           {/* Reports */}
           {/* <Route path="reports" element={<CompanyReports />} /> */}

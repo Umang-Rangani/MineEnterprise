@@ -553,10 +553,10 @@ export default function CompaniesRoute() {
   // console.log('Current permissions:', permissions)
   // console.log('Role list permission:', hasPermission(permissions, ['role:list']))
 
-  console.log('Current permissions:', permissions)
-  console.log('Employee list:', hasPermission(permissions, ['employee:list']))
-  console.log('Role list:', hasPermission(permissions, ['role:list']))
-  console.log('Category list:', hasPermission(permissions, ['category:list']))
+  // console.log('Current permissions:', permissions)
+  // console.log('Employee list:', hasPermission(permissions, ['employee:list']))
+  // console.log('Role list:', hasPermission(permissions, ['role:list']))
+  // console.log('Category list:', hasPermission(permissions, ['category:list']))
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
