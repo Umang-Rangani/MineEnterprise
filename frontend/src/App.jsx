@@ -55,6 +55,8 @@ import CategoryForm from './components/company/CategoryForm'
 import CategoryDetails from './components/company/CategoryDetails'
 import ProductsForm from './components/company/ProductsForm'
 import ProductsDetails from './components/company/ProductsDetails'
+import InventoryStockForm from './components/company/InventoryStockForm'
+import InventoryHistory from './components/company/InventoryHistory'
 
 export default function App() {
   return (
@@ -104,6 +106,9 @@ export default function App() {
 
           {/* Inventory */}
           <Route path="inventory" element={<CompanyInventory />} />
+          <Route path="inventory/:id/stock-in" element={<InventoryStockForm />} />
+          <Route path="inventory/:id/stock-out" element={<InventoryStockForm />} />
+          <Route path="inventory/:id/history" element={<InventoryHistory />} />
 
           {/* Suppliers */}
           <Route path="suppliers" element={<CompanySuppliers />} />

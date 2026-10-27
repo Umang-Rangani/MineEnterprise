@@ -119,7 +119,9 @@ router.get('/:id', permissionMiddleware('Inventory', 'VIEW'), async (req, res, n
     const product = await Product.findOne({
       _id: req.params.id,
       companyId,
-    }).lean()
+    })
+      .populate('categoryId', 'name')
+      .lean()
 
     if (!product) {
       return res.status(404).json({

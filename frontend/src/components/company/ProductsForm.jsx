@@ -348,23 +348,36 @@ export default function ProductsForm() {
       <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
 
-        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+        <div className="flex h-16 min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+          {/* Left: Breadcrumb */}
           <div className="min-w-0 flex-1 overflow-hidden">
             <BreadCrumb items={items} />
           </div>
 
-          {isEdit && canView && (
+          {/* Right: Stock Information */}
+          <div className="flex shrink-0 items-center gap-2">
+            {stockStats.map((stat) => (
+              <div key={stat.label} className={`flex h-9 items-center gap-2 rounded-lg border border-erp-border px-2.5 ${stat.background}`}>
+                <span className="whitespace-nowrap text-[10px] font-medium text-erp-text-secondary">{stat.label}</span>
+
+                <span className={`whitespace-nowrap text-xs font-bold ${stat.color}`}>
+                  {stat.value.toLocaleString('en-IN')}
+                  <span className="ml-1 text-[9px] font-medium text-erp-text-secondary">{unit}</span>
+                </span>
+              </div>
+            ))}
+
             <button
               type="button"
-              onClick={openDetailsPage}
-              title="View product"
-              aria-label="View product"
-              className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary/5"
+              onClick={openStockHistory}
+              title="View stock history"
+              aria-label="View stock history"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary/5"
             >
-              <Eye size={16} />
-              <span>View</span>
+              <History size={15} />
+              <span>View History</span>
             </button>
-          )}
+          </div>
         </div>
       </section>
 
@@ -607,7 +620,7 @@ export default function ProductsForm() {
             {/* Product Image */}
             <div className="min-w-0 space-y-3">
               {/* Large Image Preview */}
-                            <p className="break-all text-xs text-erp-text-secondary">{form.imageUrl.trim() || 'Enter an image URL to preview the product.'}</p>
+              <p className="break-all text-xs text-erp-text-secondary">{form.imageUrl.trim() || 'Enter an image URL to preview the product.'}</p>
 
               <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-xl border border-erp-border bg-erp-hover/30 p-3 sm:min-h-80">
                 {form.imageUrl.trim() ? (
@@ -631,7 +644,6 @@ export default function ProductsForm() {
                   </div>
                 )}
               </div>
-
             </div>
 
             {/* Product Status */}
