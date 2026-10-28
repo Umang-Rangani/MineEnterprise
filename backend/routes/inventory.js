@@ -14,6 +14,7 @@ const router = express.Router()
 router.use(authMiddleware)
 
 // HELPERS
+
 function getUserId(req) {
   return req.user?.userId || req.user?._id || req.user?.id
 }
@@ -26,15 +27,18 @@ function validCompanyId(req, res) {
       success: false,
       message: 'Valid company access is required.',
     })
-
     return null
   }
 
-  return companyId
+  return new mongoose.Types.ObjectId(companyId)
 }
 
-function validQuantity(quantity) {
-  return quantity !== '' && typeof quantity !== 'boolean' && quantity !== null && quantity !== undefined && Number.isFinite(Number(quantity)) && Number(quantity) > 0
+function validQuantity(value) {
+  return value !== '' && typeof value !== 'boolean' && value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value) > 0
+}
+
+function validNonNegativeQuantity(value) {
+  return value !== '' && typeof value !== 'boolean' && value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value) >= 0
 }
 
 function handleError(res, error) {
@@ -55,18 +59,60 @@ function handleError(res, error) {
   if (error.code === 11000) {
     return res.status(409).json({
       success: false,
-      message: 'A conflicting inventory record already exists. Please retry.',
+      message: 'A conflicting inventory record already exists. Please refresh and retry.',
     })
   }
 
   return null
 }
 
+function createError(message, status = 400) {
+  const error = new Error(message)
+  error.status = status
+  return error
+}
+
+function validateTextFields({ reason, reference }) {
+  if (reason !== undefined && typeof reason !== 'string') {
+    throw createError('Reason must be text.')
+  }
+
+  if (reference !== undefined && typeof reference !== 'string') {
+    throw createError('Reference must be text.')
+  }
+
+  if (typeof reason === 'string' && reason.trim().length > 500) {
+    throw createError('Reason cannot exceed 500 characters.')
+  }
+
+  if (typeof reference === 'string' && reference.trim().length > 100) {
+    throw createError('Reference cannot exceed 100 characters.')
+  }
+}
+
+function getPagination(query) {
+  const page = Math.max(1, Number.parseInt(query.page, 10) || 1)
+
+  const limit = Math.min(100, Math.max(1, Number.parseInt(query.limit, 10) || 20))
+
+  return { page, limit }
+}
+
+function getStockStatus(availableStock, minStockLevel = 0) {
+  if (availableStock <= 0) return 'Out of Stock'
+
+  if (availableStock <= minStockLevel) return 'Low Stock'
+
+  return 'In Stock'
+}
+
+function getAvailableStock(inventory) {
+  return inventory.currentStock - inventory.reservedStock
+}
+
 async function getCompanyWarehouse(companyId, warehouseId, session) {
   if (!mongoose.isValidObjectId(warehouseId)) {
-    const error = new Error('Valid warehouse ID is required.')
-    error.status = 400
-    throw error
+    throw createError('Valid warehouse ID is required.')
   }
 
   let query = Warehouse.findOne({
@@ -80,24 +126,61 @@ async function getCompanyWarehouse(companyId, warehouseId, session) {
   const warehouse = await query
 
   if (!warehouse) {
-    const error = new Error('Active warehouse not found in your company.')
-    error.status = 404
-    throw error
+    throw createError('Active warehouse not found in your company.', 404)
   }
 
   return warehouse
 }
 
-
-async function getOrCreateWarehouseInventory({ companyId, warehouseId, productId, userId, session }) {
-  const filter = {
-    companyId,
-    warehouseId,
-    productId,
+async function getCompanyWarehouseForRead(companyId, warehouseId) {
+  if (!mongoose.isValidObjectId(warehouseId)) {
+    throw createError('Valid warehouse ID is required.')
   }
 
-  const inventory = await Inventory.findOneAndUpdate(
-    filter,
+  const warehouse = await Warehouse.findOne({
+    _id: warehouseId,
+    companyId,
+  })
+
+  if (!warehouse) {
+    throw createError('Warehouse not found in your company.', 404)
+  }
+
+  return warehouse
+}
+
+async function validateProduct(companyId, productId, session) {
+  if (!mongoose.isValidObjectId(productId)) {
+    throw createError('Valid product ID is required.')
+  }
+
+  let query = Product.findOne({
+    _id: productId,
+    companyId,
+  })
+
+  if (session) query = query.session(session)
+
+  const product = await query
+
+  if (!product) {
+    throw createError('Product not found in your company.', 404)
+  }
+
+  if (product.status !== 'Active') {
+    throw createError('This product is inactive. Activate the product before performing stock operations.', 400)
+  }
+
+  return product
+}
+
+async function getOrCreateWarehouseInventory({ companyId, warehouseId, productId, userId, session }) {
+  return Inventory.findOneAndUpdate(
+    {
+      companyId,
+      warehouseId,
+      productId,
+    },
     {
       $setOnInsert: {
         companyId,
@@ -116,47 +199,22 @@ async function getOrCreateWarehouseInventory({ companyId, warehouseId, productId
       runValidators: true,
     },
   )
-
-  return inventory
 }
 
-function getStockStatus(availableStock, minStockLevel = 0) {
-  if (availableStock <= 0) return 'Out of Stock'
-  if (availableStock <= minStockLevel) return 'Low Stock'
-  return 'In Stock'
-}
-
-function getPagination(query) {
-  const page = Math.max(1, Number.parseInt(query.page, 10) || 1)
-
-  const limit = Math.min(100, Math.max(1, Number.parseInt(query.limit, 10) || 20))
-
-  return { page, limit }
-}
-
-async function validateProduct(companyId, productId, session) {
-  if (!mongoose.isValidObjectId(productId)) {
-    const error = new Error('Valid product ID is required.')
-    error.status = 400
-    throw error
-  }
-
-  let query = Product.findOne({
-    _id: productId,
+function getStockMovementData({ companyId, productId, warehouseId, type, quantity, previousStock, newStock, reason, reference, userId, destinationWarehouseId }) {
+  return {
     companyId,
-  })
-
-  if (session) query = query.session(session)
-
-  const product = await query
-
-  if (!product) {
-    const error = new Error('Product not found in your company.')
-    error.status = 404
-    throw error
+    productId,
+    warehouseId,
+    ...(destinationWarehouseId ? { destinationWarehouseId } : {}),
+    type,
+    quantity,
+    previousStock,
+    newStock,
+    reason,
+    reference,
+    createdBy: userId,
   }
-
-  return product
 }
 
 // GET /erp/inventory
@@ -169,9 +227,7 @@ router.get('/', permissionMiddleware('Inventory', 'VIEW'), async (req, res, next
 
     const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
 
-    const productFilter = {
-      companyId,
-    }
+    const productFilter = { companyId }
 
     if (search) {
       const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -186,7 +242,7 @@ router.get('/', permissionMiddleware('Inventory', 'VIEW'), async (req, res, next
     let warehouse = null
 
     if (req.query.warehouseId) {
-      warehouse = await getCompanyWarehouse(companyId, req.query.warehouseId)
+      warehouse = await getCompanyWarehouseForRead(companyId, req.query.warehouseId)
     }
 
     const [products, total] = await Promise.all([
@@ -215,14 +271,14 @@ router.get('/', permissionMiddleware('Inventory', 'VIEW'), async (req, res, next
 
     const inventoryMap = new Map()
 
-    for (const inventory of inventories) {
-      const key = String(inventory.productId)
+    for (const row of inventories) {
+      const key = String(row.productId)
 
       if (!inventoryMap.has(key)) {
         inventoryMap.set(key, [])
       }
 
-      inventoryMap.get(key).push(inventory)
+      inventoryMap.get(key).push(row)
     }
 
     const inventoryItems = products.map((product) => {
@@ -271,6 +327,76 @@ router.get('/', permissionMiddleware('Inventory', 'VIEW'), async (req, res, next
   }
 })
 
+// GET /erp/inventory/:id/history
+// History route is declared before the product detail route.
+router.get('/:id/history', permissionMiddleware('Inventory', 'VIEW_HISTORY'), async (req, res, next) => {
+  try {
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
+
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid product ID.',
+      })
+    }
+
+    const product = await Product.findOne({
+      _id: req.params.id,
+      companyId,
+    })
+      .select('_id')
+      .lean()
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: 'Product not found.',
+      })
+    }
+
+    const { page, limit } = getPagination(req.query)
+
+    const filter = {
+      companyId,
+      productId: product._id,
+    }
+
+    if (req.query.warehouseId) {
+      const warehouse = await getCompanyWarehouseForRead(companyId, req.query.warehouseId)
+
+      filter.$or = [{ warehouseId: warehouse._id }, { destinationWarehouseId: warehouse._id }]
+    }
+
+    const [movements, total] = await Promise.all([
+      InventoryMovement.find(filter)
+        .populate('createdBy', 'name email')
+        .populate('warehouseId', 'name code')
+        .populate('destinationWarehouseId', 'name code')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      InventoryMovement.countDocuments(filter),
+    ])
+
+    return res.status(200).json({
+      success: true,
+      movements,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    })
+  } catch (error) {
+    if (handleError(res, error)) return
+    return next(error)
+  }
+})
+
 // GET /erp/inventory/:id
 router.get('/:id', permissionMiddleware('Inventory', 'VIEW'), async (req, res, next) => {
   try {
@@ -301,7 +427,7 @@ router.get('/:id', permissionMiddleware('Inventory', 'VIEW'), async (req, res, n
     let warehouse = null
 
     if (req.query.warehouseId) {
-      warehouse = await getCompanyWarehouse(companyId, req.query.warehouseId)
+      warehouse = await getCompanyWarehouseForRead(companyId, req.query.warehouseId)
     }
 
     const filter = {
@@ -349,75 +475,6 @@ router.get('/:id', permissionMiddleware('Inventory', 'VIEW'), async (req, res, n
   }
 })
 
-// GET /erp/inventory/:id/history
-router.get('/:id/history', permissionMiddleware('Inventory', 'VIEW_HISTORY'), async (req, res, next) => {
-  try {
-    const companyId = validCompanyId(req, res)
-    if (!companyId) return
-
-    if (!mongoose.isValidObjectId(req.params.id)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid product ID.',
-      })
-    }
-
-    const product = await Product.findOne({
-      _id: req.params.id,
-      companyId,
-    })
-      .select('_id')
-      .lean()
-
-    if (!product) {
-      return res.status(404).json({
-        success: false,
-        message: 'Product not found.',
-      })
-    }
-
-    const { page, limit } = getPagination(req.query)
-
-    const filter = {
-      companyId,
-      productId: product._id,
-    }
-
-    if (req.query.warehouseId) {
-      const warehouse = await getCompanyWarehouse(companyId, req.query.warehouseId)
-
-      filter.$or = [{ warehouseId: warehouse._id }, { destinationWarehouseId: warehouse._id }]
-    }
-
-    const [movements, total] = await Promise.all([
-      InventoryMovement.find(filter)
-        .populate('createdBy', 'name email')
-        .populate('warehouseId', 'name code')
-        .populate('destinationWarehouseId', 'name code')
-        .sort({ createdAt: -1 })
-        .skip((page - 1) * limit)
-        .limit(limit)
-        .lean(),
-
-      InventoryMovement.countDocuments(filter),
-    ])
-
-    return res.status(200).json({
-      success: true,
-      movements,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    })
-  } catch (error) {
-    if (handleError(res, error)) return
-    return next(error)
-  }
-})
-
 // POST /erp/inventory/stock-in
 router.post('/stock-in', permissionMiddleware('Inventory', 'ADJUST_STOCK'), async (req, res, next) => {
   let session
@@ -429,17 +486,10 @@ router.post('/stock-in', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asyn
     const userId = getUserId(req)
     const { productId, warehouseId, quantity, reason, reference } = req.body
 
-    if (!userId) {
+    if (!mongoose.isValidObjectId(userId)) {
       return res.status(401).json({
         success: false,
-        message: 'Authenticated user ID is missing.',
-      })
-    }
-
-    if (!mongoose.isValidObjectId(productId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid product ID is required.',
+        message: 'Authenticated user ID is missing or invalid.',
       })
     }
 
@@ -450,19 +500,7 @@ router.post('/stock-in', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asyn
       })
     }
 
-    if (reason !== undefined && typeof reason !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Reason must be text.',
-      })
-    }
-
-    if (reference !== undefined && typeof reference !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Reference must be text.',
-      })
-    }
+    validateTextFields({ reason, reference })
 
     session = await mongoose.startSession()
 
@@ -492,7 +530,7 @@ router.post('/stock-in', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asyn
 
       await InventoryMovement.create(
         [
-          {
+          getStockMovementData({
             companyId,
             productId: product._id,
             warehouseId: warehouse._id,
@@ -502,20 +540,22 @@ router.post('/stock-in', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asyn
             newStock,
             reason: reason?.trim() || 'Stock received',
             reference: reference?.trim() || '',
-            createdBy: userId,
-          },
+            userId,
+          }),
         ],
         { session },
       )
 
       result = {
         productId: product._id,
+        productName: product.name,
         warehouseId: warehouse._id,
         warehouseName: warehouse.name,
         previousStock,
         newStock,
         quantity: amount,
-        availableStock: newStock - inventory.reservedStock,
+        reservedStock: inventory.reservedStock,
+        availableStock: getAvailableStock(inventory),
       }
     })
 
@@ -543,17 +583,10 @@ router.post('/stock-out', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asy
     const userId = getUserId(req)
     const { productId, warehouseId, quantity, reason, reference } = req.body
 
-    if (!userId) {
+    if (!mongoose.isValidObjectId(userId)) {
       return res.status(401).json({
         success: false,
-        message: 'Authenticated user ID is missing.',
-      })
-    }
-
-    if (!mongoose.isValidObjectId(productId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid product ID is required.',
+        message: 'Authenticated user ID is missing or invalid.',
       })
     }
 
@@ -564,19 +597,7 @@ router.post('/stock-out', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asy
       })
     }
 
-    if (reason !== undefined && typeof reason !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Reason must be text.',
-      })
-    }
-
-    if (reference !== undefined && typeof reference !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Reference must be text.',
-      })
-    }
+    validateTextFields({ reason, reference })
 
     session = await mongoose.startSession()
 
@@ -594,19 +615,15 @@ router.post('/stock-out', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asy
       }).session(session)
 
       if (!inventory) {
-        const error = new Error('No inventory record exists for this product in the selected warehouse.')
-        error.status = 400
-        throw error
+        throw createError('No inventory record exists for this product in the selected warehouse.')
       }
 
-      const previousStock = inventory.currentStock
-      const availableStock = previousStock - inventory.reservedStock
       const amount = Number(quantity)
+      const previousStock = inventory.currentStock
+      const availableStock = getAvailableStock(inventory)
 
       if (amount > availableStock) {
-        const error = new Error('Insufficient available stock in this warehouse.')
-        error.status = 400
-        throw error
+        throw createError('Insufficient available stock in this warehouse.')
       }
 
       const newStock = previousStock - amount
@@ -618,7 +635,7 @@ router.post('/stock-out', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asy
 
       await InventoryMovement.create(
         [
-          {
+          getStockMovementData({
             companyId,
             productId: product._id,
             warehouseId: warehouse._id,
@@ -628,21 +645,22 @@ router.post('/stock-out', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asy
             newStock,
             reason: reason?.trim() || 'Stock issued',
             reference: reference?.trim() || '',
-            createdBy: userId,
-          },
+            userId,
+          }),
         ],
         { session },
       )
 
       result = {
         productId: product._id,
+        productName: product.name,
         warehouseId: warehouse._id,
         warehouseName: warehouse.name,
         previousStock,
         newStock,
         quantity: amount,
         reservedStock: inventory.reservedStock,
-        availableStock: newStock - inventory.reservedStock,
+        availableStock: getAvailableStock(inventory),
       }
     })
 
@@ -671,17 +689,10 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
 
     const { productId, sourceWarehouseId, destinationWarehouseId, quantity, reason, reference } = req.body
 
-    if (!userId) {
+    if (!mongoose.isValidObjectId(userId)) {
       return res.status(401).json({
         success: false,
-        message: 'Authenticated user ID is missing.',
-      })
-    }
-
-    if (!mongoose.isValidObjectId(productId)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Valid product ID is required.',
+        message: 'Authenticated user ID is missing or invalid.',
       })
     }
 
@@ -706,19 +717,7 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
       })
     }
 
-    if (reason !== undefined && typeof reason !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Reason must be text.',
-      })
-    }
-
-    if (reference !== undefined && typeof reference !== 'string') {
-      return res.status(400).json({
-        success: false,
-        message: 'Reference must be text.',
-      })
-    }
+    validateTextFields({ reason, reference })
 
     session = await mongoose.startSession()
 
@@ -738,18 +737,14 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
       }).session(session)
 
       if (!source) {
-        const error = new Error('Product has no stock record in the source warehouse.')
-        error.status = 400
-        throw error
+        throw createError('Product has no stock record in the source warehouse.')
       }
 
       const amount = Number(quantity)
-      const availableStock = source.currentStock - source.reservedStock
+      const availableStock = getAvailableStock(source)
 
       if (amount > availableStock) {
-        const error = new Error('Insufficient available stock in source warehouse.')
-        error.status = 400
-        throw error
+        throw createError('Insufficient available stock in source warehouse.')
       }
 
       const destination = await getOrCreateWarehouseInventory({
@@ -776,7 +771,7 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
 
       await InventoryMovement.create(
         [
-          {
+          getStockMovementData({
             companyId,
             productId: product._id,
             warehouseId: sourceWarehouse._id,
@@ -787,9 +782,9 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
             newStock: source.currentStock,
             reason: reason?.trim() || 'Stock transferred out',
             reference: transferReference,
-            createdBy: userId,
-          },
-          {
+            userId,
+          }),
+          getStockMovementData({
             companyId,
             productId: product._id,
             warehouseId: destinationWarehouse._id,
@@ -800,10 +795,10 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
             newStock: destination.currentStock,
             reason: reason?.trim() || 'Stock transferred in',
             reference: transferReference,
-            createdBy: userId,
-          },
+            userId,
+          }),
         ],
-        { session },
+        { session, ordered: true },
       )
 
       result = {
@@ -816,14 +811,14 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
           warehouseName: sourceWarehouse.name,
           previousStock: sourcePreviousStock,
           newStock: source.currentStock,
-          availableStock: source.currentStock - source.reservedStock,
+          availableStock: getAvailableStock(source),
         },
         destination: {
           warehouseId: destinationWarehouse._id,
           warehouseName: destinationWarehouse.name,
           previousStock: destinationPreviousStock,
           newStock: destination.currentStock,
-          availableStock: destination.currentStock - destination.reservedStock,
+          availableStock: getAvailableStock(destination),
         },
       }
     })
@@ -831,6 +826,137 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
     return res.status(200).json({
       success: true,
       message: 'Stock transferred successfully.',
+      data: result,
+    })
+  } catch (error) {
+    if (handleError(res, error)) return
+    return next(error)
+  } finally {
+    if (session) await session.endSession()
+  }
+})
+
+// POST /erp/inventory/stock-adjustment
+// physicalStock = warehouse માં ગણેલો actual stock
+router.post('/stock-adjustment', permissionMiddleware('Inventory', 'ADJUST_STOCK'), async (req, res, next) => {
+  let session
+
+  try {
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
+
+    const userId = getUserId(req)
+
+    const { productId, warehouseId, physicalStock, reason, reference } = req.body
+
+    if (!mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authenticated user ID is missing or invalid.',
+      })
+    }
+
+    if (!validNonNegativeQuantity(physicalStock)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Physical stock must be a valid number greater than or equal to zero.',
+      })
+    }
+
+    validateTextFields({ reason, reference })
+
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Reason is required for stock adjustment.',
+      })
+    }
+
+    session = await mongoose.startSession()
+
+    let result
+
+    await session.withTransaction(async () => {
+      const product = await validateProduct(companyId, productId, session)
+
+      const warehouse = await getCompanyWarehouse(companyId, warehouseId, session)
+
+      const inventory = await getOrCreateWarehouseInventory({
+        companyId,
+        warehouseId: warehouse._id,
+        productId: product._id,
+        userId,
+        session,
+      })
+
+      const previousStock = inventory.currentStock
+      const reservedStock = inventory.reservedStock
+      const actualStock = Number(physicalStock)
+
+      if (actualStock < reservedStock) {
+        throw createError(`Physical stock cannot be less than reserved stock (${reservedStock}). Release reservations first if appropriate.`)
+      }
+
+      const difference = actualStock - previousStock
+
+      if (difference === 0) {
+        result = {
+          productId: product._id,
+          productName: product.name,
+          warehouseId: warehouse._id,
+          warehouseName: warehouse.name,
+          previousStock,
+          newStock: previousStock,
+          physicalStock: actualStock,
+          adjustment: 0,
+          reservedStock,
+          availableStock: previousStock - reservedStock,
+          movementCreated: false,
+        }
+        return
+      }
+
+      inventory.currentStock = actualStock
+      inventory.updatedBy = userId
+
+      await inventory.save({ session })
+
+      await InventoryMovement.create(
+        [
+          getStockMovementData({
+            companyId,
+            productId: product._id,
+            warehouseId: warehouse._id,
+            type: 'ADJUSTMENT',
+            quantity: Math.abs(difference),
+            previousStock,
+            newStock: actualStock,
+            reason: reason.trim(),
+            reference: reference?.trim() || '',
+            userId,
+          }),
+        ],
+        { session },
+      )
+
+      result = {
+        productId: product._id,
+        productName: product.name,
+        warehouseId: warehouse._id,
+        warehouseName: warehouse.name,
+        previousStock,
+        newStock: actualStock,
+        physicalStock: actualStock,
+        adjustment: difference,
+        reservedStock,
+        availableStock: actualStock - reservedStock,
+        movementCreated: true,
+      }
+    })
+
+    return res.status(200).json({
+      success: true,
+      message: result.adjustment === 0 ? 'Physical stock matches system stock. No adjustment was needed.' : 'Stock adjusted successfully.',
       data: result,
     })
   } catch (error) {

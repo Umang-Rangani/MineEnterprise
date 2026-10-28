@@ -555,8 +555,8 @@ export default function CompanyProducts() {
                     {products.map((product) => {
                       const isInactive = product.status === 'Inactive'
                       const productId = String(product._id || '')
-                      const isLowStock = Number(product.openingStock || 0) <= Number(product.minStockLevel || 0)
-
+                      const totalStock = Number(product.totalStock || 0)
+                      const isLowStock = totalStock <= Number(product.minStockLevel || 0)
                       return (
                         <tr key={getProductKey(product)} className="transition hover:bg-slate-50/70">
                           <td className="px-4 py-3">
@@ -591,7 +591,7 @@ export default function CompanyProducts() {
                           <td className="px-4 py-3">
                             <div className="flex flex-col gap-1">
                               <span className={`whitespace-nowrap text-xs font-medium ${isLowStock ? 'text-orange-700' : 'text-slate-700'}`}>
-                                {Number(product.openingStock || 0)} {product.unit || 'Piece'}
+                                {totalStock} {product.unit || 'Piece'}
                               </span>
                               {isLowStock && <span className="text-[10px] font-medium text-orange-600">Low stock</span>}
                             </div>
@@ -646,7 +646,7 @@ export default function CompanyProducts() {
                                   </button>
                                 )}
 
-                                {canDelete && (
+                                {/* {canDelete && (
                                   <button
                                     type="button"
                                     onClick={() => setDeletingProduct(product)}
@@ -657,7 +657,7 @@ export default function CompanyProducts() {
                                   >
                                     {deletingId === productId ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
                                   </button>
-                                )}
+                                )} */}
                               </div>
                             </td>
                           )}
@@ -673,7 +673,8 @@ export default function CompanyProducts() {
                 {products.map((product) => {
                   const isInactive = product.status === 'Inactive'
                   const productId = String(product._id || '')
-                  const isLowStock = Number(product.openingStock || 0) <= Number(product.minStockLevel || 0)
+                  const totalStock = Number(product.totalStock || 0)
+                  const isLowStock = totalStock <= Number(product.minStockLevel || 0)
 
                   return (
                     <div key={getProductKey(product)} className="space-y-3 p-3">
@@ -711,7 +712,7 @@ export default function CompanyProducts() {
                         <div>
                           <p className="text-[10px] text-slate-500">Stock</p>
                           <p className={`mt-1 text-xs font-semibold ${isLowStock ? 'text-orange-700' : 'text-slate-800'}`}>
-                            {Number(product.openingStock || 0)} {product.unit || 'Piece'}
+                            {totalStock} {product.unit || 'Piece'}
                             {isLowStock ? ' · Low stock' : ''}
                           </p>
                         </div>

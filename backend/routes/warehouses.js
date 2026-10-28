@@ -84,7 +84,6 @@ const formatDate = (value) => {
 }
 
 // GET /erp/warehouses/export
-// Must be declared before GET /:id.
 router.get('/export', permissionMiddleware('Warehouse', 'EXPORT'), async (req, res) => {
   try {
     const company = await getApprovedCompany(req, res)
@@ -161,29 +160,105 @@ router.get('/export', permissionMiddleware('Warehouse', 'EXPORT'), async (req, r
     return handleRouteError(res, error, 'Unable to export warehouses.')
   }
 })
-
 // GET /erp/warehouses
 router.get('/', permissionMiddleware('Warehouse', 'LIST'), async (req, res) => {
   try {
     const company = await getApprovedCompany(req, res)
     if (!company) return
 
-    const warehouses = await Warehouse.find({
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10))
+
+    const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
+
+    const status = typeof req.query.status === 'string' ? req.query.status : 'All'
+
+    if (!['All', 'Active', 'Inactive'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Status must be All, Active, or Inactive.',
+      })
+    }
+
+    const filter = {
       companyId: company._id,
-    })
-      .sort({ createdAt: -1 })
-      .lean()
+    }
+
+    if (status !== 'All') {
+      filter.status = status
+    }
+
+    if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const searchRegex = new RegExp(escapedSearch, 'i')
+
+      filter.$or = [
+        { name: searchRegex },
+        { code: searchRegex },
+        { address: searchRegex },
+        { city: searchRegex },
+        { state: searchRegex },
+        { manager: searchRegex },
+        { contactPerson: searchRegex },
+        { phone: searchRegex },
+        { managerPhone: searchRegex },
+      ]
+    }
+
+    const [warehouses, total] = await Promise.all([
+      Warehouse.find(filter)
+        .sort({ createdAt: -1, _id: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      Warehouse.countDocuments(filter),
+    ])
+
+    // Calculate stock for each warehouse
+    const warehouseIds = warehouses.map((warehouse) => warehouse._id)
+
+    const stockSummary = warehouseIds.length
+      ? await Inventory.aggregate([
+          {
+            $match: {
+              companyId: company._id,
+              warehouseId: { $in: warehouseIds },
+            },
+          },
+          {
+            $group: {
+              _id: '$warehouseId',
+              stockUnits: {
+                $sum: { $ifNull: ['$currentStock', 0] },
+              },
+            },
+          },
+        ])
+      : []
+
+    const stockMap = new Map(stockSummary.map((item) => [String(item._id), item.stockUnits]))
+
+    const data = warehouses.map((warehouse) => ({
+      ...warehouse,
+      stockUnits: stockMap.get(String(warehouse._id)) ?? 0,
+    }))
 
     return res.status(200).json({
       success: true,
-      count: warehouses.length,
-      data: warehouses,
+      count: data.length,
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     })
   } catch (error) {
     return handleRouteError(res, error, 'Unable to fetch warehouses.')
   }
 })
-
 // POST /erp/warehouses
 router.post('/', permissionMiddleware('Warehouse', 'CREATE'), async (req, res) => {
   try {
@@ -486,14 +561,14 @@ router.delete('/:id', permissionMiddleware('Warehouse', 'DELETE'), async (req, r
     const company = await getApprovedCompany(req, res)
     if (!company) return
 
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid warehouse ID.',
       })
     }
 
-    const warehouse = await Warehouse.findOneAndDelete({
+    const warehouse = await Warehouse.findOne({
       _id: req.params.id,
       companyId: company._id,
     })
@@ -504,6 +579,34 @@ router.delete('/:id', permissionMiddleware('Warehouse', 'DELETE'), async (req, r
         message: 'Warehouse not found.',
       })
     }
+
+    const [inventoryCount, movementCount] = await Promise.all([
+      Inventory.countDocuments({
+        companyId: company._id,
+        warehouseId: warehouse._id,
+      }),
+
+      InventoryMovement.countDocuments({
+        companyId: company._id,
+        $or: [{ warehouseId: warehouse._id }, { destinationWarehouseId: warehouse._id }],
+      }),
+    ])
+
+    if (inventoryCount > 0 || movementCount > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'This warehouse has inventory records or stock history. Deactivate it instead of deleting it.',
+        data: {
+          inventoryCount,
+          movementCount,
+        },
+      })
+    }
+
+    await Warehouse.deleteOne({
+      _id: warehouse._id,
+      companyId: company._id,
+    })
 
     return res.status(200).json({
       success: true,

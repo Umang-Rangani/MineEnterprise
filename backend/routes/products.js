@@ -2,6 +2,10 @@ const express = require('express')
 const mongoose = require('mongoose')
 
 const Product = require('../models/Product')
+const Warehouse = require('../models/Warehouse')
+const Inventory = require('../models/Inventory')
+const InventoryMovement = require('../models/InventoryMovement')
+
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
 
@@ -9,44 +13,143 @@ const router = express.Router()
 
 router.use(authMiddleware)
 
+function validCompanyId(req, res) {
+  const companyId = req.user?.companyId
+
+  if (!companyId || !mongoose.isValidObjectId(companyId)) {
+    res.status(403).json({
+      success: false,
+      message: 'Valid company access is required.',
+    })
+    return null
+  }
+
+  return new mongoose.Types.ObjectId(String(companyId))
+}
+
+function getUserId(req) {
+  return req.user?.userId || req.user?._id || req.user?.id
+}
+
+function getProductFilter(query, companyId) {
+  const filter = { companyId }
+  const search = typeof query.search === 'string' ? query.search.trim() : ''
+
+  if (search) {
+    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+    filter.$or = [{ name: { $regex: escapedSearch, $options: 'i' } }, { sku: { $regex: escapedSearch, $options: 'i' } }, { barcode: { $regex: escapedSearch, $options: 'i' } }]
+  }
+
+  if (['Active', 'Inactive'].includes(query.status)) {
+    filter.status = query.status
+  }
+
+  if (query.categoryId) {
+    if (!mongoose.isValidObjectId(query.categoryId)) {
+      const error = new Error('Invalid category ID.')
+      error.status = 400
+      throw error
+    }
+
+    filter.categoryId = query.categoryId
+  }
+
+  return filter
+}
+
+async function getStockMap(companyId, productIds) {
+  if (!productIds.length) return new Map()
+
+  const totals = await Inventory.aggregate([
+    {
+      $match: {
+        companyId,
+        productId: { $in: productIds },
+      },
+    },
+    {
+      $group: {
+        _id: '$productId',
+        totalStock: { $sum: '$currentStock' },
+        reservedStock: { $sum: '$reservedStock' },
+      },
+    },
+  ])
+
+  return new Map(
+    totals.map((item) => [
+      String(item._id),
+      {
+        totalStock: item.totalStock,
+        reservedStock: item.reservedStock,
+      },
+    ]),
+  )
+}
+
+function addStockToProduct(product, stock = {}) {
+  const totalStock = stock.totalStock || 0
+  const reservedStock = stock.reservedStock || 0
+
+  return {
+    ...product,
+    totalStock,
+    reservedStock,
+    availableStock: Math.max(0, totalStock - reservedStock),
+  }
+}
+
+function validNonNegativeNumber(value) {
+  return value !== '' && typeof value !== 'boolean' && value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value) >= 0
+}
+
+function sendKnownError(res, error) {
+  if (error.status) {
+    return res.status(error.status).json({
+      success: false,
+      message: error.message,
+    })
+  }
+
+  if (error.name === 'ValidationError' || error.name === 'CastError') {
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    })
+  }
+
+  if (error.code === 11000) {
+    console.error('Duplicate key error details:', {
+      message: error.message,
+      keyPattern: error.keyPattern,
+      keyValue: error.keyValue,
+      index: error.message?.match(/index:\s+(\S+)/)?.[1],
+    })
+
+    return res.status(409).json({
+      success: false,
+      message: 'Duplicate database record detected.',
+      details: {
+        keyPattern: error.keyPattern || null,
+        keyValue: error.keyValue || null,
+        index: error.message?.match(/index:\s+(\S+)/)?.[1] || null,
+      },
+    })
+  }
+
+  return null
+}
+
 // GET /erp/products
 router.get('/', permissionMiddleware('Product', 'LIST'), async (req, res, next) => {
   try {
-    const companyId = req.user.companyId
-
-    if (!companyId || !mongoose.isValidObjectId(companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Valid company access is required',
-      })
-    }
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
 
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20))
-    const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
-
-    const filter = { companyId }
-
-    if (search) {
-      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-      filter.$or = [{ name: { $regex: escapedSearch, $options: 'i' } }, { sku: { $regex: escapedSearch, $options: 'i' } }, { barcode: { $regex: escapedSearch, $options: 'i' } }]
-    }
-
-    if (['Active', 'Inactive'].includes(req.query.status)) {
-      filter.status = req.query.status
-    }
-
-    if (req.query.categoryId) {
-      if (!mongoose.isValidObjectId(req.query.categoryId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid category ID',
-        })
-      }
-
-      filter.categoryId = req.query.categoryId
-    }
+    const filter = getProductFilter(req.query, companyId)
 
     const [products, total] = await Promise.all([
       Product.find(filter)
@@ -57,9 +160,16 @@ router.get('/', permissionMiddleware('Product', 'LIST'), async (req, res, next) 
       Product.countDocuments(filter),
     ])
 
+    const stockMap = await getStockMap(
+      companyId,
+      products.map((product) => product._id),
+    )
+
+    const productsWithStock = products.map((product) => addStockToProduct(product, stockMap.get(String(product._id))))
+
     return res.status(200).json({
       success: true,
-      products,
+      products: productsWithStock,
       pagination: {
         page,
         limit,
@@ -68,6 +178,8 @@ router.get('/', permissionMiddleware('Product', 'LIST'), async (req, res, next) 
       },
     })
   } catch (error) {
+    const response = sendKnownError(res, error)
+    if (response) return response
     return next(error)
   }
 })
@@ -75,39 +187,10 @@ router.get('/', permissionMiddleware('Product', 'LIST'), async (req, res, next) 
 // GET /erp/products/export
 router.get('/export', permissionMiddleware('Product', 'EXPORT'), async (req, res, next) => {
   try {
-    const companyId = req.user.companyId
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
 
-    if (!companyId || !mongoose.isValidObjectId(companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Valid company access is required',
-      })
-    }
-
-    const filter = { companyId }
-    const search = typeof req.query.search === 'string' ? req.query.search.trim() : ''
-
-    if (search) {
-      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-      filter.$or = [{ name: { $regex: escapedSearch, $options: 'i' } }, { sku: { $regex: escapedSearch, $options: 'i' } }, { barcode: { $regex: escapedSearch, $options: 'i' } }]
-    }
-
-    if (['Active', 'Inactive'].includes(req.query.status)) {
-      filter.status = req.query.status
-    }
-
-    if (req.query.categoryId) {
-      if (!mongoose.isValidObjectId(req.query.categoryId)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid category ID',
-        })
-      }
-
-      filter.categoryId = req.query.categoryId
-    }
-
+    const filter = getProductFilter(req.query, companyId)
     const products = await Product.find(filter).sort({ createdAt: -1 }).lean()
 
     const columns = [
@@ -119,15 +202,21 @@ router.get('/export', permissionMiddleware('Product', 'EXPORT'), async (req, res
       ['Cost Price', 'costPrice'],
       ['Selling Price', 'sellingPrice'],
       ['Tax Rate', 'taxRate'],
-      ['Opening Stock', 'openingStock'],
       ['Minimum Stock', 'minStockLevel'],
+      ['Total Stock', 'totalStock'],
       ['Status', 'status'],
     ]
+
+    const stockMap = await getStockMap(
+      companyId,
+      products.map((product) => product._id),
+    )
+
+    const productsWithStock = products.map((product) => addStockToProduct(product, stockMap.get(String(product._id))))
 
     const escapeCsv = (value) => {
       let text = value == null ? '' : String(value)
 
-      // Prevent spreadsheet formula injection in text fields.
       if (/^[\s]*[=+\-@]/.test(text)) {
         text = `'${text}`
       }
@@ -135,13 +224,15 @@ router.get('/export', permissionMiddleware('Product', 'EXPORT'), async (req, res
       return `"${text.replace(/"/g, '""')}"`
     }
 
-    const csv = [columns.map(([label]) => escapeCsv(label)).join(','), ...products.map((product) => columns.map(([, key]) => escapeCsv(product[key])).join(','))].join('\r\n')
+    const csv = [columns.map(([label]) => escapeCsv(label)).join(','), ...productsWithStock.map((product) => columns.map(([, key]) => escapeCsv(product[key])).join(','))].join('\r\n')
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8')
     res.setHeader('Content-Disposition', 'attachment; filename="products.csv"')
 
     return res.status(200).send('\uFEFF' + csv)
   } catch (error) {
+    const response = sendKnownError(res, error)
+    if (response) return response
     return next(error)
   }
 })
@@ -149,19 +240,13 @@ router.get('/export', permissionMiddleware('Product', 'EXPORT'), async (req, res
 // GET /erp/products/:id
 router.get('/:id', permissionMiddleware('Product', 'VIEW'), async (req, res, next) => {
   try {
-    const companyId = req.user.companyId
-
-    if (!companyId || !mongoose.isValidObjectId(companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Valid company access is required',
-      })
-    }
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
 
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid product ID',
+        message: 'Invalid product ID.',
       })
     }
 
@@ -169,120 +254,179 @@ router.get('/:id', permissionMiddleware('Product', 'VIEW'), async (req, res, nex
       _id: req.params.id,
       companyId,
     })
-      .populate({
-        path: 'categoryId',
-        select: 'name',
-      })
+      .populate({ path: 'categoryId', select: 'name' })
       .lean()
 
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found',
+        message: 'Product not found.',
       })
     }
 
+    const [stockMap, warehouseRows] = await Promise.all([
+      getStockMap(companyId, [product._id]),
+      Inventory.find({
+        companyId,
+        productId: product._id,
+      })
+        .populate({ path: 'warehouseId', select: 'name code status' })
+        .lean(),
+    ])
+
+    const stock = stockMap.get(String(product._id)) || {
+      totalStock: 0,
+      reservedStock: 0,
+    }
+
+    const warehouseStock = warehouseRows
+      .filter((row) => row.warehouseId)
+      .map((row) => ({
+        warehouseId: row.warehouseId._id,
+        warehouseName: row.warehouseId.name,
+        warehouseCode: row.warehouseId.code,
+        currentStock: row.currentStock,
+        reservedStock: row.reservedStock,
+        availableStock: Math.max(0, row.currentStock - row.reservedStock),
+      }))
+
     return res.status(200).json({
       success: true,
-      product,
+      product: {
+        ...addStockToProduct(product, stock),
+        warehouseStock,
+      },
     })
   } catch (error) {
+    const response = sendKnownError(res, error)
+    if (response) return response
     return next(error)
   }
 })
 
 // POST /erp/products
 router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, next) => {
-  try {
-    const companyId = req.user.companyId
+  let session
 
-    if (!companyId || !mongoose.isValidObjectId(companyId)) {
-      return res.status(403).json({
+  try {
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
+
+    const userId = getUserId(req)
+
+    if (!userId || !mongoose.isValidObjectId(userId)) {
+      return res.status(401).json({
         success: false,
-        message: 'Valid company access is required',
+        message: 'Authenticated user ID is missing.',
       })
     }
 
-    const { name, sku, description, categoryId, barcode, unit, costPrice, sellingPrice, taxRate, openingStock, minStockLevel, imageUrl, status } = req.body
+    const { name, sku, description, categoryId, barcode, unit, costPrice, sellingPrice, taxRate, minStockLevel, imageUrl, status, warehouseStocks = [] } = req.body
 
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({
         success: false,
-        message: 'Product name is required',
+        message: 'Product name is required.',
       })
     }
 
     if (typeof sku !== 'string' || !sku.trim()) {
       return res.status(400).json({
         success: false,
-        message: 'Product SKU is required',
+        message: 'Product SKU is required.',
       })
     }
 
     if (name.trim().length > 150 || sku.trim().length > 80) {
       return res.status(400).json({
         success: false,
-        message: 'Product name or SKU exceeds the maximum length',
+        message: 'Product name or SKU exceeds the maximum length.',
       })
     }
 
     if (description !== undefined && typeof description !== 'string') {
       return res.status(400).json({
         success: false,
-        message: 'Description must be text',
+        message: 'Description must be text.',
       })
     }
 
     if (barcode !== undefined && typeof barcode !== 'string') {
       return res.status(400).json({
         success: false,
-        message: 'Barcode must be text',
+        message: 'Barcode must be text.',
       })
     }
 
     if (unit !== undefined && (typeof unit !== 'string' || !unit.trim())) {
       return res.status(400).json({
         success: false,
-        message: 'Unit must be a non-empty string',
+        message: 'Unit must be a non-empty string.',
       })
     }
 
     if (imageUrl !== undefined && typeof imageUrl !== 'string') {
       return res.status(400).json({
         success: false,
-        message: 'Image URL must be text',
+        message: 'Image URL must be text.',
       })
     }
 
     if (status !== undefined && !['Active', 'Inactive'].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Status must be Active or Inactive',
+        message: 'Status must be Active or Inactive.',
       })
     }
 
     for (const [field, value] of Object.entries({
-      costPrice,
-      sellingPrice,
-      taxRate,
-      openingStock,
-      minStockLevel,
+      costPrice: costPrice ?? 0,
+      sellingPrice: sellingPrice ?? 0,
+      taxRate: taxRate ?? 0,
+      minStockLevel: minStockLevel ?? 0,
     })) {
-      if (value === undefined) continue
-
-      if (value === '' || typeof value === 'boolean' || !Number.isFinite(Number(value)) || Number(value) < 0) {
+      if (!validNonNegativeNumber(value)) {
         return res.status(400).json({
           success: false,
-          message: `${field} must be a valid non-negative number`,
+          message: `${field} must be a valid non-negative number.`,
         })
       }
     }
 
-    if (taxRate !== undefined && Number(taxRate) > 100) {
+    if (Number(taxRate ?? 0) > 100) {
       return res.status(400).json({
         success: false,
-        message: 'Tax rate cannot exceed 100%',
+        message: 'Tax rate cannot exceed 100%.',
       })
+    }
+
+    if (!Array.isArray(warehouseStocks)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Warehouse stocks must be an array.',
+      })
+    }
+
+    const seenWarehouseIds = new Set()
+
+    for (const row of warehouseStocks) {
+      if (!row || !mongoose.isValidObjectId(row.warehouseId) || !validNonNegativeNumber(row.quantity)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Each warehouse requires a valid ID and non-negative quantity.',
+        })
+      }
+
+      const warehouseKey = String(row.warehouseId)
+
+      if (seenWarehouseIds.has(warehouseKey)) {
+        return res.status(400).json({
+          success: false,
+          message: 'A warehouse can only be selected once.',
+        })
+      }
+
+      seenWarehouseIds.add(warehouseKey)
     }
 
     let normalizedCategoryId = null
@@ -291,7 +435,7 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
       if (!mongoose.isValidObjectId(categoryId)) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid category ID',
+          message: 'Invalid category ID.',
         })
       }
 
@@ -300,126 +444,171 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
       if (!Category) {
         return res.status(500).json({
           success: false,
-          message: 'Category model is not registered',
+          message: 'Category model is not registered.',
         })
       }
 
       const category = await Category.findOne({
         _id: categoryId,
         companyId,
-      })
-        .select('_id')
-        .lean()
+      }).select('_id')
 
       if (!category) {
         return res.status(400).json({
           success: false,
-          message: 'Selected category does not belong to your company',
+          message: 'Selected category does not belong to your company.',
         })
       }
 
       normalizedCategoryId = category._id
     }
 
-    const product = await Product.create({
-      companyId,
-      name: name.trim(),
-      sku: sku.trim().toUpperCase(),
-      description: description?.trim() || '',
-      categoryId: normalizedCategoryId,
-      barcode: barcode?.trim() || '',
-      unit: unit?.trim() || 'Piece',
-      costPrice: costPrice === undefined ? 0 : Number(costPrice),
-      sellingPrice: sellingPrice === undefined ? 0 : Number(sellingPrice),
-      taxRate: taxRate === undefined ? 0 : Number(taxRate),
-      openingStock: openingStock === undefined ? 0 : Number(openingStock),
-      minStockLevel: minStockLevel === undefined ? 0 : Number(minStockLevel),
-      imageUrl: imageUrl?.trim() || '',
-      status: status || 'Active',
-      createdBy: req.user.userId,
+    session = await mongoose.startSession()
+
+    let createdProduct
+    let totalOpeningStock = 0
+
+    await session.withTransaction(async () => {
+      const product = new Product({
+        companyId,
+        name: name.trim(),
+        sku: sku.trim().toUpperCase(),
+        description: description?.trim() || '',
+        categoryId: normalizedCategoryId,
+        barcode: barcode?.trim() || '',
+        unit: unit?.trim() || 'Piece',
+        costPrice: Number(costPrice ?? 0),
+        sellingPrice: Number(sellingPrice ?? 0),
+        taxRate: Number(taxRate ?? 0),
+        openingStock: 0,
+        minStockLevel: Number(minStockLevel ?? 0),
+        imageUrl: imageUrl?.trim() || '',
+        status: status || 'Active',
+        createdBy: userId,
+      })
+
+      await product.save({ session })
+
+      const inventoryRows = []
+      const movementRows = []
+
+      for (const row of warehouseStocks) {
+        const warehouse = await Warehouse.findOne({
+          _id: row.warehouseId,
+          companyId,
+          status: 'Active',
+        }).session(session)
+
+        if (!warehouse) {
+          const error = new Error('Every selected warehouse must be active and belong to your company.')
+          error.status = 400
+          throw error
+        }
+
+        const quantity = Number(row.quantity)
+        totalOpeningStock += quantity
+
+        if (quantity === 0) continue
+
+        inventoryRows.push({
+          companyId,
+          productId: product._id,
+          warehouseId: warehouse._id,
+          currentStock: quantity,
+          reservedStock: 0,
+          createdBy: userId,
+        })
+
+        movementRows.push({
+          companyId,
+          productId: product._id,
+          warehouseId: warehouse._id,
+          type: 'STOCK_IN',
+          quantity,
+          previousStock: 0,
+          newStock: quantity,
+          reason: 'Initial stock',
+          reference: `OPENING-${product._id}`,
+          createdBy: userId,
+        })
+      }
+
+      if (inventoryRows.length) {
+        await Inventory.insertMany(inventoryRows, {
+          session,
+          ordered: true,
+        })
+
+        await InventoryMovement.insertMany(movementRows, {
+          session,
+          ordered: true,
+        })
+      }
+
+      createdProduct = product
     })
 
     return res.status(201).json({
       success: true,
-      message: 'Product created successfully',
-      product,
+      message: 'Product and initial warehouse stock created successfully.',
+      product: {
+        ...createdProduct.toObject(),
+        openingStock: totalOpeningStock,
+        totalStock: totalOpeningStock,
+        reservedStock: 0,
+        availableStock: totalOpeningStock,
+      },
+      totalOpeningStock,
     })
   } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'A product with this SKU already exists in your company',
-      })
-    }
-
-    if (error.name === 'ValidationError' || error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      })
-    }
-
+    const response = sendKnownError(res, error)
+    if (response) return response
     return next(error)
+  } finally {
+    if (session) await session.endSession()
   }
 })
 
 // PATCH /erp/products/:id/status
 router.patch('/:id/status', permissionMiddleware('Product', 'UPDATE_STATUS'), async (req, res, next) => {
   try {
-    const companyId = req.user.companyId
-    const { status } = req.body
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
 
-    if (!companyId || !mongoose.isValidObjectId(companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Valid company access is required',
-      })
-    }
+    const userId = getUserId(req)
+    const { status } = req.body
 
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid product ID',
+        message: 'Invalid product ID.',
       })
     }
 
     if (!['Active', 'Inactive'].includes(status)) {
       return res.status(400).json({
         success: false,
-        message: 'Status must be Active or Inactive',
+        message: 'Status must be Active or Inactive.',
       })
     }
 
-    const product = await Product.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        companyId,
-      },
-      {
-        $set: {
-          status,
-          updatedBy: req.user.userId,
-        },
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    )
+    const product = await Product.findOneAndUpdate({ _id: req.params.id, companyId }, { $set: { status, updatedBy: userId } }, { new: true, runValidators: true })
 
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found',
+        message: 'Product not found.',
       })
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Product status updated successfully',
+      message: 'Product status updated successfully.',
       product,
     })
   } catch (error) {
+    const response = sendKnownError(res, error)
+    if (response) return response
     return next(error)
   }
 })
@@ -427,23 +616,19 @@ router.patch('/:id/status', permissionMiddleware('Product', 'UPDATE_STATUS'), as
 // PATCH /erp/products/:id
 router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res, next) => {
   try {
-    const companyId = req.user.companyId
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
 
-    if (!companyId || !mongoose.isValidObjectId(companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Valid company access is required',
-      })
-    }
+    const userId = getUserId(req)
 
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid product ID',
+        message: 'Invalid product ID.',
       })
     }
 
-    const allowedFields = ['name', 'sku', 'description', 'categoryId', 'barcode', 'unit', 'costPrice', 'sellingPrice', 'taxRate', 'openingStock', 'minStockLevel', 'imageUrl']
+    const allowedFields = ['name', 'sku', 'description', 'categoryId', 'barcode', 'unit', 'costPrice', 'sellingPrice', 'taxRate', 'minStockLevel', 'imageUrl']
 
     const data = {}
 
@@ -456,7 +641,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
     if (!Object.keys(data).length) {
       return res.status(400).json({
         success: false,
-        message: 'No valid product fields supplied',
+        message: 'No valid product fields supplied.',
       })
     }
 
@@ -464,7 +649,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       if (typeof data.name !== 'string' || !data.name.trim() || data.name.trim().length > 150) {
         return res.status(400).json({
           success: false,
-          message: 'Product name is invalid',
+          message: 'Product name is invalid.',
         })
       }
 
@@ -475,7 +660,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       if (typeof data.sku !== 'string' || !data.sku.trim() || data.sku.trim().length > 80) {
         return res.status(400).json({
           success: false,
-          message: 'Product SKU is invalid',
+          message: 'Product SKU is invalid.',
         })
       }
 
@@ -486,7 +671,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       if (typeof data.description !== 'string') {
         return res.status(400).json({
           success: false,
-          message: 'Description must be text',
+          message: 'Description must be text.',
         })
       }
 
@@ -497,7 +682,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       if (typeof data.barcode !== 'string') {
         return res.status(400).json({
           success: false,
-          message: 'Barcode must be text',
+          message: 'Barcode must be text.',
         })
       }
 
@@ -508,7 +693,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       if (typeof data.unit !== 'string' || !data.unit.trim()) {
         return res.status(400).json({
           success: false,
-          message: 'Unit must be a non-empty string',
+          message: 'Unit must be a non-empty string.',
         })
       }
 
@@ -519,27 +704,20 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       if (typeof data.imageUrl !== 'string') {
         return res.status(400).json({
           success: false,
-          message: 'Image URL must be text',
+          message: 'Image URL must be text.',
         })
       }
 
       data.imageUrl = data.imageUrl.trim()
     }
 
-    if (data.status !== undefined && !['Active', 'Inactive'].includes(data.status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Status must be Active or Inactive',
-      })
-    }
-
-    for (const field of ['costPrice', 'sellingPrice', 'taxRate', 'openingStock', 'minStockLevel']) {
+    for (const field of ['costPrice', 'sellingPrice', 'taxRate', 'minStockLevel']) {
       if (data[field] === undefined) continue
 
-      if (data[field] === '' || typeof data[field] === 'boolean' || !Number.isFinite(Number(data[field])) || Number(data[field]) < 0) {
+      if (!validNonNegativeNumber(data[field])) {
         return res.status(400).json({
           success: false,
-          message: `${field} must be a valid non-negative number`,
+          message: `${field} must be a valid non-negative number.`,
         })
       }
 
@@ -549,7 +727,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
     if (data.taxRate !== undefined && data.taxRate > 100) {
       return res.status(400).json({
         success: false,
-        message: 'Tax rate cannot exceed 100%',
+        message: 'Tax rate cannot exceed 100%.',
       })
     }
 
@@ -560,7 +738,7 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
         if (!mongoose.isValidObjectId(data.categoryId)) {
           return res.status(400).json({
             success: false,
-            message: 'Invalid category ID',
+            message: 'Invalid category ID.',
           })
         }
 
@@ -569,21 +747,19 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
         if (!Category) {
           return res.status(500).json({
             success: false,
-            message: 'Category model is not registered',
+            message: 'Category model is not registered.',
           })
         }
 
         const category = await Category.findOne({
           _id: data.categoryId,
           companyId,
-        })
-          .select('_id')
-          .lean()
+        }).select('_id')
 
         if (!category) {
           return res.status(400).json({
             success: false,
-            message: 'Selected category does not belong to your company',
+            message: 'Selected category does not belong to your company.',
           })
         }
 
@@ -591,50 +767,23 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
       }
     }
 
-    const product = await Product.findOneAndUpdate(
-      {
-        _id: req.params.id,
-        companyId,
-      },
-      {
-        $set: {
-          ...data,
-          updatedBy: req.user.userId,
-        },
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    )
+    const product = await Product.findOneAndUpdate({ _id: req.params.id, companyId }, { $set: { ...data, updatedBy: userId } }, { new: true, runValidators: true })
 
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found',
+        message: 'Product not found.',
       })
     }
 
     return res.status(200).json({
       success: true,
-      message: 'Product updated successfully',
+      message: 'Product updated successfully.',
       product,
     })
   } catch (error) {
-    if (error.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        message: 'A product with this SKU already exists in your company',
-      })
-    }
-
-    if (error.name === 'ValidationError' || error.name === 'CastError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      })
-    }
-
+    const response = sendKnownError(res, error)
+    if (response) return response
     return next(error)
   }
 })
@@ -642,23 +791,17 @@ router.patch('/:id', permissionMiddleware('Product', 'UPDATE'), async (req, res,
 // DELETE /erp/products/:id
 router.delete('/:id', permissionMiddleware('Product', 'DELETE'), async (req, res, next) => {
   try {
-    const companyId = req.user.companyId
-
-    if (!companyId || !mongoose.isValidObjectId(companyId)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Valid company access is required',
-      })
-    }
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
 
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid product ID',
+        message: 'Invalid product ID.',
       })
     }
 
-    const product = await Product.findOneAndDelete({
+    const product = await Product.findOne({
       _id: req.params.id,
       companyId,
     })
@@ -666,15 +809,28 @@ router.delete('/:id', permissionMiddleware('Product', 'DELETE'), async (req, res
     if (!product) {
       return res.status(404).json({
         success: false,
-        message: 'Product not found',
+        message: 'Product not found.',
       })
     }
 
+    const [inventoryExists, movementExists] = await Promise.all([Inventory.exists({ companyId, productId: product._id }), InventoryMovement.exists({ companyId, productId: product._id })])
+
+    if (inventoryExists || movementExists) {
+      return res.status(409).json({
+        success: false,
+        message: 'This product has inventory or movement history. Deactivate it instead of deleting it.',
+      })
+    }
+
+    await product.deleteOne()
+
     return res.status(200).json({
       success: true,
-      message: 'Product deleted successfully',
+      message: 'Product deleted successfully.',
     })
   } catch (error) {
+    const response = sendKnownError(res, error)
+    if (response) return response
     return next(error)
   }
 })

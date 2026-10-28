@@ -299,12 +299,12 @@ export default function ProductsDetails() {
               </button>
             )}
 
-            {canDelete && (
+            {/* {canDelete && (
               <button type="button" onClick={() => setShowDeleteModal(true)} disabled={loading || refreshing || deleting || !product} className={`${buttonBase} border border-red-200 bg-red-50 text-red-600 hover:bg-red-100`}>
                 <Trash2 size={14} />
                 Delete
               </button>
-            )}
+            )} */}
           </div>
         </div>
       </section>
@@ -363,7 +363,7 @@ export default function ProductsDetails() {
                 <DetailItem label="Barcode" value={product.barcode} icon={Barcode} inactive={isInactive} />
 
                 <DetailItem label="Category" value={categoryName || 'Uncategorized'} icon={Boxes} inactive={isInactive} />
-                
+
                 <div className="sm:col-span-2">
                   <DetailItem label="Description" value={product.description || 'No description provided.'} icon={FileText} inactive={isInactive} />
                 </div>
@@ -402,22 +402,78 @@ export default function ProductsDetails() {
 
             {/* Inventory Information */}
             <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={Warehouse} title="Inventory Information" description="Stock quantity and low-stock threshold" inactive={isInactive} />
+              <SectionHeader icon={Warehouse} title="Inventory Information" description="Live stock summary and warehouse-wise quantities" inactive={isInactive} />
 
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <DetailItem label="Unit" value={product.unit} icon={Boxes} inactive={isInactive} />
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <DetailItem label="Total Stock" value={formatQuantity(product.totalStock ?? 0, product.unit)} icon={Package} inactive={isInactive} />
 
-                <DetailItem label="Opening Stock" value={formatQuantity(product.openingStock, product.unit)} icon={Package} inactive={isInactive} />
+                <DetailItem label="Reserved Stock" value={formatQuantity(product.reservedStock ?? 0, product.unit)} icon={Boxes} inactive={isInactive} />
 
-                <DetailItem label="Minimum Stock Level" value={formatQuantity(product.minStockLevel, product.unit)} icon={AlertCircle} inactive={isInactive} />
+                <DetailItem label="Available Stock" value={formatQuantity(product.availableStock ?? 0, product.unit)} icon={CheckCircle2} inactive={isInactive} />
 
-                <DetailItem label="Stock Status" value={Number(product.openingStock ?? 0) <= Number(product.minStockLevel ?? 0) ? 'Low Stock' : 'Stock Available'} icon={Boxes} inactive={isInactive} />
+                <DetailItem label="Minimum Stock Level" value={formatQuantity(product.minStockLevel ?? 0, product.unit)} icon={AlertCircle} inactive={isInactive} />
               </div>
 
-              <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
-                <AlertCircle size={15} className={`mt-0.5 shrink-0 ${isInactive ? 'text-erp-disabled' : 'text-erp-text-muted'}`} />
+              {(() => {
+                const totalStock = Number(product.totalStock ?? 0)
+                const minimumStock = Number(product.minStockLevel ?? 0)
+                const isLowStock = totalStock <= minimumStock
 
-                <p className={`text-xs leading-5 ${secondaryTextClass}`}>The stock status shown here is based on the product's opening stock. It does not represent live stock movements unless your backend updates this field.</p>
+                return (
+                  <div className={`mt-4 flex items-start gap-3 rounded-lg border p-3 ${isLowStock ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                    {isLowStock ? <AlertCircle size={17} className="mt-0.5 shrink-0" /> : <CheckCircle2 size={17} className="mt-0.5 shrink-0" />}
+
+                    <div>
+                      <p className="text-xs font-bold">{isLowStock ? 'Low Stock' : 'Stock Available'}</p>
+
+                      <p className="mt-1 text-xs leading-5">{isLowStock ? 'Total stock is at or below the minimum stock level.' : 'Total stock is above the minimum stock level.'}</p>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div className="mt-5">
+                <h3 className="mb-3 text-xs font-bold text-erp-text">Warehouse-wise Stock</h3>
+
+                {Array.isArray(product.warehouseStock) && product.warehouseStock.length > 0 ? (
+                  <div className="overflow-x-auto rounded-lg border border-erp-border">
+                    <table className="w-full min-w-[560px] text-left text-xs">
+                      <thead className="bg-erp-hover/30 text-erp-text-secondary">
+                        <tr>
+                          <th className="px-3 py-3 font-semibold">Warehouse</th>
+                          <th className="px-3 py-3 font-semibold">Code</th>
+                          <th className="px-3 py-3 text-right font-semibold">Current Stock</th>
+                          <th className="px-3 py-3 text-right font-semibold">Reserved</th>
+                          <th className="px-3 py-3 text-right font-semibold">Available</th>
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-erp-border">
+                        {product.warehouseStock.map((warehouse, index) => (
+                          <tr key={`${warehouse.warehouseId || warehouse.warehouseCode || index}`} className="bg-erp-surface">
+                            <td className="px-3 py-3 font-semibold text-erp-text">{warehouse.warehouseName || 'Unknown Warehouse'}</td>
+
+                            <td className="px-3 py-3 text-erp-text-secondary">{warehouse.warehouseCode || '—'}</td>
+
+                            <td className="px-3 py-3 text-right font-semibold text-erp-text">{formatQuantity(warehouse.currentStock, product.unit)}</td>
+
+                            <td className="px-3 py-3 text-right text-erp-text-secondary">{formatQuantity(warehouse.reservedStock, product.unit)}</td>
+
+                            <td className="px-3 py-3 text-right font-semibold text-erp-primary">{formatQuantity(warehouse.availableStock, product.unit)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-erp-border bg-erp-hover/20 p-5 text-center">
+                    <Warehouse size={24} className="mx-auto text-erp-text-muted" />
+
+                    <p className="mt-2 text-xs font-semibold text-erp-text">No warehouse stock recorded</p>
+
+                    <p className="mt-1 text-xs text-erp-text-secondary">Stock will appear here after opening stock is recorded or stock is added.</p>
+                  </div>
+                )}
               </div>
             </section>
 

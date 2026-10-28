@@ -108,6 +108,8 @@ const ACTIONS = {
     VIEW: 'supplier:view',
     CREATE: 'supplier:create',
     UPDATE: 'supplier:update',
+    UPDATE_STATUS: 'supplier:update-status',
+    EXPORT: 'supplier:export',
     DELETE: 'supplier:delete',
   },
 
@@ -235,7 +237,7 @@ const ROLE_DEFAULT_PERMISSIONS = {
     [SECTION_KEYS.Category]: Object.values(ACTIONS.Category),
     [SECTION_KEYS.Inventory]: Object.values(ACTIONS.Inventory),
     [SECTION_KEYS.Warehouse]: Object.values(ACTIONS.Warehouse),
-    [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW, ACTIONS.Supplier.CREATE, ACTIONS.Supplier.UPDATE],
+    [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW, ACTIONS.Supplier.CREATE, ACTIONS.Supplier.UPDATE, ACTIONS.Supplier.UPDATE_STATUS, ACTIONS.Supplier.EXPORT],
     [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW, ACTIONS.Purchase.CREATE, ACTIONS.Purchase.UPDATE],
     [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.INVENTORY, ACTIONS.Reports.PURCHASE],
   },

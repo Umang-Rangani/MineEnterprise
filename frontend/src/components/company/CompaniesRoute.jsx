@@ -68,7 +68,7 @@ const navigationItems = [
     icon: Boxes,
     actions: ['inventory:view', 'inventory:view-stock'],
   },
-    {
+  {
     label: 'Warehouse',
     path: '/company/warehouses',
     icon: Warehouse,
@@ -283,6 +283,14 @@ const routePermissions = [
   {
     pattern: /^\/company\/suppliers\/new\/?$/,
     actions: ['supplier:create'],
+  },
+  {
+    pattern: /^\/company\/suppliers\/export\/?$/,
+    actions: ['supplier:export'],
+  },
+  {
+    pattern: /^\/company\/suppliers\/[^/]+\/status\/?$/,
+    actions: ['supplier:update-status'],
   },
   {
     pattern: /^\/company\/suppliers\/[^/]+\/edit\/?$/,

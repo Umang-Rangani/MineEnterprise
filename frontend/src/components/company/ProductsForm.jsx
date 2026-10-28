@@ -19,6 +19,7 @@ const initialForm = {
   sellingPrice: '',
   taxRate: '',
   openingStock: '',
+  warehouseStocks: [],
   minStockLevel: '',
   imageUrl: '',
   status: 'Active',
@@ -28,7 +29,6 @@ const units = ['Piece', 'Kg', 'Gram', 'Litre', 'ML', 'Meter', 'Box', 'Pack', 'Do
 
 export default function ProductsForm() {
   const navigate = useNavigate()
-  const location = useLocation()
   const { id } = useParams()
 
   const isEdit = Boolean(id)
@@ -49,6 +49,9 @@ export default function ProductsForm() {
   const [errors, setErrors] = useState({})
   const [apiError, setApiError] = useState('')
   const [toast, setToast] = useState(null)
+
+  const [warehouses, setWarehouses] = useState([])
+  const [warehouseStocks, setWarehouseStocks] = useState([])
 
   const items = [
     { title: 'Products', link: '/company/products' },
@@ -95,6 +98,41 @@ export default function ProductsForm() {
   useEffect(() => {
     let active = true
 
+    async function loadWarehouses() {
+      try {
+        const { data } = await axiosInstance.get('/erp/warehouses')
+
+        if (!active) return
+
+        const list = data.warehouses || data.data?.warehouses || (Array.isArray(data.data) ? data.data : [])
+
+        const activeWarehouses = Array.isArray(list) ? list.filter((warehouse) => warehouse.status === 'Active') : []
+
+        setWarehouses(activeWarehouses)
+
+        setWarehouseStocks(
+          activeWarehouses.map((warehouse) => ({
+            warehouseId: warehouse._id,
+            quantity: '',
+          })),
+        )
+      } catch (error) {
+        if (active) {
+          setApiError(error.response?.data?.message || 'Unable to load warehouses.')
+        }
+      }
+    }
+
+    loadWarehouses()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
     async function loadProduct() {
       if (!isEdit) {
         setForm(initialForm)
@@ -107,6 +145,8 @@ export default function ProductsForm() {
 
       try {
         const { data } = await axiosInstance.get(`/erp/products/${id}`)
+
+        console.log(data)
 
         if (data.success === false) {
           throw new Error(data.message || 'Unable to load product.')
@@ -131,10 +171,33 @@ export default function ProductsForm() {
           sellingPrice: String(product.sellingPrice ?? 0),
           taxRate: String(product.taxRate ?? 0),
           openingStock: String(product.openingStock ?? 0),
+          warehouseStocks: (product.warehouseStock || []).map((item) => ({
+            warehouseId: item.warehouseId?._id || item.warehouseId,
+            warehouseName: item.warehouseName || item.warehouseId?.name || '',
+            quantity: String(item.currentStock ?? 0),
+          })),
           minStockLevel: String(product.minStockLevel ?? 0),
           imageUrl: product.imageUrl || '',
           status: product.status || 'Active',
         })
+
+        setWarehouseStocks(
+          (product.warehouseStock || []).map((item) => ({
+            warehouseId: String(item.warehouseId?._id || item.warehouseId),
+            quantity: String(item.currentStock ?? 0),
+          })),
+        )
+
+        // setWarehouseStocks(
+        //   warehouses.map((warehouse) => {
+        //     const existingStock = (product.warehouseStock || []).find((item) => String(item.warehouseId?._id || item.warehouseId) === String(warehouse._id))
+
+        //     return {
+        //       warehouseId: warehouse._id,
+        //       quantity: String(existingStock?.currentStock ?? 0),
+        //     }
+        //   }),
+        // )
       } catch (error) {
         if (active) {
           setApiError(error.response?.data?.message || error.message || 'Unable to load product.')
@@ -186,7 +249,6 @@ export default function ProductsForm() {
     const costPrice = Number(form.costPrice)
     const sellingPrice = Number(form.sellingPrice)
     const taxRate = Number(form.taxRate)
-    const openingStock = Number(form.openingStock)
     const minStockLevel = Number(form.minStockLevel)
 
     if (!name) {
@@ -219,10 +281,6 @@ export default function ProductsForm() {
 
     if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
       nextErrors.taxRate = 'Tax rate must be between 0 and 100.'
-    }
-
-    if (!Number.isFinite(openingStock) || openingStock < 0) {
-      nextErrors.openingStock = 'Opening stock cannot be negative.'
     }
 
     if (!Number.isFinite(minStockLevel) || minStockLevel < 0) {
@@ -275,7 +333,14 @@ export default function ProductsForm() {
         costPrice: Number(form.costPrice),
         sellingPrice: Number(form.sellingPrice),
         taxRate: Number(form.taxRate),
-        openingStock: Number(form.openingStock),
+
+        warehouseStocks: warehouseStocks
+          .filter((item) => item.quantity !== '')
+          .map((item) => ({
+            warehouseId: item.warehouseId,
+            quantity: Number(item.quantity),
+          })),
+
         minStockLevel: Number(form.minStockLevel),
         imageUrl: form.imageUrl.trim(),
         status: form.status,
@@ -565,14 +630,39 @@ export default function ProductsForm() {
             </div>
 
             {/* Opening Stock */}
-            <div className="min-w-0 space-y-1">
-              <label htmlFor="opening-stock" className={labelClass}>
-                Opening Stock <span className="text-erp-danger">*</span>
-              </label>
+            <div className="min-w-0 space-y-3 sm:col-span-2 lg:col-span-3">
+              <div>
+                <label className={labelClass}>Opening Stock by Warehouse</label>
 
-              <input id="opening-stock" type="number" min="0" step="any" required value={form.openingStock} onChange={(event) => updateField('openingStock', event.target.value)} disabled={saving} className={inputClass('openingStock')} />
+                <p className="text-[10px] text-erp-text-muted">Enter the initial quantity available at each warehouse.</p>
+              </div>
 
-              {errorText('openingStock')}
+              {warehouseStocks.map((item) => {
+                const warehouse = warehouses.find((entry) => entry._id === item.warehouseId)
+
+                return (
+                  <div key={item.warehouseId} className="grid gap-2 sm:grid-cols-2">
+                    <div className="flex h-10 items-center rounded-lg border border-erp-border px-3 text-xs">{warehouse?.name || warehouse?.warehouseName}</div>
+
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={item.quantity}
+                      disabled={saving}
+                      placeholder="Opening quantity"
+                      className={inputClass('warehouseStocks')}
+                      onChange={(event) => {
+                        const quantity = event.target.value
+
+                        setWarehouseStocks((current) => current.map((stock) => (stock.warehouseId === item.warehouseId ? { ...stock, quantity } : stock)))
+                      }}
+                    />
+                  </div>
+                )
+              })}
+
+              <p className="text-xs font-semibold text-erp-text">Total Opening Stock: {warehouseStocks.reduce((total, item) => total + (Number(item.quantity) || 0), 0)}</p>
             </div>
 
             {/* Minimum Stock */}
@@ -607,7 +697,7 @@ export default function ProductsForm() {
             {/* Product Image */}
             <div className="min-w-0 space-y-3">
               {/* Large Image Preview */}
-                            <p className="break-all text-xs text-erp-text-secondary">{form.imageUrl.trim() || 'Enter an image URL to preview the product.'}</p>
+              <p className="break-all text-xs text-erp-text-secondary">{form.imageUrl.trim() || 'Enter an image URL to preview the product.'}</p>
 
               <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-xl border border-erp-border bg-erp-hover/30 p-3 sm:min-h-80">
                 {form.imageUrl.trim() ? (
@@ -631,7 +721,6 @@ export default function ProductsForm() {
                   </div>
                 )}
               </div>
-
             </div>
 
             {/* Product Status */}

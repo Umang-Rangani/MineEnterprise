@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Eye, Pencil, Trash2, Warehouse, MapPin, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, RefreshCw, Filter, FilterX, AlertCircle, Power, LoaderCircle, Download, Phone } from 'lucide-react'
+import { Plus, Search, Eye, Pencil, Trash2, Warehouse, MapPin, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, RefreshCw, FilterX, AlertCircle, Power, LoaderCircle, Download, Phone } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import TrashBox from '../../TrashBox/TrashBox'
 import Toast from '../../Toast/Toast'
 import { hasPermission, useAuth } from '../../context/AuthContext'
+import Loading from '../Loading/Loading'
 
 const statusStyles = {
   Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -15,11 +16,39 @@ const statusStyles = {
 
 const formatNumber = (value) => new Intl.NumberFormat('en-IN').format(Number(value) || 0)
 
+function getWarehouseArray(response) {
+  if (Array.isArray(response?.data)) return response.data
+  if (Array.isArray(response?.data?.data)) return response.data.data
+  if (Array.isArray(response?.data?.warehouses)) return response.data.warehouses
+  if (Array.isArray(response?.data?.data?.warehouses)) {
+    return response.data.data.warehouses
+  }
+
+  return []
+}
+
+function getWarehouseObject(response) {
+  const data = response?.data
+
+  if (data?.warehouse) return data.warehouse
+  if (data?.data?.warehouse) return data.data.warehouse
+
+  if (data?.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+    return data.data
+  }
+
+  return null
+}
+
 function getCapacityPercentage(warehouse) {
+  if (warehouse.stockUnits === undefined || warehouse.stockUnits === null) {
+    return null
+  }
+
   const capacity = Number(warehouse.capacity) || 0
   const stock = Number(warehouse.stockUnits) || 0
 
-  if (!capacity) return 0
+  if (capacity <= 0) return null
 
   return Math.min(100, Math.round((stock / capacity) * 100))
 }
@@ -30,44 +59,40 @@ function getCapacityColor(percentage) {
   return 'bg-erp-primary'
 }
 
-function getWarehouseArray(data) {
-  if (Array.isArray(data)) return data
-  if (Array.isArray(data?.warehouses)) return data.warehouses
-  if (Array.isArray(data?.data?.warehouses)) return data.data.warehouses
-  if (Array.isArray(data?.data)) return data.data
-
-  return []
-}
-
-function getWarehouseObject(data) {
-  return data?.warehouse || data?.data?.warehouse || data?.data || null
-}
-
 export default function CompanyWarehouses() {
   const { permissions } = useAuth()
 
   const canCreate = hasPermission(permissions, 'warehouse:create')
   const canView = hasPermission(permissions, 'warehouse:view')
   const canUpdate = hasPermission(permissions, 'warehouse:update')
-  const canUpdateStatus = hasPermission(permissions, 'warehouse:update-status')
   const canDelete = hasPermission(permissions, 'warehouse:delete')
   const canExport = hasPermission(permissions, 'warehouse:export')
 
   const [warehouses, setWarehouses] = useState([])
   const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [apiError, setApiError] = useState('')
 
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
-  const [pageSize, setPageSize] = useState(5)
+
+  const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+  })
 
   const [deleteWarehouse, setDeleteWarehouse] = useState(null)
   const [statusTarget, setStatusTarget] = useState(null)
   const [processingId, setProcessingId] = useState('')
   const [toast, setToast] = useState(null)
-
   const [isExporting, setIsExporting] = useState(false)
 
   const breadcrumbItems = [{ title: 'Warehouses', link: null }]
@@ -81,79 +106,112 @@ export default function CompanyWarehouses() {
     })
   }
 
-  const loadWarehouses = useCallback(async (showLoader = true) => {
-    if (showLoader) {
-      setLoading(true)
-    }
-
-    setApiError('')
-
-    try {
-      const { data } = await axiosInstance.get('/erp/warehouses')
-
-      if (data?.success === false) {
-        throw new Error(data.message || 'Unable to load warehouses.')
-      }
-
-      setWarehouses(getWarehouseArray(data))
-    } catch (error) {
-      setApiError(error.response?.data?.message || error.message || 'Unable to load warehouses.')
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }, [])
-
   useEffect(() => {
     document.title = 'Warehouses | MineERP'
-    loadWarehouses()
-  }, [loadWarehouses])
+  }, [])
 
-  const stats = useMemo(() => {
-    const active = warehouses.filter((item) => item.status === 'Active').length
+  // Debounce search to avoid making an API request on every keystroke.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim())
+    }, 350)
 
-    const inactive = warehouses.filter((item) => item.status === 'Inactive').length
+    return () => window.clearTimeout(timer)
+  }, [search])
 
-    const totalStock = warehouses.reduce((sum, item) => sum + Number(item.stockUnits || 0), 0)
+  // Server-side search, status filtering and pagination.
+  useEffect(() => {
+    let cancelled = false
 
-    const totalCapacity = warehouses.reduce((sum, item) => sum + Number(item.capacity || 0), 0)
+    async function fetchWarehouses() {
+      if (!hasLoaded) {
+        setLoading(true)
+      }
 
-    return {
-      total: warehouses.length,
-      active,
-      inactive,
-      totalStock,
-      totalCapacity,
+      setApiError('')
+
+      try {
+        const response = await axiosInstance.get('/erp/warehouses', {
+          params: {
+            page: currentPage,
+            limit: pageSize,
+            search: debouncedSearch || undefined,
+            status: statusFilter,
+          },
+        })
+
+        const data = response.data
+
+        if (data?.success === false) {
+          throw new Error(data.message || 'Unable to load warehouses.')
+        }
+
+        if (cancelled) return
+
+        const list = getWarehouseArray(response)
+
+        setWarehouses(list)
+
+        const serverPagination = data?.pagination
+
+        if (serverPagination) {
+          setPagination({
+            page: Number(serverPagination.page) || currentPage,
+            limit: Number(serverPagination.limit) || pageSize,
+            total: Number(serverPagination.total) || 0,
+            totalPages: Math.max(1, Number(serverPagination.totalPages) || 1),
+          })
+        } else {
+          // Fallback for an API response without pagination metadata.
+          setPagination({
+            page: currentPage,
+            limit: pageSize,
+            total: list.length,
+            totalPages: 1,
+          })
+        }
+
+        setHasLoaded(true)
+      } catch (error) {
+        if (cancelled) return
+
+        setApiError(error.response?.data?.message || error.message || 'Unable to load warehouses.')
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
     }
-  }, [warehouses])
 
-  const filteredWarehouses = useMemo(() => {
-    const query = search.trim().toLowerCase()
+    fetchWarehouses()
 
-    return warehouses.filter((item) => {
-      const matchesSearch = [item._id, item.name, item.code, item.address, item.city, item.state, item.manager, item.phone].some((value) =>
-        String(value || '')
-          .toLowerCase()
-          .includes(query),
-      )
+    return () => {
+      cancelled = true
+    }
+  }, [currentPage, pageSize, debouncedSearch, statusFilter, refreshKey])
 
-      const matchesStatus = statusFilter === 'All' || item.status === statusFilter
+  // If the current page no longer exists after deleting a warehouse,
+  // navigate to the last available page.
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(Math.max(1, pagination.totalPages))
+    }
+  }, [currentPage, pagination.totalPages])
 
-      return matchesSearch && matchesStatus
-    })
-  }, [warehouses, search, statusFilter])
-
-  const totalPages = Math.max(1, Math.ceil(filteredWarehouses.length / pageSize))
-
+  const totalPages = Math.max(1, pagination.totalPages)
   const safePage = Math.min(currentPage, totalPages)
   const startIndex = (safePage - 1) * pageSize
 
-  const paginatedWarehouses = filteredWarehouses.slice(startIndex, startIndex + pageSize)
+  const activeOnPage = warehouses.filter((item) => item.status === 'Active').length
+
+  const inactiveOnPage = warehouses.filter((item) => item.status === 'Inactive').length
 
   const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All'
 
   const resetFilters = () => {
     setSearch('')
+    setDebouncedSearch('')
     setStatusFilter('All')
     setCurrentPage(1)
   }
@@ -162,7 +220,8 @@ export default function CompanyWarehouses() {
     if (refreshing || loading) return
 
     setRefreshing(true)
-    loadWarehouses(false)
+    setLoading(true)
+    setRefreshKey((previous) => previous + 1)
   }
 
   const handleExportWarehouses = async () => {
@@ -204,7 +263,7 @@ export default function CompanyWarehouses() {
           const errorData = JSON.parse(await error.response.data.text())
           message = errorData.message || message
         } catch {
-          // Use the fallback message.
+          // Keep the fallback message.
         }
       } else {
         message = error.response?.data?.message || error.message || message
@@ -220,8 +279,8 @@ export default function CompanyWarehouses() {
     if (!deleteWarehouse || processingId) return
 
     const warehouse = deleteWarehouse
+
     setProcessingId(String(warehouse._id))
-    setApiError('')
 
     try {
       const { data } = await axiosInstance.delete(`/erp/warehouses/${encodeURIComponent(warehouse._id)}`)
@@ -230,11 +289,16 @@ export default function CompanyWarehouses() {
         throw new Error(data.message || 'Unable to delete warehouse.')
       }
 
-      setWarehouses((previous) => previous.filter((item) => item._id !== warehouse._id))
+      setDeleteWarehouse(null)
 
       showToast('success', data?.message || `${warehouse.name} deleted successfully.`)
 
-      setDeleteWarehouse(null)
+      // Refetch to keep server pagination totals accurate.
+      if (warehouses.length === 1 && currentPage > 1) {
+        setCurrentPage((previous) => previous - 1)
+      } else {
+        setRefreshKey((previous) => previous + 1)
+      }
     } catch (error) {
       showToast('error', error.response?.data?.message || error.message || 'Unable to delete warehouse.')
     } finally {
@@ -249,33 +313,20 @@ export default function CompanyWarehouses() {
     const nextStatus = warehouse.status === 'Active' ? 'Inactive' : 'Active'
 
     setProcessingId(String(warehouse._id))
-    setApiError('')
 
     try {
-      // Backend endpoint should validate warehouse:update-status permission.
       const { data } = await axiosInstance.patch(`/erp/warehouses/${encodeURIComponent(warehouse._id)}/status`, { status: nextStatus })
 
       if (data?.success === false) {
         throw new Error(data.message || 'Unable to update warehouse status.')
       }
 
-      const updatedWarehouse = getWarehouseObject(data)
-
-      setWarehouses((previous) =>
-        previous.map((item) =>
-          item._id === warehouse._id
-            ? {
-                ...item,
-                ...(updatedWarehouse && typeof updatedWarehouse === 'object' ? updatedWarehouse : {}),
-                status: updatedWarehouse?.status || nextStatus,
-              }
-            : item,
-        ),
-      )
+      setStatusTarget(null)
 
       showToast('success', data?.message || `${warehouse.name} marked ${nextStatus}.`)
 
-      setStatusTarget(null)
+      // Refetch because a status change can affect the active filter.
+      setRefreshKey((previous) => previous + 1)
     } catch (error) {
       showToast('error', error.response?.data?.message || error.message || 'Unable to update warehouse status.')
     } finally {
@@ -286,21 +337,21 @@ export default function CompanyWarehouses() {
   const statCards = [
     {
       title: 'Total Warehouses',
-      value: stats.total,
+      value: pagination.total,
       icon: Warehouse,
       color: 'text-violet-700',
       border: 'border-violet-200',
     },
     {
-      title: 'Active Warehouses',
-      value: stats.active,
+      title: 'Active on Page',
+      value: activeOnPage,
       icon: CheckCircle2,
       color: 'text-emerald-700',
       border: 'border-emerald-200',
     },
     {
-      title: 'Inactive Warehouses',
-      value: stats.inactive,
+      title: 'Inactive on Page',
+      value: inactiveOnPage,
       icon: XCircle,
       color: 'text-rose-700',
       border: 'border-rose-200',
@@ -309,20 +360,20 @@ export default function CompanyWarehouses() {
 
   if (loading) {
     return (
-      <div className="min-w-0 space-y-4">
+      <div className="min-w-0 space-y-4 text-sm">
         <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card h-17">
           <div className="h-1 bg-erp-primary" />
+
           <div className="flex min-h-16 items-center px-4 sm:px-5">
             <BreadCrumb items={breadcrumbItems} />
           </div>
         </section>
 
-        <div className="flex min-h-48 items-center justify-center rounded-xl border border-erp-border bg-erp-surface">
-          <div className="text-center">
-            <RefreshCw size={24} className="mx-auto animate-spin text-erp-primary" />
-            <p className="mt-3 text-sm font-semibold text-erp-text">Loading warehouses...</p>
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading warehouses" description="Please wait while we load your company's warehouse records." className="!h-full min-h-[480px]" />
           </div>
-        </div>
+        </section>
       </div>
     )
   }
@@ -337,7 +388,7 @@ export default function CompanyWarehouses() {
         <div className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
           <BreadCrumb items={breadcrumbItems} />
 
-          <div className="flex items-center gap-2">
+          <div className="flex  items-center gap-2">
             {statCards.map((card) => {
               const Icon = card.icon
 
@@ -353,7 +404,7 @@ export default function CompanyWarehouses() {
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={refreshing}
+              disabled={refreshing || loading}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-60"
             >
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
@@ -369,8 +420,7 @@ export default function CompanyWarehouses() {
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isExporting ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
-
-                <span>{isExporting ? 'Exporting...' : 'Export'}</span>
+                {isExporting ? 'Exporting...' : 'Export'}
               </button>
             )}
 
@@ -391,7 +441,7 @@ export default function CompanyWarehouses() {
         <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
           <AlertCircle size={15} className="mt-0.5 shrink-0" />
           <p>{apiError}</p>
-          <button type="button" onClick={() => loadWarehouses()} className="ml-auto shrink-0 font-semibold underline">
+          <button type="button" onClick={handleRefresh} className="ml-auto shrink-0 font-semibold underline">
             Retry
           </button>
         </div>
@@ -399,7 +449,7 @@ export default function CompanyWarehouses() {
 
       <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="flex flex-col gap-3 border-b border-erp-border p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex gap-2">
+          <div className="flex min-w-0 gap-2">
             <div className="relative min-w-0 flex-1 lg:w-md">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -416,7 +466,7 @@ export default function CompanyWarehouses() {
             </div>
 
             {hasActiveFilters && (
-              <button type="button" onClick={resetFilters} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover">
+              <button type="button" onClick={resetFilters} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover">
                 <FilterX size={14} />
                 Clear
               </button>
@@ -437,8 +487,17 @@ export default function CompanyWarehouses() {
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
+
+       
           </div>
         </div>
+
+        {loading && hasLoaded && (
+          <div className="flex items-center justify-center gap-2 border-b border-erp-border px-4 py-3 text-xs text-erp-muted">
+            <LoaderCircle size={15} className="animate-spin text-erp-primary" />
+            Updating warehouse list...
+          </div>
+        )}
 
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[950px] text-left">
@@ -454,7 +513,7 @@ export default function CompanyWarehouses() {
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {paginatedWarehouses.map((warehouse) => {
+              {warehouses.map((warehouse) => {
                 const percentage = getCapacityPercentage(warehouse)
 
                 return (
@@ -466,47 +525,56 @@ export default function CompanyWarehouses() {
                         </div>
                         <div className="min-w-0">
                           <p className="max-w-52 truncate text-xs font-semibold text-erp-text sm:text-sm">{warehouse.name}</p>
-                          {/* <p className="mt-0.5 text-[10px] text-erp-muted">{warehouse.code}</p> */}
+                          <p className="mt-0.5 text-[10px] text-erp-muted">{warehouse.code}</p>
                         </div>
                       </div>
                     </td>
+
                     <td className="px-4 py-3">
                       <div className="flex max-w-48 items-center gap-1.5 text-xs text-slate-600">
                         <MapPin size={14} className="shrink-0 text-slate-400" />
                         <span className="truncate">{[warehouse.city, warehouse.state].filter(Boolean).join(', ') || warehouse.address || '—'}</span>
                       </div>
                     </td>
+
                     <td className="px-4 py-3">
                       <div className="space-y-1.5">
                         <div className="flex items-center gap-1.5 text-xs text-slate-600">
                           <Users size={14} className="shrink-0 text-slate-400" />
                           <span>{warehouse.manager || 'Unassigned'}</span>
                         </div>
-
                         <div className="flex items-center gap-1.5 text-xs text-slate-500">
                           <Phone size={14} className="shrink-0 text-slate-400" />
                           <span>{warehouse.managerPhone || 'No phone number'}</span>
                         </div>
                       </div>
                     </td>
+
                     <td className="px-4 py-3">
                       <div className="w-40">
                         <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px]">
-                          <span className="font-semibold text-slate-700">{formatNumber(warehouse.stockUnits)} units</span>
-                          <span className="text-slate-500">{percentage}%</span>
+                          <span className="font-semibold text-slate-700">{warehouse.stockUnits == null ? 'Stock unavailable' : `${formatNumber(warehouse.stockUnits)} units`}</span>
+                          <span className="text-slate-500">{percentage === null ? '—' : `${percentage}%`}</span>
                         </div>
                         <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-                          <div className={`h-full rounded-full ${getCapacityColor(percentage)}`} style={{ width: `${percentage}%` }} />
+                          <div
+                            className={`h-full rounded-full ${percentage === null ? 'bg-slate-200' : getCapacityColor(percentage)}`}
+                            style={{
+                              width: `${percentage ?? 0}%`,
+                            }}
+                          />
                         </div>
                         <p className="mt-1 text-[10px] text-slate-400">Capacity: {formatNumber(warehouse.capacity)}</p>
                       </div>
                     </td>
+
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold ${statusStyles[warehouse.status] || statusStyles.Inactive}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${warehouse.status === 'Active' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                         {warehouse.status || 'Inactive'}
                       </span>
                     </td>
+
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-1">
                         {canView && (
@@ -521,7 +589,7 @@ export default function CompanyWarehouses() {
                           </Link>
                         )}
 
-                        {canUpdateStatus && (
+                        {canUpdate && (
                           <button
                             type="button"
                             onClick={() => setStatusTarget(warehouse)}
@@ -536,7 +604,14 @@ export default function CompanyWarehouses() {
                         )}
 
                         {canDelete && (
-                          <button type="button" onClick={() => setDeleteWarehouse(warehouse)} title="Delete warehouse" aria-label={`Delete ${warehouse.name}`} className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600">
+                          <button
+                            type="button"
+                            onClick={() => setDeleteWarehouse(warehouse)}
+                            title="Delete warehouse"
+                            aria-label={`Delete ${warehouse.name}`}
+                            disabled={Boolean(processingId)}
+                            className="rounded-lg p-2 text-slate-500 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+                          >
                             <Trash2 size={15} />
                           </button>
                         )}
@@ -546,7 +621,7 @@ export default function CompanyWarehouses() {
                 )
               })}
 
-              {paginatedWarehouses.length === 0 && (
+              {warehouses.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-4 py-14 text-center">
                     <Warehouse size={25} className="mx-auto text-slate-400" />
@@ -560,7 +635,7 @@ export default function CompanyWarehouses() {
         </div>
 
         <div className="divide-y divide-slate-100 md:hidden">
-          {paginatedWarehouses.map((warehouse) => {
+          {warehouses.map((warehouse) => {
             const percentage = getCapacityPercentage(warehouse)
 
             return (
@@ -589,20 +664,23 @@ export default function CompanyWarehouses() {
                       <Users size={13} />
                       {warehouse.manager || 'Unassigned'}
                     </p>
+                    <p className="mt-1 text-xs text-slate-500">{warehouse.managerPhone || 'No phone number'}</p>
                   </div>
+
                   <div>
                     <p className="text-[10px] text-slate-500">Stock / Capacity</p>
                     <p className="mt-1 text-xs font-semibold text-slate-800">
-                      {formatNumber(warehouse.stockUnits)} / {formatNumber(warehouse.capacity)}
+                      {warehouse.stockUnits == null ? '—' : formatNumber(warehouse.stockUnits)} / {formatNumber(warehouse.capacity)}
                     </p>
                   </div>
+
                   <div className="col-span-2">
                     <div className="mb-1 flex justify-between text-[10px] text-slate-500">
                       <span>Capacity used</span>
-                      <span>{percentage}%</span>
+                      <span>{percentage === null ? '—' : `${percentage}%`}</span>
                     </div>
                     <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                      <div className={`h-full rounded-full ${getCapacityColor(percentage)}`} style={{ width: `${percentage}%` }} />
+                      <div className={`h-full rounded-full ${percentage === null ? 'bg-slate-200' : getCapacityColor(percentage)}`} style={{ width: `${percentage ?? 0}%` }} />
                     </div>
                   </div>
                 </div>
@@ -622,7 +700,7 @@ export default function CompanyWarehouses() {
                     </Link>
                   )}
 
-                  {canUpdateStatus && (
+                  {canUpdate && (
                     <button
                       type="button"
                       onClick={() => setStatusTarget(warehouse)}
@@ -639,7 +717,8 @@ export default function CompanyWarehouses() {
                       type="button"
                       onClick={() => setDeleteWarehouse(warehouse)}
                       aria-label={`Delete ${warehouse.name}`}
-                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                      disabled={Boolean(processingId)}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -649,7 +728,7 @@ export default function CompanyWarehouses() {
             )
           })}
 
-          {paginatedWarehouses.length === 0 && (
+          {warehouses.length === 0 && (
             <div className="px-4 py-12 text-center">
               <Warehouse size={25} className="mx-auto text-slate-400" />
               <h3 className="mt-3 font-semibold text-erp-text">No warehouses found</h3>
@@ -658,20 +737,22 @@ export default function CompanyWarehouses() {
           )}
         </div>
 
+        {/* paginations */}
         <div className="flex flex-col gap-3 border-t border-erp-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div className="flex flex-wrap items-center gap-3">
-            <p className="text-xs text-erp-muted">
+            <p className="text-xs text-erp-text-secondary sm:text-sm">
               Showing{' '}
               <span className="font-semibold text-erp-text">
-                {filteredWarehouses.length === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + pageSize, filteredWarehouses.length)}
+                {pagination.total === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + warehouses.length, pagination.total)}
               </span>{' '}
-              of <span className="font-semibold text-erp-text">{filteredWarehouses.length}</span>
+              of <span className="font-semibold text-erp-text">{formatNumber(pagination.total)}</span> warehouses
             </p>
 
             <div className="flex items-center gap-2">
-              <label htmlFor="warehouse-page-size" className="text-xs text-erp-muted">
+              <label htmlFor="warehouse-page-size" className="whitespace-nowrap text-xs text-erp-text-secondary">
                 Rows:
               </label>
+
               <select
                 id="warehouse-page-size"
                 value={pageSize}
@@ -679,48 +760,60 @@ export default function CompanyWarehouses() {
                   setPageSize(Number(event.target.value))
                   setCurrentPage(1)
                 }}
-                className="h-8 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs text-erp-text"
+                disabled={loading}
+                className="h-8 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs text-erp-text-secondary outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-ring disabled:opacity-50"
               >
                 <option value={5}>5</option>
                 <option value={10}>10</option>
                 <option value={20}>20</option>
+                <option value={50}>50</option>
               </select>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button type="button" disabled={safePage <= 1} onClick={() => setCurrentPage(1)} aria-label="First page" className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs disabled:opacity-40">
-              1
-            </button>
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              disabled={safePage <= 1}
+              disabled={safePage <= 1 || loading}
+              onClick={() => setCurrentPage(1)}
+              aria-label="First page"
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              First
+            </button>
+
+            <button
+              type="button"
+              disabled={safePage <= 1 || loading}
               onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
               aria-label="Previous page"
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border disabled:opacity-40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronLeft size={15} />
+              <ChevronLeft size={16} />
             </button>
-            <span className="min-w-20 text-center text-xs text-erp-muted">
+
+            <span className="min-w-20 px-1 text-center text-xs text-erp-text-secondary sm:text-sm">
               Page {safePage} of {totalPages}
             </span>
+
             <button
               type="button"
-              disabled={safePage >= totalPages}
+              disabled={safePage >= totalPages || loading}
               onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
               aria-label="Next page"
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border disabled:opacity-40"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronRight size={15} />
+              <ChevronRight size={16} />
             </button>
+
             <button
               type="button"
-              disabled={safePage >= totalPages}
+              disabled={safePage >= totalPages || loading}
               onClick={() => setCurrentPage(totalPages)}
               aria-label="Last page"
-              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs disabled:opacity-40"
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {totalPages}
+              Last
             </button>
           </div>
         </div>
@@ -732,7 +825,7 @@ export default function CompanyWarehouses() {
           if (!processingId) setDeleteWarehouse(null)
         }}
         title="Delete Warehouse?"
-        message={deleteWarehouse ? `Are you sure you want to delete ${deleteWarehouse.name} (${deleteWarehouse.manager})?` : ''}
+        message={deleteWarehouse ? `Are you sure you want to delete "${deleteWarehouse.name}" (${deleteWarehouse.code})? Warehouses with inventory records or stock history cannot be deleted.` : ''}
         actionButtonText="Delete Warehouse"
         cancelButtonText="Cancel"
         onAction={confirmDelete}
@@ -745,7 +838,7 @@ export default function CompanyWarehouses() {
           if (!processingId) setStatusTarget(null)
         }}
         title={statusTarget?.status === 'Inactive' ? 'Activate Warehouse?' : 'Deactivate Warehouse?'}
-        message={statusTarget?.status === 'Inactive' ? `Are you sure you want to activate "${statusTarget?.name}"?` : `Are you sure you want to deactivate "${statusTarget?.name}"?`}
+        message={statusTarget?.status === 'Inactive' ? `Are you sure you want to activate "${statusTarget?.name}"?` : `Are you sure you want to deactivate "${statusTarget?.name}"? Stock operations should only be performed in active warehouses.`}
         actionButtonText={statusTarget?.status === 'Inactive' ? 'Activate Warehouse' : 'Deactivate Warehouse'}
         cancelButtonText="Cancel"
         onAction={confirmToggleStatus}
