@@ -1,219 +1,603 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Save, Plus, Trash2, ShoppingCart, CalendarDays, Building2, FileText } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, LoaderCircle, Save, Truck, CalendarDays, Package, Trash2, Plus, AlertCircle, Eye, Hash, Receipt, FileText, Search, RotateCcw, Boxes } from 'lucide-react'
 
-const samplePurchases = [
-  {
-    id: 'PUR-001',
-    supplierId: 'SUP-001',
-    purchaseDate: '2026-10-18',
-    dueDate: '2026-11-02',
-    reference: 'INV-SUP-101',
-    paymentStatus: 'Paid',
-    status: 'Received',
-    notes: 'Regular stock purchase',
-    items: [
-      {
-        productId: 'PRD-001',
-        name: 'Office Chair',
-        quantity: 5,
-        price: 3500,
-        tax: 18,
-      },
-      {
-        productId: 'PRD-002',
-        name: 'Office Table',
-        quantity: 2,
-        price: 6500,
-        tax: 18,
-      },
-    ],
-  },
-  {
-    id: 'PUR-002',
-    supplierId: 'SUP-002',
-    purchaseDate: '2026-10-16',
-    dueDate: '2026-10-31',
-    reference: 'INV-SUP-102',
-    paymentStatus: 'Partial',
-    status: 'Received',
-    notes: '',
-    items: [
-      {
-        productId: 'PRD-003',
-        name: 'Printer Paper',
-        quantity: 10,
-        price: 450,
-        tax: 12,
-      },
-    ],
-  },
-]
+import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
-const suppliers = [
-  { id: 'SUP-001', name: 'Shreeji Suppliers' },
-  { id: 'SUP-002', name: 'Patel Trading Co.' },
-  { id: 'SUP-003', name: 'Arihant Industries' },
-  { id: 'SUP-004', name: 'Mehta Enterprises' },
-]
-
-const products = [
-  {
-    id: 'PRD-001',
-    name: 'Office Chair',
-    price: 3500,
-    tax: 18,
-  },
-  {
-    id: 'PRD-002',
-    name: 'Office Table',
-    price: 6500,
-    tax: 18,
-  },
-  {
-    id: 'PRD-003',
-    name: 'Printer Paper',
-    price: 450,
-    tax: 12,
-  },
-  {
-    id: 'PRD-004',
-    name: 'Keyboard',
-    price: 850,
-    tax: 18,
-  },
-  {
-    id: 'PRD-005',
-    name: 'Mouse',
-    price: 500,
-    tax: 18,
-  },
-]
-
-const currency = (amount) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 2,
-  }).format(amount)
-
-const today = new Date().toISOString().slice(0, 10)
+const initialForm = {
+  supplierId: '',
+  purchaseDate: new Date().toISOString().slice(0, 10),
+  expectedDeliveryDate: '',
+  discountAmount: '0',
+  shippingCharges: '0',
+  adjustmentAmount: '0',
+  notes: '',
+}
 
 const createEmptyItem = () => ({
   productId: '',
-  name: '',
-  quantity: 1,
-  price: 0,
-  tax: 18,
+  productName: '',
+  sku: '',
+  unit: 'Piece',
+  quantity: '1',
+  unitPrice: '0',
+  taxRate: '0',
 })
+
+const inputBase = 'h-9 w-full rounded-lg border bg-erp-surface px-2.5 text-xs text-erp-text outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 disabled:cursor-not-allowed disabled:opacity-60'
+
+const phoneNumber = (value) => Number(value || 0)
+
+const roundMoney = (value) => Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100
+
+const formatMoney = (value) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value || 0))
+
+const formatDateForInput = (value) => {
+  if (!value) return ''
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return ''
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+function getErrorMessage(error, fallback) {
+  return error.response?.data?.message || error.message || fallback
+}
 
 export default function PurchaseForm() {
   const navigate = useNavigate()
   const { id } = useParams()
   const isEdit = Boolean(id)
 
-  const existingPurchase = samplePurchases.find((purchase) => purchase.id === id)
+  const { permissions } = useAuth()
 
-  const [supplierId, setSupplierId] = useState(existingPurchase?.supplierId || '')
-  const [purchaseDate, setPurchaseDate] = useState(existingPurchase?.purchaseDate || today)
-  const [dueDate, setDueDate] = useState(existingPurchase?.dueDate || '')
-  const [reference, setReference] = useState(existingPurchase?.reference || '')
-  const [status, setStatus] = useState(existingPurchase?.status || 'Pending')
-  const [paymentStatus, setPaymentStatus] = useState(existingPurchase?.paymentStatus || 'Unpaid')
-  const [notes, setNotes] = useState(existingPurchase?.notes || '')
-  const [items, setItems] = useState(existingPurchase?.items?.map((item) => ({ ...item })) || [createEmptyItem()])
+  const canCreate = hasPermission(permissions, 'purchase:create')
+  const canView = hasPermission(permissions, 'purchase:view')
+  const canUpdate = hasPermission(permissions, 'purchase:update')
+
+  const hasFormPermission = isEdit ? canView && canUpdate : canCreate
+
+  const [form, setForm] = useState(initialForm)
+  const [items, setItems] = useState([createEmptyItem()])
+
+  const [suppliers, setSuppliers] = useState([])
+  const [products, setProducts] = useState([])
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [loadingSuppliers, setLoadingSuppliers] = useState(true)
+  const [loadingProducts, setLoadingProducts] = useState(true)
+
   const [errors, setErrors] = useState({})
-  const [showConfirmation, setShowConfirmation] = useState(false)
+  const [apiError, setApiError] = useState('')
+  const [originalStatus, setOriginalStatus] = useState('Draft')
+  const [purchaseNumber, setPurchaseNumber] = useState('')
+  const [productSearch, setProductSearch] = useState('')
 
-  const totals = useMemo(() => {
-    const subtotal = items.reduce((sum, item) => sum + Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.price) || 0), 0)
+  const itemsBreadcrumb = [
+    { title: 'Purchases', link: '/company/purchases' },
+    {
+      title: isEdit ? 'Edit Purchase' : 'Create Purchase',
+      link: null,
+    },
+  ]
 
-    const taxAmount = items.reduce((sum, item) => {
-      const lineSubtotal = Math.max(0, Number(item.quantity) || 0) * Math.max(0, Number(item.price) || 0)
+  useEffect(() => {
+    document.title = `${isEdit ? 'Edit Purchase' : 'Create Purchase'} | MineERP`
+  }, [isEdit])
 
-      return sum + lineSubtotal * (Math.max(0, Number(item.tax) || 0) / 100)
-    }, 0)
+  async function fetchAllPages(endpoint, key) {
+    const firstResponse = await axiosInstance.get(endpoint, {
+      params: { page: 1, limit: 100, status: 'Active' },
+    })
 
-    return {
-      subtotal,
-      taxAmount,
-      grandTotal: subtotal + taxAmount,
+    const firstData = firstResponse.data
+
+    if (firstData?.success === false) {
+      throw new Error(firstData.message || `Unable to load ${key}.`)
     }
-  }, [items])
 
-  const updateItem = (index, field, value) => {
-    setItems((previous) =>
-      previous.map((item, itemIndex) => {
-        if (itemIndex !== index) return item
+    const firstRows = Array.isArray(firstData?.[key]) ? firstData[key] : []
 
-        if (field === 'productId') {
-          const selectedProduct = products.find((product) => product.id === value)
+    const totalPages = Math.max(1, Number(firstData?.pagination?.totalPages || 1))
 
-          return selectedProduct
-            ? {
-                ...item,
-                productId: selectedProduct.id,
-                name: selectedProduct.name,
-                price: selectedProduct.price,
-                tax: selectedProduct.tax,
-              }
-            : {
-                ...item,
-                productId: '',
-                name: '',
-                price: 0,
-                tax: 18,
-              }
-        }
+    if (totalPages <= 1) return firstRows
 
-        return { ...item, [field]: value }
-      }),
-    )
+    const remainingRequests = []
+
+    for (let page = 2; page <= totalPages; page += 1) {
+      remainingRequests.push(
+        axiosInstance.get(endpoint, {
+          params: { page, limit: 100, status: 'Active' },
+        }),
+      )
+    }
+
+    const responses = await Promise.all(remainingRequests)
+
+    const remainingRows = responses.flatMap((response) => {
+      if (response.data?.success === false) {
+        throw new Error(response.data.message || `Unable to load ${key}.`)
+      }
+
+      return Array.isArray(response.data?.[key]) ? response.data[key] : []
+    })
+
+    return [...firstRows, ...remainingRows]
   }
 
-  const validateForm = () => {
+  useEffect(() => {
+    let active = true
+
+    async function loadDropdownData() {
+      setLoadingSuppliers(true)
+      setLoadingProducts(true)
+
+      const [supplierResult, productResult] = await Promise.allSettled([fetchAllPages('/erp/suppliers', 'suppliers'), fetchAllPages('/erp/products', 'products')])
+
+      if (!active) return
+
+      if (supplierResult.status === 'fulfilled') {
+        setSuppliers(supplierResult.value)
+      } else {
+        setApiError((current) => current || getErrorMessage(supplierResult.reason, 'Unable to load suppliers.'))
+      }
+
+      if (productResult.status === 'fulfilled') {
+        setProducts(productResult.value)
+      } else {
+        setApiError((current) => current || getErrorMessage(productResult.reason, 'Unable to load products.'))
+      }
+
+      setLoadingSuppliers(false)
+      setLoadingProducts(false)
+    }
+
+    loadDropdownData()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    async function loadPurchase() {
+      if (!isEdit) {
+        setForm({
+          ...initialForm,
+          purchaseDate: formatDateForInput(new Date()),
+        })
+        setItems([createEmptyItem()])
+        setPurchaseNumber('')
+        setOriginalStatus('Draft')
+        setLoading(false)
+        return
+      }
+
+      if (!id) {
+        setApiError('Purchase ID is missing.')
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setApiError('')
+
+      try {
+        const response = await axiosInstance.get(`/erp/purchases/${encodeURIComponent(id)}`)
+
+        const data = response.data
+
+        if (data?.success === false) {
+          throw new Error(data.message || 'Unable to load purchase.')
+        }
+
+        const purchase = data?.purchase || data?.data?.purchase || data?.data
+
+        if (!purchase?._id) {
+          throw new Error(data?.message || 'Purchase not found.')
+        }
+
+        if (!active) return
+
+        if (purchase.status !== 'Draft') {
+          setApiError(`Only Draft purchases can be edited. Current status: ${purchase.status}.`)
+        }
+
+        const savedItems = Array.isArray(purchase.items) ? purchase.items : []
+
+        // Older records may contain item-level discounts.
+        // This form now supports only purchase-level discount.
+        const oldItemDiscountTotal = savedItems.reduce((sum, item) => sum + Number(item.discountAmount || 0), 0)
+
+        const purchaseDiscount = Math.max(0, Number(purchase.discountAmount || 0) - oldItemDiscountTotal)
+
+        setForm({
+          supplierId: typeof purchase.supplierId === 'object' ? purchase.supplierId?._id || '' : purchase.supplierId || '',
+          purchaseDate: formatDateForInput(purchase.purchaseDate),
+          expectedDeliveryDate: formatDateForInput(purchase.expectedDeliveryDate),
+          discountAmount: String(roundMoney(purchaseDiscount)),
+          shippingCharges: String(Number(purchase.shippingCharges || 0)),
+          adjustmentAmount: String(Number(purchase.adjustmentAmount || 0)),
+          notes: purchase.notes || '',
+        })
+
+        setItems(
+          savedItems.length
+            ? savedItems.map((item) => {
+                const product = typeof item.productId === 'object' ? item.productId : null
+
+                return {
+                  productId: product?._id || item.productId || '',
+                  productName: item.productName || product?.name || '',
+                  sku: item.sku || product?.sku || '',
+                  unit: item.unit || product?.unit || 'Piece',
+                  quantity: String(item.quantity ?? 1),
+                  unitPrice: String(item.unitPrice ?? 0),
+                  taxRate: String(item.taxRate ?? 0),
+                }
+              })
+            : [createEmptyItem()],
+        )
+
+        setPurchaseNumber(purchase.purchaseNumber || '')
+        setOriginalStatus(purchase.status || 'Draft')
+      } catch (error) {
+        if (active) {
+          setApiError(getErrorMessage(error, 'Unable to load purchase.'))
+        }
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+
+    loadPurchase()
+
+    return () => {
+      active = false
+    }
+  }, [id, isEdit])
+
+  const calculations = useMemo(() => {
+    let subtotal = 0
+    let taxTotal = 0
+    let itemsTotal = 0
+
+    const calculatedItems = items.map((item) => {
+      const quantity = phoneNumber(item.quantity)
+      const unitPrice = phoneNumber(item.unitPrice)
+      const taxRate = phoneNumber(item.taxRate)
+
+      const grossAmount = roundMoney(quantity * unitPrice)
+      const taxableAmount = grossAmount
+      const taxAmount = roundMoney((taxableAmount * taxRate) / 100)
+      const lineTotal = roundMoney(taxableAmount + taxAmount)
+
+      subtotal = roundMoney(subtotal + grossAmount)
+      taxTotal = roundMoney(taxTotal + taxAmount)
+      itemsTotal = roundMoney(itemsTotal + lineTotal)
+
+      return {
+        ...item,
+        grossAmount,
+        taxableAmount,
+        taxAmount,
+        lineTotal,
+      }
+    })
+
+    const purchaseDiscount = phoneNumber(form.discountAmount)
+    const shippingCharges = phoneNumber(form.shippingCharges)
+    const adjustmentAmount = phoneNumber(form.adjustmentAmount)
+
+    const totalAmount = roundMoney(subtotal - purchaseDiscount + taxTotal + shippingCharges + adjustmentAmount)
+
+    return {
+      calculatedItems,
+      subtotal,
+      purchaseDiscount,
+      taxTotal,
+      shippingCharges,
+      adjustmentAmount,
+      itemsTotal,
+      totalAmount,
+    }
+  }, [items, form.discountAmount, form.shippingCharges, form.adjustmentAmount])
+
+  const filteredProducts = useMemo(() => {
+    const search = productSearch.trim().toLowerCase()
+
+    if (!search) return products
+
+    return products.filter((product) =>
+      [product.name, product.sku, product.barcode].some((value) =>
+        String(value || '')
+          .toLowerCase()
+          .includes(search),
+      ),
+    )
+  }, [products, productSearch])
+
+  function goBack() {
+    navigate('/company/purchases')
+  }
+
+  function openDetailsPage() {
+    if (!id || !canView) return
+    navigate(`/company/purchases/${id}`)
+  }
+
+  function updateField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }))
+
+    setErrors((current) => ({ ...current, [field]: '' }))
+    setApiError('')
+  }
+
+  function updateItem(index, field, value) {
+    setItems((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)))
+
+    setErrors((current) => ({
+      ...current,
+      [`item-${index}-${field}`]: '',
+      items: '',
+    }))
+
+    setApiError('')
+  }
+
+  function selectProduct(index, productId) {
+    const product = products.find((item) => String(item._id) === String(productId))
+
+    setItems((current) =>
+      current.map((item, itemIndex) => {
+        if (itemIndex !== index) return item
+
+        if (!product) {
+          return {
+            ...item,
+            productId: '',
+            productName: '',
+            sku: '',
+            unit: 'Piece',
+            unitPrice: '0',
+            taxRate: '0',
+          }
+        }
+
+        return {
+          ...item,
+          productId: product._id,
+          productName: product.name || '',
+          sku: product.sku || '',
+          unit: product.unit || 'Piece',
+          unitPrice: String(product.costPrice ?? 0),
+          taxRate: String(product.taxRate ?? 0),
+        }
+      }),
+    )
+
+    setErrors((current) => ({
+      ...current,
+      [`item-${index}-productId`]: '',
+      items: '',
+    }))
+
+    setApiError('')
+  }
+
+  function addItem() {
+    if (items.length >= 500) {
+      setApiError('A purchase cannot contain more than 500 items.')
+      return
+    }
+
+    setItems((current) => [...current, createEmptyItem()])
+  }
+
+  function removeItem(index) {
+    setItems((current) => {
+      if (current.length <= 1) return current
+      return current.filter((_, itemIndex) => itemIndex !== index)
+    })
+
+    setErrors({})
+    setApiError('')
+  }
+
+  function validateForm() {
     const nextErrors = {}
 
-    if (!supplierId) {
+    if (!form.supplierId) {
       nextErrors.supplierId = 'Please select a supplier.'
     }
 
-    if (!purchaseDate) {
+    if (!form.purchaseDate) {
       nextErrors.purchaseDate = 'Purchase date is required.'
+    } else if (Number.isNaN(new Date(form.purchaseDate).getTime())) {
+      nextErrors.purchaseDate = 'Enter a valid purchase date.'
     }
 
-    if (dueDate && purchaseDate && dueDate < purchaseDate) {
-      nextErrors.dueDate = 'Due date cannot be before purchase date.'
+    if (form.expectedDeliveryDate && new Date(form.expectedDeliveryDate).getTime() < new Date(form.purchaseDate).getTime()) {
+      nextErrors.expectedDeliveryDate = 'Expected delivery date cannot precede purchase date.'
     }
 
     if (!items.length) {
       nextErrors.items = 'Add at least one product.'
-    } else {
-      const hasInvalidItem = items.some((item) => !item.productId || Number(item.quantity) <= 0 || Number(item.price) < 0 || item.quantity === '' || item.price === '')
+    }
 
-      if (hasInvalidItem) {
-        nextErrors.items = 'Select a product and enter a valid quantity and unit price for every row.'
+    const seenProductIds = new Set()
+
+    items.forEach((item, index) => {
+      const prefix = `item-${index}-`
+
+      if (!item.productId) {
+        nextErrors[`${prefix}productId`] = 'Select a product.'
+      } else if (seenProductIds.has(String(item.productId))) {
+        nextErrors[`${prefix}productId`] = 'A product can only appear once. Combine its quantities.'
+      } else {
+        seenProductIds.add(String(item.productId))
       }
+
+      const quantity = Number(item.quantity)
+      const unitPrice = Number(item.unitPrice)
+      const taxRate = Number(item.taxRate)
+
+      if (item.quantity === '' || !Number.isFinite(quantity) || quantity <= 0) {
+        nextErrors[`${prefix}quantity`] = 'Quantity must be greater than zero.'
+      }
+
+      if (item.unitPrice === '' || !Number.isFinite(unitPrice) || unitPrice < 0) {
+        nextErrors[`${prefix}unitPrice`] = 'Unit price must be non-negative.'
+      }
+
+      if (item.taxRate === '' || !Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) {
+        nextErrors[`${prefix}taxRate`] = 'Tax rate must be between 0 and 100.'
+      }
+    })
+
+    const discount = Number(form.discountAmount)
+    const shipping = Number(form.shippingCharges)
+    const adjustment = Number(form.adjustmentAmount)
+
+    if (form.discountAmount === '' || !Number.isFinite(discount) || discount < 0) {
+      nextErrors.discountAmount = 'Purchase discount must be non-negative.'
+    }
+
+    if (form.shippingCharges === '' || !Number.isFinite(shipping) || shipping < 0) {
+      nextErrors.shippingCharges = 'Shipping charges must be non-negative.'
+    }
+
+    if (form.adjustmentAmount === '' || !Number.isFinite(adjustment)) {
+      nextErrors.adjustmentAmount = 'Adjustment must be a valid number.'
+    }
+
+    if (Number.isFinite(discount) && discount > calculations.subtotal) {
+      nextErrors.discountAmount = 'Purchase discount cannot exceed the subtotal.'
+    }
+
+    if (calculations.totalAmount < 0) {
+      nextErrors.adjustmentAmount = 'Purchase total cannot be negative.'
+    }
+
+    if (form.notes.length > 2000) {
+      nextErrors.notes = 'Notes cannot exceed 2000 characters.'
     }
 
     setErrors(nextErrors)
     return Object.keys(nextErrors).length === 0
   }
 
-  const handleSubmit = (event) => {
+  async function handleSubmit(event) {
     event.preventDefault()
+
+    if (saving) return
+
+    if (!hasFormPermission) {
+      setApiError('You do not have permission to perform this action.')
+      return
+    }
+
+    if (isEdit && originalStatus !== 'Draft') {
+      setApiError('Only Draft purchases can be edited.')
+      return
+    }
+
+    if (loadingSuppliers || loadingProducts) {
+      setApiError('Please wait until suppliers and products finish loading.')
+      return
+    }
 
     if (!validateForm()) return
 
-    setShowConfirmation(true)
+    setSaving(true)
+    setApiError('')
+
+    try {
+      const payload = {
+        supplierId: form.supplierId,
+        purchaseDate: new Date(`${form.purchaseDate}T00:00:00`).toISOString(),
+        expectedDeliveryDate: form.expectedDeliveryDate ? new Date(`${form.expectedDeliveryDate}T00:00:00`).toISOString() : null,
+        items: items.map((item) => ({
+          productId: item.productId,
+          quantity: Number(item.quantity),
+          unitPrice: Number(item.unitPrice),
+          taxRate: Number(item.taxRate),
+        })),
+        discountAmount: Number(form.discountAmount),
+        shippingCharges: Number(form.shippingCharges),
+        adjustmentAmount: Number(form.adjustmentAmount),
+        notes: form.notes.trim(),
+      }
+
+      const response = isEdit ? await axiosInstance.patch(`/erp/purchases/${encodeURIComponent(id)}`, payload) : await axiosInstance.post('/erp/purchases', payload)
+
+      const data = response.data
+
+      if (data?.success === false) {
+        throw new Error(data.message || 'Unable to save purchase.')
+      }
+
+      navigate('/company/purchases', {
+        replace: true,
+        state: {
+          successMessage: data?.message || (isEdit ? 'Purchase updated successfully.' : 'Purchase created successfully.'),
+        },
+      })
+    } catch (error) {
+      setApiError(getErrorMessage(error, 'Unable to save purchase.'))
+    } finally {
+      setSaving(false)
+    }
   }
 
-  if (isEdit && !existingPurchase) {
+  const inputClass = (field) => `${inputBase} ${errors[field] ? 'border-red-400' : 'border-erp-border'}`
+
+  const labelClass = 'block text-[11px] font-semibold text-erp-text-secondary'
+
+  const errorText = (field) => (errors[field] ? <p className="text-[10px] text-red-600">{errors[field]}</p> : null)
+
+  if (loading) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
-        <h1 className="text-xl font-bold text-slate-900">Purchase Not Found</h1>
-        <p className="mt-2 text-sm text-slate-500">This purchase ID is not available in the current sample data.</p>
-        <button type="button" onClick={() => navigate('/company/purchases')} className="mt-5 rounded-lg bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover">
+      <div className="min-w-0 space-y-3">
+        <section className="h-14 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex h-[calc(100%-4px)] items-center px-3 sm:px-4">
+            <BreadCrumb items={itemsBreadcrumb} />
+          </div>
+        </section>
+
+        <Loading label="Loading purchase..." description="Preparing purchase information..." />
+      </div>
+    )
+  }
+
+  if (!hasFormPermission) {
+    return (
+      <div className="min-w-0 rounded-xl border border-erp-border bg-erp-surface p-5 text-center">
+        <h2 className="text-base font-semibold text-erp-text">Access Denied</h2>
+
+        <p className="mt-2 text-xs text-erp-text-secondary">{isEdit ? 'You do not have permission to view and update purchases.' : 'You do not have permission to create purchases.'}</p>
+
+        <button type="button" onClick={goBack} className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-erp-primary px-4 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+          <ArrowLeft size={14} />
           Back to Purchases
         </button>
       </div>
@@ -221,326 +605,590 @@ export default function PurchaseForm() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div className="flex items-start gap-3">
-          <button type="button" onClick={() => navigate('/company/purchases')} className="mt-1 rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-100" aria-label="Back to purchases">
-            <ArrowLeft size={19} />
-          </button>
+    <div className="min-w-0 space-y-3 text-sm">
+      {/* Header */}
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
 
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900">{isEdit ? 'Edit Purchase' : 'Create Purchase'}</h1>
-            <p className="mt-1 text-sm text-slate-500">{isEdit ? `Update purchase ${id}` : 'Record a new purchase from your supplier.'}</p>
+        <div className="flex min-w-0 items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <BreadCrumb items={itemsBreadcrumb} />
           </div>
+
+          {isEdit && canView && (
+            <button
+              type="button"
+              onClick={openDetailsPage}
+              title="View purchase"
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border px-2.5 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary/5"
+            >
+              <Eye size={14} />
+              View
+            </button>
+          )}
         </div>
+      </section>
 
-        {isEdit && <span className="w-fit rounded-lg bg-violet-50 px-3 py-2 text-sm font-semibold text-erp-primary">{id}</span>}
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-6">
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
-            <div className="rounded-lg bg-violet-100 p-2 text-violet-700">
-              <Building2 size={19} />
+      {isEdit && (
+        <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 shadow-erp-card">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+              <Hash size={16} />
             </div>
-            <div>
-              <h2 className="font-semibold text-slate-900">Supplier & Purchase Information</h2>
-              <p className="mt-0.5 text-sm text-slate-500">Enter supplier and purchase reference details.</p>
+
+            <div className="min-w-0">
+              <p className="text-[10px] text-erp-text-secondary">Purchase Number</p>
+              <p className="break-words text-xs font-bold text-erp-text">{purchaseNumber || 'Purchase'}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-5 p-5 md:grid-cols-2 xl:grid-cols-3">
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Supplier <span className="text-rose-500">*</span>
-              </label>
-              <select
-                value={supplierId}
-                onChange={(event) => setSupplierId(event.target.value)}
-                className={`w-full rounded-lg border bg-white px-3 py-2.5 text-sm outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/20 ${errors.supplierId ? 'border-rose-400' : 'border-slate-300'}`}
-              >
-                <option value="">Select supplier</option>
-                {suppliers.map((supplier) => (
-                  <option key={supplier.id} value={supplier.id}>
-                    {supplier.name} ({supplier.id})
-                  </option>
-                ))}
-              </select>
-              {errors.supplierId && <p className="mt-1 text-xs text-rose-600">{errors.supplierId}</p>}
+          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">{originalStatus}</span>
+        </section>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Basic Information */}
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+              <ShoppingCart size={15} />
             </div>
 
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                Purchase Date <span className="text-rose-500">*</span>
+              <h2 className="text-xs font-bold text-erp-text">Basic Information</h2>
+              <p className="text-[10px] text-erp-text-secondary">Select the supplier and purchase dates.</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="purchase-supplier" className={labelClass}>
+                Supplier <span className="text-erp-danger">*</span>
               </label>
+
               <div className="relative">
-                <CalendarDays size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Truck size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-erp-text-muted" />
+
+                <select id="purchase-supplier" required value={form.supplierId} onChange={(event) => updateField('supplierId', event.target.value)} disabled={saving || loadingSuppliers} className={`${inputClass('supplierId')} pl-8`}>
+                  <option value="">{loadingSuppliers ? 'Loading suppliers...' : 'Select supplier'}</option>
+
+                  {suppliers.map((supplier) => (
+                    <option key={supplier._id} value={supplier._id}>
+                      {supplier.supplierName}
+                      {supplier.supplierCode ? ` (${supplier.supplierCode})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {errorText('supplierId')}
+
+              {!loadingSuppliers && suppliers.length === 0 && <p className="text-[10px] text-amber-700">No active suppliers found. Add an active supplier first.</p>}
+            </div>
+
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="purchase-date" className={labelClass}>
+                Purchase Date <span className="text-erp-danger">*</span>
+              </label>
+
+              <div className="relative">
+                <CalendarDays size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-erp-text-muted" />
+
+                <input id="purchase-date" type="date" required value={form.purchaseDate} onChange={(event) => updateField('purchaseDate', event.target.value)} disabled={saving} className={`${inputClass('purchaseDate')} pl-8`} />
+              </div>
+
+              {errorText('purchaseDate')}
+            </div>
+
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="expected-delivery-date" className={labelClass}>
+                Expected Delivery Date
+              </label>
+
+              <div className="relative">
+                <CalendarDays size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-erp-text-muted" />
+
                 <input
+                  id="expected-delivery-date"
                   type="date"
-                  value={purchaseDate}
-                  onChange={(event) => setPurchaseDate(event.target.value)}
-                  className={`w-full rounded-lg border py-2.5 pl-10 pr-3 text-sm outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/20 ${errors.purchaseDate ? 'border-rose-400' : 'border-slate-300'}`}
+                  min={form.purchaseDate || undefined}
+                  value={form.expectedDeliveryDate}
+                  onChange={(event) => updateField('expectedDeliveryDate', event.target.value)}
+                  disabled={saving}
+                  className={`${inputClass('expectedDeliveryDate')} pl-8`}
                 />
               </div>
-              {errors.purchaseDate && <p className="mt-1 text-xs text-rose-600">{errors.purchaseDate}</p>}
+
+              {errorText('expectedDeliveryDate')}
             </div>
 
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Due Date</label>
-              <input
-                type="date"
-                min={purchaseDate || undefined}
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-                className={`w-full rounded-lg border px-3 py-2.5 text-sm outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/20 ${errors.dueDate ? 'border-rose-400' : 'border-slate-300'}`}
-              />
-              {errors.dueDate && <p className="mt-1 text-xs text-rose-600">{errors.dueDate}</p>}
-            </div>
+            <div className="min-w-0 space-y-1">
+              <label className={labelClass}>Purchase Status</label>
 
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Supplier Invoice / Reference</label>
-              <input
-                type="text"
-                value={reference}
-                onChange={(event) => setReference(event.target.value)}
-                placeholder="e.g. INV-SUP-101"
-                maxLength={100}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/20"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Purchase Status</label>
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-erp-primary">
-                <option value="Pending">Pending</option>
-                <option value="Received">Received</option>
-                <option value="Cancelled">Cancelled</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-sm font-medium text-slate-700">Payment Status</label>
-              <select value={paymentStatus} onChange={(event) => setPaymentStatus(event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-erp-primary">
-                <option value="Unpaid">Unpaid</option>
-                <option value="Partial">Partial</option>
-                <option value="Paid">Paid</option>
-              </select>
+              <div className="flex h-9 items-center gap-2 rounded-lg border border-erp-border bg-erp-hover/40 px-2.5">
+                <span className="h-2 w-2 rounded-full bg-amber-500" />
+                <span className="text-xs font-semibold text-erp-text">{isEdit ? originalStatus : 'Draft'}</span>
+                <span className="text-[10px] text-erp-text-muted">Server status</span>
+              </div>
             </div>
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-blue-100 p-2 text-blue-700">
-                <ShoppingCart size={19} />
+        {/* Purchase Items */}
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-erp-border px-3 py-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+                <Package size={15} />
               </div>
+
               <div>
-                <h2 className="font-semibold text-slate-900">Purchase Items</h2>
-                <p className="mt-0.5 text-sm text-slate-500">Add products, quantities, unit prices and tax rates.</p>
+                <h2 className="text-xs font-bold text-erp-text">Purchase Items</h2>
+                <p className="text-[10px] text-erp-text-secondary">Products, quantities, prices and taxes.</p>
               </div>
             </div>
 
             <button
               type="button"
-              onClick={() => setItems((previous) => [...previous, createEmptyItem()])}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-erp-primary px-3.5 py-2 text-sm font-semibold text-erp-primary transition hover:bg-erp-primary-light"
+              onClick={addItem}
+              disabled={saving || items.length >= 500}
+              className="inline-flex h-8 items-center gap-1 rounded-lg bg-erp-primary px-2.5 text-[11px] font-semibold text-white transition hover:bg-erp-primary-hover disabled:opacity-50"
             >
-              <Plus size={17} />
-              Add Item
+              <Plus size={13} />
+              Add Product
             </button>
           </div>
 
-          {errors.items && <p className="border-b border-rose-100 bg-rose-50 px-5 py-3 text-sm text-rose-600">{errors.items}</p>}
+          <div className="space-y-2.5 p-3">
+            <div className="relative">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-erp-text-muted" />
 
-          <div className="space-y-4 p-5">
+              <input type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products by name, SKU or barcode..." disabled={saving} className={`${inputBase} border-erp-border pl-8`} />
+            </div>
+
+            {errorText('items')}
+
+            {loadingProducts && (
+              <div className="flex items-center gap-2 rounded-lg border border-erp-border px-3 py-3 text-xs text-erp-text-secondary">
+                <LoaderCircle size={14} className="animate-spin" />
+                Loading products...
+              </div>
+            )}
+
+            {!loadingProducts && products.length === 0 && (
+              <div className="rounded-lg border border-dashed border-erp-border px-3 py-5 text-center">
+                <Package size={22} className="mx-auto text-erp-text-muted" />
+                <p className="mt-1.5 text-xs font-semibold text-erp-text">No active products found</p>
+                <p className="mt-1 text-[10px] text-erp-text-secondary">Create or activate a product before creating a purchase.</p>
+              </div>
+            )}
+
             {items.map((item, index) => {
-              const lineSubtotal = (Number(item.quantity) || 0) * (Number(item.price) || 0)
-
-              const lineTax = lineSubtotal * ((Number(item.tax) || 0) / 100)
+              const calculatedItem = calculations.calculatedItems[index]
+              const itemPrefix = `item-${index}-`
 
               return (
-                <div key={index} className="rounded-xl border border-slate-200 p-4">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-800">Item {index + 1}</h3>
+                <div key={`${index}-${item.productId || 'new'}`} className="overflow-hidden rounded-lg border border-erp-border">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-erp-border bg-erp-hover/40 px-2.5 py-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-erp-primary/10 text-[10px] font-bold text-erp-primary">{String(index + 1).padStart(2, '0')}</span>
+
+                      <div className="min-w-0">
+                        <p className="break-words text-xs font-bold text-erp-text">{item.productName || `Product ${index + 1}`}</p>
+                        <p className="text-[10px] text-erp-text-secondary">{item.sku || 'Select a product below'}</p>
+                      </div>
+                    </div>
 
                     <button
                       type="button"
-                      disabled={items.length === 1}
-                      onClick={() => setItems((previous) => previous.filter((_, itemIndex) => itemIndex !== index))}
-                      className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-30"
+                      onClick={() => removeItem(index)}
+                      disabled={saving || items.length <= 1}
+                      title="Remove item"
+                      aria-label={`Remove item ${index + 1}`}
+                      className="inline-flex h-7 items-center gap-1 rounded-md border border-erp-border px-2 text-[10px] font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={12} />
                       Remove
                     </button>
                   </div>
 
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
-                    <div className="sm:col-span-2 xl:col-span-1">
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">
-                        Product <span className="text-rose-500">*</span>
-                      </label>
-                      <select value={item.productId} onChange={(event) => updateItem(index, 'productId', event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-erp-primary">
-                        <option value="">Select product</option>
-                        {products.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {product.name}
-                          </option>
-                        ))}
-                      </select>
+                  <div className="grid gap-3 p-2.5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                    {/* Product fields */}
+                    <div className="grid content-start gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+                      <div className="min-w-0 space-y-1 sm:col-span-2 xl:col-span-4">
+                        <label htmlFor={`purchase-product-${index}`} className={labelClass}>
+                          Product <span className="text-erp-danger">*</span>
+                        </label>
+
+                        <select id={`purchase-product-${index}`} required value={item.productId} onChange={(event) => selectProduct(index, event.target.value)} disabled={saving || loadingProducts} className={inputClass(`${itemPrefix}productId`)}>
+                          <option value="">Select product</option>
+
+                          {filteredProducts.map((product) => (
+                            <option key={product._id} value={product._id}>
+                              {product.name}
+                              {product.sku ? ` (${product.sku})` : ''}
+                            </option>
+                          ))}
+
+                          {item.productId && !filteredProducts.some((product) => String(product._id) === String(item.productId)) && <option value={item.productId}>{item.productName || item.sku || 'Current product'}</option>}
+                        </select>
+
+                        {errorText(`${itemPrefix}productId`)}
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <label htmlFor={`purchase-quantity-${index}`} className={labelClass}>
+                          Quantity *
+                        </label>
+
+                        <input
+                          id={`purchase-quantity-${index}`}
+                          type="number"
+                          min="0.001"
+                          step="any"
+                          required
+                          value={item.quantity}
+                          onChange={(event) => updateItem(index, 'quantity', event.target.value)}
+                          disabled={saving}
+                          className={inputClass(`${itemPrefix}quantity`)}
+                        />
+
+                        {errorText(`${itemPrefix}quantity`)}
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <label htmlFor={`purchase-price-${index}`} className={labelClass}>
+                          Unit Price (₹) *
+                        </label>
+
+                        <input
+                          id={`purchase-price-${index}`}
+                          type="number"
+                          min="0"
+                          step="any"
+                          required
+                          value={item.unitPrice}
+                          onChange={(event) => updateItem(index, 'unitPrice', event.target.value)}
+                          disabled={saving}
+                          className={inputClass(`${itemPrefix}unitPrice`)}
+                        />
+
+                        {errorText(`${itemPrefix}unitPrice`)}
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <label htmlFor={`purchase-tax-${index}`} className={labelClass}>
+                          Tax Rate (%)
+                        </label>
+
+                        <input
+                          id={`purchase-tax-${index}`}
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="any"
+                          value={item.taxRate}
+                          onChange={(event) => updateItem(index, 'taxRate', event.target.value)}
+                          disabled={saving}
+                          className={inputClass(`${itemPrefix}taxRate`)}
+                        />
+
+                        {errorText(`${itemPrefix}taxRate`)}
+                      </div>
+
+                      <div className="min-w-0 space-y-1">
+                        <label className={labelClass}>Unit</label>
+
+                        <div className="flex h-9 items-center rounded-lg border border-erp-border bg-erp-hover/40 px-2.5 text-xs text-erp-text">{item.unit || 'Piece'}</div>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Quantity</label>
-                      <input
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={item.quantity}
-                        onChange={(event) => updateItem(index, 'quantity', event.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-erp-primary"
-                      />
-                    </div>
+                    {/* Compact live calculation */}
+                    <div className="rounded-lg border border-erp-border bg-erp-bg p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <h3 className="text-xs font-bold text-erp-text">Item Calculation</h3>
+                        <span className="text-[10px] text-erp-text-secondary">Live</span>
+                      </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Unit Price (₹)</label>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.price}
-                        onChange={(event) => updateItem(index, 'price', event.target.value)}
-                        className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-erp-primary"
-                      />
-                    </div>
+                      <div className="space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-erp-text-secondary">Quantity × Unit Price</span>
+                          <span className="font-medium text-erp-text">{formatMoney(calculatedItem?.grossAmount)}</span>
+                        </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Tax (%)</label>
-                      <select value={item.tax} onChange={(event) => updateItem(index, 'tax', event.target.value)} className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-erp-primary">
-                        <option value={0}>0%</option>
-                        <option value={5}>5%</option>
-                        <option value={12}>12%</option>
-                        <option value={18}>18%</option>
-                        <option value={28}>28%</option>
-                      </select>
-                    </div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-erp-text-secondary">Taxable Amount</span>
+                          <span className="font-medium text-erp-text">{formatMoney(calculatedItem?.taxableAmount)}</span>
+                        </div>
 
-                    <div>
-                      <label className="mb-1.5 block text-xs font-medium text-slate-600">Line Total</label>
-                      <div className="rounded-lg bg-slate-50 px-3 py-2.5 text-sm font-semibold text-slate-900">{currency(lineSubtotal + lineTax)}</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-erp-text-secondary">Tax ({Number(item.taxRate) || 0}%)</span>
+                          <span className="font-medium text-erp-text">{formatMoney(calculatedItem?.taxAmount)}</span>
+                        </div>
+
+                        <div className="mt-2 flex items-center justify-between gap-2 border-t border-dashed border-erp-border pt-2">
+                          <span className="font-bold text-erp-text">Line Total</span>
+                          <span className="text-sm font-extrabold text-erp-primary">{formatMoney(calculatedItem?.lineTotal)}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-
-                  <p className="mt-3 text-right text-xs text-slate-500">
-                    Subtotal: {currency(lineSubtotal)} · Tax: {currency(lineTax)}
-                  </p>
                 </div>
               )
             })}
+
+            {!loadingProducts && products.length > 0 && <p className="text-[10px] text-erp-text-muted">{filteredProducts.length} active product(s) match the search.</p>}
           </div>
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-slate-100 p-2 text-slate-700">
-                <FileText size={19} />
-              </div>
-              <div>
-                <h2 className="font-semibold text-slate-900">Additional Notes</h2>
-                <p className="mt-0.5 text-sm text-slate-500">Add optional purchase information.</p>
-              </div>
+        {/* Purchase Summary */}
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+              <Receipt size={15} />
             </div>
 
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              rows={5}
-              maxLength={1000}
-              placeholder="Enter notes about this purchase..."
-              className="mt-5 w-full resize-y rounded-lg border border-slate-300 px-3 py-3 text-sm outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/20"
-            />
-
-            <p className="mt-1 text-right text-xs text-slate-400">{notes.length}/1000</p>
+            <div>
+              <h2 className="text-xs font-bold text-erp-text">Purchase Summary</h2>
+              <p className="text-[10px] text-erp-text-secondary">Purchase discount, tax and final amount.</p>
+            </div>
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="font-semibold text-slate-900">Purchase Summary</h2>
+          <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="purchase-discount" className={labelClass}>
+                Purchase Discount (₹)
+              </label>
 
-            <div className="mt-5 space-y-4">
-              <div className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-slate-500">Subtotal</span>
-                <span className="font-medium text-slate-800">{currency(totals.subtotal)}</span>
+              <input id="purchase-discount" type="number" min="0" step="any" value={form.discountAmount} onChange={(event) => updateField('discountAmount', event.target.value)} disabled={saving} className={inputClass('discountAmount')} />
+
+              {errorText('discountAmount')}
+            </div>
+
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="purchase-shipping" className={labelClass}>
+                Shipping Charges (₹)
+              </label>
+
+              <input id="purchase-shipping" type="number" min="0" step="any" value={form.shippingCharges} onChange={(event) => updateField('shippingCharges', event.target.value)} disabled={saving} className={inputClass('shippingCharges')} />
+
+              {errorText('shippingCharges')}
+            </div>
+
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="purchase-adjustment" className={labelClass}>
+                Adjustment (₹)
+              </label>
+
+              <input id="purchase-adjustment" type="number" step="any" value={form.adjustmentAmount} onChange={(event) => updateField('adjustmentAmount', event.target.value)} disabled={saving} className={inputClass('adjustmentAmount')} />
+
+              {errorText('adjustmentAmount')}
+
+              <p className="text-[10px] text-erp-text-muted">Use a negative amount for a reduction.</p>
+            </div>
+
+            <div className="min-w-0 space-y-1">
+              <label className={labelClass}>Total Item Quantity</label>
+
+              <div className="flex h-9 items-center gap-2 rounded-lg border border-erp-border bg-erp-hover/40 px-2.5">
+                <Boxes size={14} className="text-erp-primary" />
+                <span className="text-xs font-semibold text-erp-text">{items.reduce((sum, item) => sum + phoneNumber(item.quantity), 0)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-erp-border bg-erp-hover/20 p-3">
+            <div className="ml-auto space-y-2 sm:max-w-sm">
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-erp-text-secondary">Subtotal</span>
+                <span className="font-semibold text-erp-text">{formatMoney(calculations.subtotal)}</span>
               </div>
 
-              <div className="flex items-center justify-between gap-4 text-sm">
-                <span className="text-slate-500">Total Tax</span>
-                <span className="font-medium text-slate-800">{currency(totals.taxAmount)}</span>
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-erp-text-secondary">Purchase Discount</span>
+                <span className="font-semibold text-rose-600">− {formatMoney(calculations.purchaseDiscount)}</span>
               </div>
 
-              <div className="border-t border-dashed border-slate-300 pt-4">
-                <div className="flex items-center justify-between gap-4">
-                  <span className="font-semibold text-slate-900">Grand Total</span>
-                  <span className="text-2xl font-bold text-erp-primary">{currency(totals.grandTotal)}</span>
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-erp-text-secondary">Tax</span>
+                <span className="font-semibold text-erp-text">{formatMoney(calculations.taxTotal)}</span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-erp-text-secondary">Shipping Charges</span>
+                <span className="font-semibold text-erp-text">{formatMoney(calculations.shippingCharges)}</span>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 text-xs">
+                <span className="text-erp-text-secondary">Adjustment</span>
+                <span className="font-semibold text-erp-text">{formatMoney(calculations.adjustmentAmount)}</span>
+              </div>
+
+              <div className="border-t border-erp-border pt-2">
+                <div className="flex items-center justify-between gap-3 rounded-lg bg-erp-primary/10 px-3 py-2.5">
+                  <div>
+                    <p className="text-xs font-bold text-erp-text">Grand Total</p>
+                    <p className="text-[10px] text-erp-text-secondary">Final purchase amount</p>
+                  </div>
+
+                  <p className="text-base font-extrabold text-erp-primary">{formatMoney(calculations.totalAmount)}</p>
                 </div>
               </div>
-
-              <p className="text-xs leading-5 text-slate-500">Tax is calculated per item. The total updates automatically when you change quantities, prices or tax rates.</p>
             </div>
           </div>
         </section>
 
-        <div className="flex flex-col-reverse justify-end gap-3 sm:flex-row">
-          <button type="button" onClick={() => navigate('/company/purchases')} className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-            Cancel
-          </button>
-
-          <button type="submit" className="inline-flex items-center justify-center gap-2 rounded-lg bg-erp-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-erp-primary-hover">
-            <Save size={17} />
-            {isEdit ? 'Update Purchase' : 'Save Purchase'}
-          </button>
-        </div>
-      </form>
-
-      {showConfirmation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="purchase-confirmation-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-              <ShoppingCart size={23} />
+        {/* Additional Details */}
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+              <FileText size={15} />
             </div>
 
-            <h2 id="purchase-confirmation-title" className="mt-4 text-lg font-bold text-slate-900">
-              Form Validated
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-600">Your purchase form is valid. This is currently a UI-only demonstration; the purchase has not been saved to the database.</p>
-
-            <div className="mt-4 rounded-lg bg-slate-50 p-4">
-              <div className="flex justify-between gap-3 text-sm">
-                <span className="text-slate-500">Supplier</span>
-                <span className="text-right font-medium text-slate-800">{suppliers.find((supplier) => supplier.id === supplierId)?.name || '—'}</span>
-              </div>
-              <div className="mt-3 flex justify-between gap-3 text-sm">
-                <span className="text-slate-500">Items</span>
-                <span className="font-medium text-slate-800">{items.length}</span>
-              </div>
-              <div className="mt-3 flex justify-between gap-3 text-sm">
-                <span className="text-slate-500">Grand Total</span>
-                <span className="font-bold text-erp-primary">{currency(totals.grandTotal)}</span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button type="button" onClick={() => setShowConfirmation(false)} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                Continue Editing
-              </button>
-              <button type="button" onClick={() => navigate('/company/purchases')} className="rounded-lg bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-erp-primary-hover">
-                Back to Purchases
-              </button>
+            <div>
+              <h2 className="text-xs font-bold text-erp-text">Additional Details</h2>
+              <p className="text-[10px] text-erp-text-secondary">Internal notes for this purchase.</p>
             </div>
           </div>
-        </div>
-      )}
+
+          <div className="p-3">
+            <div className="space-y-1">
+              <label htmlFor="purchase-notes" className={labelClass}>
+                Notes
+              </label>
+
+              <textarea
+                id="purchase-notes"
+                rows={3}
+                maxLength={2000}
+                value={form.notes}
+                onChange={(event) => updateField('notes', event.target.value)}
+                placeholder="Enter purchase notes, terms or other information..."
+                disabled={saving}
+                className={`w-full resize-y rounded-lg border bg-erp-surface px-3 py-2 text-xs text-erp-text outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 ${
+                  errors.notes ? 'border-red-400' : 'border-erp-border'
+                }`}
+              />
+
+              {errorText('notes')}
+
+              <p className="text-right text-[10px] text-erp-text-muted">{form.notes.length}/2000</p>
+            </div>
+          </div>
+        </section>
+
+        {/* Purchase Preview */}
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+              <Eye size={15} />
+            </div>
+
+            <div>
+              <h2 className="text-xs font-bold text-erp-text">Purchase Preview</h2>
+              <p className="text-[10px] text-erp-text-secondary">Review the information before saving.</p>
+            </div>
+          </div>
+
+          <div className="grid gap-3 p-3 sm:grid-cols-[auto_1fr] sm:items-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-erp-border bg-erp-primary/5 text-erp-primary">
+              <ShoppingCart size={30} strokeWidth={1.5} />
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="break-words text-sm font-bold text-erp-text">{purchaseNumber || 'New Purchase'}</h3>
+
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700">{isEdit ? originalStatus : 'Draft'}</span>
+              </div>
+
+              <p className="mt-1 break-words text-xs text-erp-text-secondary">Supplier: {suppliers.find((supplier) => String(supplier._id) === String(form.supplierId))?.supplierName || 'No supplier selected'}</p>
+
+              <div className="mt-2 grid gap-2 text-[11px] text-erp-text-secondary sm:grid-cols-2">
+                <p className="flex items-start gap-1.5">
+                  <CalendarDays size={13} className="mt-0.5 shrink-0 text-erp-primary" />
+                  <span>Purchase Date: {form.purchaseDate || 'Not selected'}</span>
+                </p>
+
+                <p className="flex items-start gap-1.5">
+                  <CalendarDays size={13} className="mt-0.5 shrink-0 text-erp-primary" />
+                  <span>Expected Delivery: {form.expectedDeliveryDate || 'Not specified'}</span>
+                </p>
+
+                <p className="flex items-start gap-1.5">
+                  <Package size={13} className="mt-0.5 shrink-0 text-erp-primary" />
+                  <span>Product Lines: {items.length}</span>
+                </p>
+
+                <p className="flex items-start gap-1.5">
+                  <Receipt size={13} className="mt-0.5 shrink-0 text-erp-primary" />
+                  <span className="font-semibold text-erp-text">Total: {formatMoney(calculations.totalAmount)}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* API Error */}
+        {apiError && (
+          <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+            <AlertCircle size={14} className="mt-0.5 shrink-0" />
+            <p>{apiError}</p>
+          </div>
+        )}
+
+        {/* Footer */}
+        <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-erp-border bg-erp-surface/95 p-2 shadow-sm backdrop-blur">
+          <div className="hidden min-w-0 sm:block">
+            <p className="text-xs font-semibold text-erp-text">{isEdit ? 'Update draft purchase' : 'Ready to create purchase'}</p>
+            <p className="mt-0.5 text-[10px] text-erp-text-secondary">Inventory will not change when this purchase is saved.</p>
+          </div>
+
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={goBack}
+              disabled={saving}
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-erp-border bg-erp-surface px-2.5 text-[11px] font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:opacity-50"
+            >
+              <ArrowLeft size={13} />
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (saving || isEdit) return
+
+                setApiError('')
+                setErrors({})
+                setForm({
+                  ...initialForm,
+                  purchaseDate: formatDateForInput(new Date()),
+                })
+                setItems([createEmptyItem()])
+                setProductSearch('')
+              }}
+              disabled={saving || isEdit}
+              title={isEdit ? 'Cancel to discard edits' : 'Reset form'}
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-erp-border bg-erp-surface px-2.5 text-[11px] font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RotateCcw size={13} />
+              Reset
+            </button>
+
+            <button
+              type="submit"
+              disabled={saving || loadingSuppliers || loadingProducts || (isEdit && originalStatus !== 'Draft')}
+              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-erp-primary px-3 text-[11px] font-bold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {saving ? <LoaderCircle size={13} className="animate-spin" /> : <Save size={13} />}
+
+              {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Purchase'}
+            </button>
+          </div>
+        </footer>
+      </form>
     </div>
   )
 }

@@ -113,22 +113,24 @@ const ACTIONS = {
     DELETE: 'supplier:delete',
   },
 
+  Purchase: {
+    LIST: 'purchase:list',
+    VIEW: 'purchase:view',
+    CREATE: 'purchase:create',
+    UPDATE: 'purchase:update',
+    UPDATE_STATUS: 'purchase:update-status',
+    DELETE: 'purchase:delete',
+    APPROVE: 'purchase:approve',
+    CANCEL: 'purchase:cancel',
+    EXPORT: 'purchase:export',
+  },
+
   Customer: {
     LIST: 'customer:list',
     VIEW: 'customer:view',
     CREATE: 'customer:create',
     UPDATE: 'customer:update',
     DELETE: 'customer:delete',
-  },
-
-  Purchase: {
-    LIST: 'purchase:list',
-    VIEW: 'purchase:view',
-    CREATE: 'purchase:create',
-    UPDATE: 'purchase:update',
-    DELETE: 'purchase:delete',
-    APPROVE: 'purchase:approve',
-    CANCEL: 'purchase:cancel',
   },
 
   Sales: {
@@ -223,7 +225,7 @@ const ROLE_DEFAULT_PERMISSIONS = {
     [SECTION_KEYS.Customer]: [ACTIONS.Customer.LIST, ACTIONS.Customer.VIEW],
     [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW],
     [SECTION_KEYS.Sales]: [ACTIONS.Sales.LIST, ACTIONS.Sales.VIEW],
-    [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW],
+    [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW, ACTIONS.Purchase.EXPORT],
     [SECTION_KEYS.Invoice]: Object.values(ACTIONS.Invoice),
     [SECTION_KEYS.Payment]: Object.values(ACTIONS.Payment),
     [SECTION_KEYS.Expense]: Object.values(ACTIONS.Expense),
@@ -238,7 +240,7 @@ const ROLE_DEFAULT_PERMISSIONS = {
     [SECTION_KEYS.Inventory]: Object.values(ACTIONS.Inventory),
     [SECTION_KEYS.Warehouse]: Object.values(ACTIONS.Warehouse),
     [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW, ACTIONS.Supplier.CREATE, ACTIONS.Supplier.UPDATE, ACTIONS.Supplier.UPDATE_STATUS, ACTIONS.Supplier.EXPORT],
-    [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW, ACTIONS.Purchase.CREATE, ACTIONS.Purchase.UPDATE],
+    [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW, ACTIONS.Purchase.CREATE, ACTIONS.Purchase.UPDATE, ACTIONS.Purchase.UPDATE_STATUS, ACTIONS.Purchase.EXPORT],
     [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.INVENTORY, ACTIONS.Reports.PURCHASE],
   },
 

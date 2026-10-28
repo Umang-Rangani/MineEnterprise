@@ -23,6 +23,9 @@ const categoriesRouter = require('./routes/categories')
 const inventoryRouter = require('./routes/inventory')
 const warehousesRoutes = require('./routes/warehouses')
 const suppliersRouter = require('./routes/suppliers')
+const purchasesRouter = require('./routes/purchases')
+
+
 
 var app = express()
 
@@ -60,6 +63,8 @@ app.use('/erp/categories', categoriesRouter)
 app.use('/erp/inventory', inventoryRouter)
 app.use('/erp/warehouses', warehousesRoutes)
 app.use('/erp/suppliers', suppliersRouter)
+app.use('/erp/purchases', purchasesRouter)
+
 
 // Roles and My Permissions remain in erp.js
 app.use('/erp', erpRouter)

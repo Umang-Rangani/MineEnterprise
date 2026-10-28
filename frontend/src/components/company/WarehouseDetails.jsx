@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Warehouse, Tag, RefreshCw, Pencil, Trash2, CheckCircle2, FileText, CalendarDays, Clock, AlertCircle, Ban, MapPin, Phone, UserRound, Boxes, Building2, Hash, MapPinned, Users } from 'lucide-react'
 
-import axiosInstance from '../../api/axiosInstance'
-import BreadCrumb from '../../BreadCrumb/BreadCrumb'
-import Toast from '../../Toast/Toast'
-import Loading from '../Loading/Loading'
+  import axiosInstance from '../../api/axiosInstance'
+  import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+  import Toast from '../../Toast/Toast'
+  import Loading from '../Loading/Loading'
+  import TrashBox from '../../TrashBox/TrashBox'
 import { hasPermission, useAuth } from '../../context/AuthContext'
-import TrashBox from '../../TrashBox/TrashBox'
 
 const buttonBase = 'inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50'
 

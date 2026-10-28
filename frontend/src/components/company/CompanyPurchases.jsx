@@ -1,381 +1,621 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Search, Plus, Eye, Pencil, Trash2, ShoppingCart, Clock, CheckCircle2, IndianRupee, ChevronLeft, ChevronRight, Filter, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Plus, Search, Eye, Pencil, ShoppingCart, Truck, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, RefreshCw, FilterX, AlertCircle, LoaderCircle, Download, CalendarDays, IndianRupee, FileText } from 'lucide-react'
 
-const initialPurchases = [
-  {
-    id: 'PUR-001',
-    supplier: 'Shreeji Suppliers',
-    supplierId: 'SUP-001',
-    purchaseDate: '2026-10-18',
-    dueDate: '2026-11-02',
-    items: 5,
-    amount: 45000,
-    paymentStatus: 'Paid',
-    status: 'Received',
-  },
-  {
-    id: 'PUR-002',
-    supplier: 'Patel Trading Co.',
-    supplierId: 'SUP-002',
-    purchaseDate: '2026-10-16',
-    dueDate: '2026-10-31',
-    items: 3,
-    amount: 28500,
-    paymentStatus: 'Partial',
-    status: 'Received',
-  },
-  {
-    id: 'PUR-003',
-    supplier: 'Arihant Industries',
-    supplierId: 'SUP-003',
-    purchaseDate: '2026-10-15',
-    dueDate: '2026-10-30',
-    items: 8,
-    amount: 72000,
-    paymentStatus: 'Unpaid',
-    status: 'Pending',
-  },
-  {
-    id: 'PUR-004',
-    supplier: 'Shreeji Suppliers',
-    supplierId: 'SUP-001',
-    purchaseDate: '2026-10-12',
-    dueDate: '2026-10-27',
-    items: 4,
-    amount: 36000,
-    paymentStatus: 'Paid',
-    status: 'Received',
-  },
-  {
-    id: 'PUR-005',
-    supplier: 'Mehta Enterprises',
-    supplierId: 'SUP-004',
-    purchaseDate: '2026-10-10',
-    dueDate: '2026-10-25',
-    items: 6,
-    amount: 54000,
-    paymentStatus: 'Unpaid',
-    status: 'Cancelled',
-  },
-  {
-    id: 'PUR-006',
-    supplier: 'Patel Trading Co.',
-    supplierId: 'SUP-002',
-    purchaseDate: '2026-10-08',
-    dueDate: '2026-10-23',
-    items: 2,
-    amount: 18000,
-    paymentStatus: 'Partial',
-    status: 'Pending',
-  },
-  {
-    id: 'PUR-007',
-    supplier: 'Arihant Industries',
-    supplierId: 'SUP-003',
-    purchaseDate: '2026-10-05',
-    dueDate: '2026-10-20',
-    items: 7,
-    amount: 62500,
-    paymentStatus: 'Paid',
-    status: 'Received',
-  },
-  {
-    id: 'PUR-008',
-    supplier: 'Mehta Enterprises',
-    supplierId: 'SUP-004',
-    purchaseDate: '2026-10-02',
-    dueDate: '2026-10-17',
-    items: 3,
-    amount: 22000,
-    paymentStatus: 'Unpaid',
-    status: 'Pending',
-  },
-]
+import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import Toast from '../../Toast/Toast'
+import { hasPermission, useAuth } from '../../context/AuthContext'
+import Loading from '../Loading/Loading'
 
-const formatCurrency = (amount) =>
+const statusStyles = {
+  Draft: 'border-slate-200 bg-slate-50 text-slate-700',
+  Ordered: 'border-blue-200 bg-blue-50 text-blue-700',
+  'Partially Received': 'border-amber-200 bg-amber-50 text-amber-700',
+  Received: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Cancelled: 'border-rose-200 bg-rose-50 text-rose-700',
+}
+
+const paymentStyles = {
+  Unpaid: 'border-rose-200 bg-rose-50 text-rose-700',
+  'Partially Paid': 'border-amber-200 bg-amber-50 text-amber-700',
+  Paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+}
+
+const formatNumber = (value) =>
+  new Intl.NumberFormat('en-IN', {
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0)
+
+const formatCurrency = (value) =>
   new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(amount)
+    maximumFractionDigits: 2,
+  }).format(Number(value) || 0)
 
-const formatDate = (date) =>
-  new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', {
+const formatDate = (value) => {
+  if (!value) return '—'
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) return '—'
+
+  return date.toLocaleDateString('en-IN', {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
   })
+}
+
+function getPurchaseArray(response) {
+  const data = response?.data
+
+  if (Array.isArray(data?.purchases)) return data.purchases
+  if (Array.isArray(data?.data?.purchases)) return data.data.purchases
+  if (Array.isArray(data?.data)) return data.data
+
+  return []
+}
+
+function getPurchaseStatusColor(status) {
+  return statusStyles[status] || statusStyles.Draft
+}
 
 export default function CompanyPurchases() {
-  const navigate = useNavigate()
+  const { permissions } = useAuth()
 
-  const [purchases, setPurchases] = useState(initialPurchases)
+  const canCreate = hasPermission(permissions, 'purchase:create')
+  const canView = hasPermission(permissions, 'purchase:view')
+  const canUpdate = hasPermission(permissions, 'purchase:update')
+  const canApprove = hasPermission(permissions, 'purchase:approve')
+  const canCancel = hasPermission(permissions, 'purchase:cancel')
+  const canExport = hasPermission(permissions, 'purchase:export')
+
+  const [purchases, setPurchases] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [apiError, setApiError] = useState('')
+
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
-  const [paymentFilter, setPaymentFilter] = useState('All')
+
+  const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
-  const [deleteId, setDeleteId] = useState(null)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const pageSize = 5
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+  })
 
-  const stats = useMemo(() => {
-    return {
-      total: purchases.length,
-      received: purchases.filter((purchase) => purchase.status === 'Received').length,
-      pending: purchases.filter((purchase) => purchase.status === 'Pending').length,
-      amount: purchases.filter((purchase) => purchase.status !== 'Cancelled').reduce((sum, purchase) => sum + purchase.amount, 0),
-    }
-  }, [purchases])
+  const [toast, setToast] = useState(null)
+  const [processingId, setProcessingId] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
 
-  const filteredPurchases = useMemo(() => {
-    const query = search.trim().toLowerCase()
+  const [actionTarget, setActionTarget] = useState(null)
+  const [actionType, setActionType] = useState('')
 
-    return purchases.filter((purchase) => {
-      const matchesSearch = purchase.id.toLowerCase().includes(query) || purchase.supplier.toLowerCase().includes(query) || purchase.supplierId.toLowerCase().includes(query)
+  const breadcrumbItems = [{ title: 'Purchases', link: null }]
 
-      const matchesStatus = statusFilter === 'All' || purchase.status === statusFilter
-
-      const matchesPayment = paymentFilter === 'All' || purchase.paymentStatus === paymentFilter
-
-      return matchesSearch && matchesStatus && matchesPayment
+  const showToast = (type, message) => {
+    setToast({
+      id: Date.now(),
+      type,
+      message,
+      duration: 3000,
     })
-  }, [purchases, search, statusFilter, paymentFilter])
+  }
 
-  const totalPages = Math.max(1, Math.ceil(filteredPurchases.length / pageSize))
+  useEffect(() => {
+    document.title = 'Purchases | MineERP'
+  }, [])
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim())
+    }, 350)
+
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchPurchases() {
+      if (!hasLoaded) {
+        setLoading(true)
+      }
+
+      setApiError('')
+
+      try {
+        const response = await axiosInstance.get('/erp/purchases', {
+          params: {
+            page: currentPage,
+            limit: pageSize,
+            search: debouncedSearch || undefined,
+            status: statusFilter === 'All' ? undefined : statusFilter,
+          },
+        })
+
+        const data = response.data
+
+        if (data?.success === false) {
+          throw new Error(data.message || 'Unable to load purchases.')
+        }
+
+        if (cancelled) return
+
+        const list = getPurchaseArray(response)
+
+        setPurchases(list)
+
+        const serverPagination = data?.pagination
+
+        if (serverPagination) {
+          setPagination({
+            page: Number(serverPagination.page) || currentPage,
+            limit: Number(serverPagination.limit) || pageSize,
+            total: Number(serverPagination.total) || 0,
+            totalPages: Math.max(1, Number(serverPagination.totalPages) || 1),
+          })
+        } else {
+          setPagination({
+            page: currentPage,
+            limit: pageSize,
+            total: list.length,
+            totalPages: 1,
+          })
+        }
+
+        setHasLoaded(true)
+      } catch (error) {
+        if (cancelled) return
+
+        setApiError(error.response?.data?.message || error.message || 'Unable to load purchases.')
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    fetchPurchases()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentPage, pageSize, debouncedSearch, statusFilter, refreshKey])
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(Math.max(1, pagination.totalPages))
+    }
+  }, [currentPage, pagination.totalPages])
+
+  const totalPages = Math.max(1, pagination.totalPages)
   const safePage = Math.min(currentPage, totalPages)
+  const startIndex = (safePage - 1) * pageSize
 
-  const paginatedPurchases = filteredPurchases.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const draftOnPage = purchases.filter((purchase) => purchase.status === 'Draft').length
 
-  const resetPage = () => setCurrentPage(1)
+  const orderedOnPage = purchases.filter((purchase) => purchase.status === 'Ordered').length
 
-  const handleDelete = () => {
-    setPurchases((previous) => previous.filter((purchase) => purchase.id !== deleteId))
-    setDeleteId(null)
+  const receivedOnPage = purchases.filter((purchase) => purchase.status === 'Received').length
+
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All'
+
+  const resetFilters = () => {
+    setSearch('')
+    setDebouncedSearch('')
+    setStatusFilter('All')
+    setCurrentPage(1)
   }
 
-  const statusClasses = {
-    Received: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-    Pending: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-    Cancelled: 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  const handleRefresh = () => {
+    if (refreshing || loading) return
+
+    setRefreshing(true)
+    setRefreshKey((previous) => previous + 1)
   }
 
-  const paymentClasses = {
-    Paid: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-    Partial: 'bg-amber-50 text-amber-700 ring-amber-600/20',
-    Unpaid: 'bg-rose-50 text-rose-700 ring-rose-600/20',
+  const handleExport = async () => {
+    if (!canExport || isExporting) return
+
+    setIsExporting(true)
+
+    try {
+      const response = await axiosInstance.get('/erp/purchases/export', {
+        params: {
+          search: debouncedSearch || undefined,
+          status: statusFilter === 'All' ? undefined : statusFilter,
+        },
+        responseType: 'blob',
+      })
+
+      const blob = new Blob([response.data], {
+        type: 'text/csv;charset=utf-8;',
+      })
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = url
+      link.download = `purchases-${new Date().toISOString().slice(0, 10)}.csv`
+
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+
+      showToast('success', 'Purchases exported successfully.')
+    } catch (error) {
+      let message = 'Unable to export purchases.'
+
+      if (error.response?.data instanceof Blob) {
+        try {
+          const errorData = JSON.parse(await error.response.data.text())
+          message = errorData.message || message
+        } catch {
+          // Use fallback message.
+        }
+      } else {
+        message = error.response?.data?.message || error.message || message
+      }
+
+      showToast('error', message)
+    } finally {
+      setIsExporting(false)
+    }
+  }
+
+  const openActionConfirmation = (purchase, type) => {
+    if (processingId) return
+
+    setActionTarget(purchase)
+    setActionType(type)
+  }
+
+  const confirmPurchaseAction = async () => {
+    if (!actionTarget || !actionType || processingId) return
+
+    const purchase = actionTarget
+    const purchaseId = String(purchase._id)
+
+    setProcessingId(purchaseId)
+
+    try {
+      const endpoint = actionType === 'approve' ? `/erp/purchases/${encodeURIComponent(purchaseId)}/approve` : `/erp/purchases/${encodeURIComponent(purchaseId)}/cancel`
+
+      const { data } = await axiosInstance.patch(endpoint)
+
+      if (data?.success === false) {
+        throw new Error(data.message || 'Unable to update purchase.')
+      }
+
+      showToast('success', data?.message || (actionType === 'approve' ? 'Purchase approved successfully.' : 'Purchase cancelled successfully.'))
+
+      setActionTarget(null)
+      setActionType('')
+      setRefreshKey((previous) => previous + 1)
+    } catch (error) {
+      showToast('error', error.response?.data?.message || error.message || 'Unable to update purchase.')
+    } finally {
+      setProcessingId('')
+    }
+  }
+
+  const statCards = [
+    {
+      title: 'Total Purchases',
+      value: pagination.total,
+      icon: ShoppingCart,
+      color: 'text-violet-700',
+      border: 'border-violet-200',
+    },
+    {
+      title: 'Draft on Page',
+      value: draftOnPage,
+      icon: Clock,
+      color: 'text-slate-700',
+      border: 'border-slate-200',
+    },
+    {
+      title: 'Ordered on Page',
+      value: orderedOnPage,
+      icon: Truck,
+      color: 'text-blue-700',
+      border: 'border-blue-200',
+    },
+    {
+      title: 'Received on Page',
+      value: receivedOnPage,
+      icon: CheckCircle2,
+      color: 'text-emerald-700',
+      border: 'border-emerald-200',
+    },
+  ]
+
+  if (loading && !hasLoaded) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={breadcrumbItems} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading purchases" description="Please wait while we load your company's purchase records." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Purchase Management</h1>
-          <p className="mt-1 text-sm text-slate-500">Manage supplier purchases, stock receipts and payments.</p>
-        </div>
+    <div className="min-w-0 space-y-4 pb-8 text-sm">
+      {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
 
-        <button
-          type="button"
-          onClick={() => navigate('/company/purchases/new')}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-erp-primary-hover"
-        >
-          <Plus size={18} />
-          New Purchase
-        </button>
-      </div>
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">Total Purchases</p>
-            <div className="rounded-lg bg-violet-100 p-2.5 text-violet-700">
-              <ShoppingCart size={20} />
-            </div>
-          </div>
-          <p className="mt-4 text-2xl font-bold text-slate-900">{stats.total}</p>
-          <p className="mt-1 text-xs text-slate-500">All purchase records</p>
-        </div>
+        <div className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+          <BreadCrumb items={breadcrumbItems} />
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">Received Purchases</p>
-            <div className="rounded-lg bg-emerald-100 p-2.5 text-emerald-700">
-              <CheckCircle2 size={20} />
-            </div>
-          </div>
-          <p className="mt-4 text-2xl font-bold text-slate-900">{stats.received}</p>
-          <p className="mt-1 text-xs text-slate-500">Successfully received</p>
-        </div>
+          <div className="flex  items-center gap-2">
+            {statCards.map((card) => {
+              const Icon = card.icon
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">Pending Purchases</p>
-            <div className="rounded-lg bg-amber-100 p-2.5 text-amber-700">
-              <Clock size={20} />
-            </div>
-          </div>
-          <p className="mt-4 text-2xl font-bold text-slate-900">{stats.pending}</p>
-          <p className="mt-1 text-xs text-slate-500">Awaiting receipt</p>
-        </div>
+              return (
+                <div key={card.title} title={card.title} className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border ${card.border} px-3`}>
+                  <Icon size={15} className={card.color} />
 
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-slate-500">Purchase Value</p>
-            <div className="rounded-lg bg-blue-100 p-2.5 text-blue-700">
-              <IndianRupee size={20} />
-            </div>
-          </div>
-          <p className="mt-4 text-2xl font-bold text-slate-900">{formatCurrency(stats.amount)}</p>
-          <p className="mt-1 text-xs text-slate-500">Excluding cancelled purchases</p>
-        </div>
-      </div>
+                  <span className={`hidden text-xs font-medium lg:inline ${card.color}`}>{card.title}</span>
 
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="border-b border-slate-200 p-4 sm:p-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h2 className="text-base font-semibold text-slate-900">Purchase Records</h2>
-              <p className="mt-1 text-sm text-slate-500">Search and manage your purchase orders.</p>
-            </div>
+                  <span className="text-sm font-bold text-erp-text">{formatNumber(card.value)}</span>
+                </div>
+              )
+            })}
 
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <div className="relative sm:min-w-64">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value)
-                    resetPage()
-                  }}
-                  placeholder="Search purchase or supplier..."
-                  className="w-full rounded-lg border border-slate-300 py-2.5 pl-10 pr-3 text-sm outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/20"
-                />
-              </div>
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
 
-              <div className="relative">
-                <Filter size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                <select
-                  value={statusFilter}
-                  onChange={(event) => {
-                    setStatusFilter(event.target.value)
-                    resetPage()
-                  }}
-                  className="w-full appearance-none rounded-lg border border-slate-300 bg-white py-2.5 pl-9 pr-8 text-sm outline-none focus:border-erp-primary sm:min-w-36"
-                >
-                  <option value="All">All Statuses</option>
-                  <option value="Received">Received</option>
-                  <option value="Pending">Pending</option>
-                  <option value="Cancelled">Cancelled</option>
-                </select>
-              </div>
-
-              <select
-                value={paymentFilter}
-                onChange={(event) => {
-                  setPaymentFilter(event.target.value)
-                  resetPage()
-                }}
-                className="rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm outline-none focus:border-erp-primary sm:min-w-36"
+            {canExport && (
+              <button
+                type="button"
+                onClick={handleExport}
+                disabled={isExporting}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <option value="All">All Payments</option>
-                <option value="Paid">Paid</option>
-                <option value="Partial">Partial</option>
-                <option value="Unpaid">Unpaid</option>
-              </select>
+                {isExporting ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
+                {isExporting ? 'Exporting...' : 'Export'}
+              </button>
+            )}
+
+            {canCreate && (
+              <Link
+                to="/company/purchases/new"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+              >
+                <Plus size={15} />
+                Add Purchase
+              </Link>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {apiError && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+          <p>{apiError}</p>
+
+          <button type="button" onClick={handleRefresh} className="ml-auto shrink-0 font-semibold underline">
+            Retry
+          </button>
+        </div>
+      )}
+
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="flex flex-col gap-3 border-b border-erp-border p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 gap-2">
+            <div className="relative min-w-0 flex-1 lg:w-md">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setCurrentPage(1)
+                }}
+                placeholder="Search purchase number or supplier..."
+                aria-label="Search purchases"
+                className="h-9 w-full rounded-lg border border-erp-border bg-erp-surface pl-9 pr-3 text-xs text-erp-text outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
+              />
             </div>
+
+            {hasActiveFilters && (
+              <button type="button" onClick={resetFilters} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover">
+                <FilterX size={14} />
+                Clear
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(event) => {
+                setStatusFilter(event.target.value)
+                setCurrentPage(1)
+              }}
+              aria-label="Filter purchase status"
+              className="h-9 min-w-36 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs text-erp-text outline-none focus:border-erp-primary sm:text-sm"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Draft">Draft</option>
+              <option value="Ordered">Ordered</option>
+              <option value="Partially Received">Partially Received</option>
+              <option value="Received">Received</option>
+              <option value="Cancelled">Cancelled</option>
+            </select>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {loading && hasLoaded && (
+          <div className="flex items-center justify-center gap-2 border-b border-erp-border px-4 py-3 text-xs text-erp-muted">
+            <LoaderCircle size={15} className="animate-spin text-erp-primary" />
+            Updating purchase list...
+          </div>
+        )}
+
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[1050px] text-left">
             <thead className="bg-slate-50">
-              <tr className="border-b border-slate-200">
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Purchase</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Supplier</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Purchase Date</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Items</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Amount</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Payment</th>
-                <th className="px-5 py-3.5 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+              <tr className="border-b border-slate-100">
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Purchase</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Supplier</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Purchase Date</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Expected Delivery</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Amount</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Payment</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+                <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {paginatedPurchases.map((purchase) => (
-                <tr key={purchase.id} className="transition hover:bg-slate-50/70">
-                  <td className="px-5 py-4">
-                    <p className="text-sm font-semibold text-erp-primary">{purchase.id}</p>
-                    <p className="mt-1 text-xs text-slate-400">Due: {formatDate(purchase.dueDate)}</p>
-                  </td>
+              {purchases.map((purchase) => {
+                const purchaseId = String(purchase._id)
+                const isProcessing = processingId === purchaseId
 
-                  <td className="px-5 py-4">
-                    <p className="text-sm font-medium text-slate-800">{purchase.supplier}</p>
-                    <p className="mt-1 text-xs text-slate-500">{purchase.supplierId}</p>
-                  </td>
+                return (
+                  <tr key={purchase._id} className="transition hover:bg-slate-50/70">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
+                          <ShoppingCart size={17} />
+                        </div>
 
-                  <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-600">{formatDate(purchase.purchaseDate)}</td>
+                        <div className="min-w-0">
+                          <p className="max-w-44 truncate text-xs font-semibold text-erp-text sm:text-sm">{purchase.purchaseNumber || '—'}</p>
 
-                  <td className="px-5 py-4 text-sm text-slate-600">{purchase.items}</td>
-
-                  <td className="whitespace-nowrap px-5 py-4 text-sm font-semibold text-slate-900">{formatCurrency(purchase.amount)}</td>
-
-                  <td className="px-5 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${paymentClasses[purchase.paymentStatus]}`}>{purchase.paymentStatus}</span>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${statusClasses[purchase.status]}`}>{purchase.status}</span>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <button type="button" title="View purchase" onClick={() => navigate(`/company/purchases/${purchase.id}`)} className="rounded-lg p-2 text-slate-500 transition hover:bg-violet-50 hover:text-erp-primary">
-                        <Eye size={17} />
-                      </button>
-
-                      <button
-                        type="button"
-                        title="Edit purchase"
-                        disabled={purchase.status === 'Cancelled'}
-                        onClick={() => navigate(`/company/purchases/${purchase.id}/edit`)}
-                        className="rounded-lg p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-30"
-                      >
-                        <Pencil size={17} />
-                      </button>
-
-                      <button type="button" title="Delete purchase" onClick={() => setDeleteId(purchase.id)} className="rounded-lg p-2 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600">
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {paginatedPurchases.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-5 py-16 text-center">
-                    <div className="mx-auto flex max-w-sm flex-col items-center">
-                      <div className="rounded-full bg-slate-100 p-4 text-slate-400">
-                        <ShoppingCart size={26} />
+                          <p className="mt-0.5 text-[10px] text-erp-muted">{formatNumber(purchase.items?.length)} items</p>
+                        </div>
                       </div>
-                      <h3 className="mt-4 text-sm font-semibold text-slate-800">No purchases found</h3>
-                      <p className="mt-1 text-sm text-slate-500">Try changing your search or filters.</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSearch('')
-                          setStatusFilter('All')
-                          setPaymentFilter('All')
-                          resetPage()
-                        }}
-                        className="mt-3 text-sm font-semibold text-erp-primary hover:underline"
-                      >
-                        Clear filters
-                      </button>
-                    </div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="max-w-48">
+                        <p className="truncate text-xs font-medium text-erp-text">{purchase.supplierName || purchase.supplierId?.supplierName || '—'}</p>
+
+                        {purchase.supplierId?.supplierCode && <p className="mt-0.5 text-[10px] text-erp-muted">{purchase.supplierId.supplierCode}</p>}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-600">
+                        <CalendarDays size={13} className="shrink-0 text-slate-400" />
+                        {formatDate(purchase.purchaseDate)}
+                      </div>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className="whitespace-nowrap text-xs text-slate-600">{formatDate(purchase.expectedDeliveryDate)}</span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <p className="whitespace-nowrap text-xs font-bold text-erp-text">{formatCurrency(purchase.totalAmount)}</p>
+
+                      <p className="mt-0.5 text-[10px] text-erp-muted">Paid: {formatCurrency(purchase.paidAmount)}</p>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold ${paymentStyles[purchase.paymentStatus] || paymentStyles.Unpaid}`}>{purchase.paymentStatus || 'Unpaid'}</span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold ${getPurchaseStatusColor(purchase.status)}`}>{purchase.status || 'Draft'}</span>
+                    </td>
+
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">
+                        {canView && (
+                          <Link to={`/company/purchases/${purchaseId}`} title="View purchase" aria-label={`View ${purchase.purchaseNumber}`} className="rounded-lg p-2 text-slate-500 hover:bg-erp-primary-light hover:text-erp-primary">
+                            <Eye size={15} />
+                          </Link>
+                        )}
+
+                        {canUpdate && purchase.status === 'Draft' && (
+                          <Link to={`/company/purchases/${purchaseId}/edit`} title="Edit draft purchase" aria-label={`Edit ${purchase.purchaseNumber}`} className="rounded-lg p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600">
+                            <Pencil size={15} />
+                          </Link>
+                        )}
+
+                        {canApprove && purchase.status === 'Draft' && (
+                          <button
+                            type="button"
+                            title="Approve purchase"
+                            aria-label={`Approve ${purchase.purchaseNumber}`}
+                            disabled={Boolean(processingId)}
+                            onClick={() => openActionConfirmation(purchase, 'approve')}
+                            className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                          >
+                            {isProcessing ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
+                          </button>
+                        )}
+
+                        {canCancel && ['Draft', 'Ordered'].includes(purchase.status) && (
+                          <button
+                            type="button"
+                            title="Cancel purchase"
+                            aria-label={`Cancel ${purchase.purchaseNumber}`}
+                            disabled={Boolean(processingId)}
+                            onClick={() => openActionConfirmation(purchase, 'cancel')}
+                            className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            <XCircle size={15} />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+
+              {purchases.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-14 text-center">
+                    <ShoppingCart size={26} className="mx-auto text-slate-400" />
+
+                    <h3 className="mt-3 text-sm font-bold text-erp-text">No purchases found</h3>
+
+                    <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No purchases have been created yet.'}</p>
+
+                    {!hasActiveFilters && canCreate && (
+                      <Link to="/company/purchases/new" className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                        <Plus size={14} />
+                        Create First Purchase
+                      </Link>
+                    )}
                   </td>
                 </tr>
               )}
@@ -383,73 +623,248 @@ export default function CompanyPurchases() {
           </table>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <p className="text-sm text-slate-500">
-            Showing <span className="font-medium text-slate-700">{filteredPurchases.length === 0 ? 0 : (safePage - 1) * pageSize + 1}</span> to{' '}
-            <span className="font-medium text-slate-700">{Math.min(safePage * pageSize, filteredPurchases.length)}</span> of <span className="font-medium text-slate-700">{filteredPurchases.length}</span> purchases
-          </p>
+        <div className="divide-y divide-slate-100 md:hidden">
+          {purchases.map((purchase) => {
+            const purchaseId = String(purchase._id)
 
-          <div className="flex items-center gap-2">
+            return (
+              <article key={purchase._id} className="space-y-3 p-3">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
+                    <ShoppingCart size={19} />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <h3 className="break-words text-sm font-semibold text-erp-text">{purchase.purchaseNumber || 'Purchase'}</h3>
+
+                    <p className="mt-1 break-words text-xs text-erp-muted">{purchase.supplierName || purchase.supplierId?.supplierName || 'Unknown supplier'}</p>
+
+                    <p className="mt-1 text-xs text-slate-500">{formatDate(purchase.purchaseDate)}</p>
+                  </div>
+
+                  <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold ${getPurchaseStatusColor(purchase.status)}`}>{purchase.status || 'Draft'}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
+                  <div>
+                    <p className="text-[10px] text-slate-500">Total Amount</p>
+
+                    <p className="mt-1 text-sm font-bold text-erp-text">{formatCurrency(purchase.totalAmount)}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-slate-500">Paid Amount</p>
+
+                    <p className="mt-1 text-xs font-semibold text-slate-700">{formatCurrency(purchase.paidAmount)}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-slate-500">Expected Delivery</p>
+
+                    <p className="mt-1 text-xs font-medium text-slate-700">{formatDate(purchase.expectedDeliveryDate)}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-[10px] text-slate-500">Payment Status</p>
+
+                    <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${paymentStyles[purchase.paymentStatus] || paymentStyles.Unpaid}`}>{purchase.paymentStatus || 'Unpaid'}</span>
+                  </div>
+
+                  <div className="col-span-2 border-t border-slate-200 pt-2">
+                    <p className="text-[10px] text-slate-500">Items</p>
+
+                    <p className="mt-1 text-xs font-medium text-slate-700">{formatNumber(purchase.items?.length)} items</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2">
+                  {canView && (
+                    <Link to={`/company/purchases/${purchaseId}`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
+                      <Eye size={14} />
+                      View
+                    </Link>
+                  )}
+
+                  {canUpdate && purchase.status === 'Draft' && (
+                    <Link to={`/company/purchases/${purchaseId}/edit`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
+                      <Pencil size={14} />
+                      Edit
+                    </Link>
+                  )}
+
+                  {canApprove && purchase.status === 'Draft' && (
+                    <button
+                      type="button"
+                      onClick={() => openActionConfirmation(purchase, 'approve')}
+                      disabled={Boolean(processingId)}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                    >
+                      <CheckCircle2 size={14} />
+                      Approve
+                    </button>
+                  )}
+
+                  {canCancel && ['Draft', 'Ordered'].includes(purchase.status) && (
+                    <button
+                      type="button"
+                      onClick={() => openActionConfirmation(purchase, 'cancel')}
+                      disabled={Boolean(processingId)}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      <XCircle size={14} />
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              </article>
+            )
+          })}
+
+          {purchases.length === 0 && (
+            <div className="px-4 py-12 text-center">
+              <ShoppingCart size={26} className="mx-auto text-slate-400" />
+
+              <h3 className="mt-3 font-semibold text-erp-text">No purchases found</h3>
+
+              <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No purchases have been created yet.'}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-erp-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xs text-erp-text-secondary sm:text-sm">
+              Showing{' '}
+              <span className="font-semibold text-erp-text">
+                {pagination.total === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + purchases.length, pagination.total)}
+              </span>{' '}
+              of <span className="font-semibold text-erp-text">{formatNumber(pagination.total)}</span> purchases
+            </p>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="purchase-page-size" className="whitespace-nowrap text-xs text-erp-text-secondary">
+                Rows:
+              </label>
+
+              <select
+                id="purchase-page-size"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value))
+                  setCurrentPage(1)
+                }}
+                disabled={loading}
+                className="h-8 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs text-erp-text-secondary outline-none focus:border-erp-primary disabled:opacity-50"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              disabled={safePage === 1}
-              onClick={() => setCurrentPage(safePage - 1)}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage <= 1 || loading}
+              onClick={() => setCurrentPage(1)}
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronLeft size={16} />
-              Previous
+              First
             </button>
 
-            <span className="rounded-lg bg-erp-primary-light px-3.5 py-2 text-sm font-semibold text-erp-primary">
-              {safePage} / {totalPages}
+            <button
+              type="button"
+              disabled={safePage <= 1 || loading}
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              aria-label="Previous page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <span className="min-w-20 px-1 text-center text-xs text-erp-text-secondary sm:text-sm">
+              Page {safePage} of {totalPages}
             </span>
 
             <button
               type="button"
-              disabled={safePage === totalPages}
-              onClick={() => setCurrentPage(safePage + 1)}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage >= totalPages || loading}
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              aria-label="Next page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Next
               <ChevronRight size={16} />
+            </button>
+
+            <button
+              type="button"
+              disabled={safePage >= totalPages || loading}
+              onClick={() => setCurrentPage(totalPages)}
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Last
             </button>
           </div>
         </div>
-      </div>
+      </section>
 
-      {deleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div role="dialog" aria-modal="true" aria-labelledby="delete-purchase-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-full bg-rose-100 p-3 text-rose-600">
-                  <Trash2 size={22} />
-                </div>
-                <div>
-                  <h3 id="delete-purchase-title" className="text-lg font-semibold text-slate-900">
-                    Delete Purchase?
-                  </h3>
-                  <p className="mt-1 text-sm text-slate-500">Purchase ID: {deleteId}</p>
-                </div>
+      {actionTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !processingId) {
+              setActionTarget(null)
+              setActionType('')
+            }
+          }}
+        >
+          <section role="dialog" aria-modal="true" aria-labelledby="purchase-action-title" className="w-full max-w-md rounded-xl border border-erp-border bg-erp-surface p-5 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${actionType === 'approve' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                {actionType === 'approve' ? <CheckCircle2 size={21} /> : <XCircle size={21} />}
               </div>
 
-              <button type="button" aria-label="Close dialog" onClick={() => setDeleteId(null)} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-                <X size={19} />
-              </button>
+              <div className="min-w-0 flex-1">
+                <h2 id="purchase-action-title" className="text-base font-bold text-erp-text">
+                  {actionType === 'approve' ? 'Approve Purchase?' : 'Cancel Purchase?'}
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-erp-text-secondary">
+                  {actionType === 'approve'
+                    ? `Approve ${actionTarget.purchaseNumber}? Its status will change from Draft to Ordered. Inventory will not be updated by this action.`
+                    : `Cancel ${actionTarget.purchaseNumber}? This action is only available for Draft or Ordered purchases.`}
+                </p>
+              </div>
             </div>
 
-            <p className="mt-5 text-sm leading-6 text-slate-600">Are you sure you want to delete this purchase record? This action only affects the current sample data on this page.</p>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button type="button" onClick={() => setDeleteId(null)} className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-                Cancel
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={Boolean(processingId)}
+                onClick={() => {
+                  setActionTarget(null)
+                  setActionType('')
+                }}
+                className="h-9 rounded-lg border border-erp-border px-4 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-50"
+              >
+                Keep Purchase
               </button>
 
-              <button type="button" onClick={handleDelete} className="rounded-lg bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700">
-                Delete Purchase
+              <button
+                type="button"
+                disabled={Boolean(processingId)}
+                onClick={confirmPurchaseAction}
+                className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-xs font-semibold text-white disabled:opacity-60 ${actionType === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+              >
+                {processingId && <LoaderCircle size={14} className="animate-spin" />}
+
+                {actionType === 'approve' ? 'Approve Purchase' : 'Cancel Purchase'}
               </button>
             </div>
-          </div>
+          </section>
         </div>
       )}
     </div>

@@ -35,6 +35,12 @@ import ProductsDetails from './components/company/ProductsDetails'
 import InventoryStockForm from './components/company/InventoryStockForm'
 import InventoryHistory from './components/company/InventoryHistory'
 import StockTransfer from './components/company/StockTransfer'
+import CompanySuppliers from './components/company/CompanySuppliers'
+import SupplierForm from './components/company/SupplierForm'
+import SupplierDetails from './components/company/SupplierDetails'
+import CompanyPurchases from './components/company/CompanyPurchases'
+import PurchaseForm from './components/company/PurchaseForm'
+import PurchaseDetails from './components/company/PurchaseDetails'
 
 export default function App() {
   return (
@@ -95,6 +101,18 @@ export default function App() {
           <Route path="warehouses/new" element={<WarehouseForm />} />
           <Route path="warehouses/:id" element={<WarehouseDetails />} />
           <Route path="warehouses/:id/edit" element={<WarehouseForm />} />
+
+          {/* Suppliers */}
+          <Route path="suppliers" element={<CompanySuppliers />} />
+          <Route path="suppliers/new" element={<SupplierForm />} />
+          <Route path="suppliers/:id" element={<SupplierDetails />} />
+          <Route path="suppliers/:id/edit" element={<SupplierForm />} />
+
+          {/* Purchases */}
+          <Route path="purchases" element={<CompanyPurchases />} />
+          <Route path="purchases/new" element={<PurchaseForm />} />
+          <Route path="purchases/:id" element={<PurchaseDetails />} />
+          <Route path="purchases/:id/edit" element={<PurchaseForm />} />
         </Route>
       </Route>
 

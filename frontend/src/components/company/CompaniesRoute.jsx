@@ -80,17 +80,18 @@ const navigationItems = [
     icon: Truck,
     actions: ['supplier:list'],
   },
-  {
-    label: 'Customers',
-    path: '/company/customers',
-    icon: ContactRound,
-    actions: ['customer:list'],
-  },
+
   {
     label: 'Purchase',
     path: '/company/purchases',
     icon: ShoppingCart,
     actions: ['purchase:list'],
+  },
+  {
+    label: 'Customers',
+    path: '/company/customers',
+    icon: ContactRound,
+    actions: ['customer:list'],
   },
   {
     label: 'Sales & Orders',

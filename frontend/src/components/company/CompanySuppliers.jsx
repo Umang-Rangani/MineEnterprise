@@ -1,304 +1,488 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Truck, Users, CheckCircle2, XCircle, Eye, Pencil, Trash2, Mail, Phone, MapPin, Filter } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Plus, Search, Eye, Pencil, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, RefreshCw, FilterX, AlertCircle, Power, LoaderCircle, Truck, MapPin, Phone, Mail } from 'lucide-react'
 
-const initialSuppliers = [
-  {
-    id: 'SUP-001',
-    name: 'Shree Ganesh Traders',
-    company: 'Shree Ganesh Traders',
-    email: 'ganesh@example.com',
-    phone: '+91 98765 43210',
-    city: 'Ahmedabad',
-    gstin: '24ABCDE1234F1Z5',
-    status: 'Active',
-    outstanding: 18500,
-  },
-  {
-    id: 'SUP-002',
-    name: 'Patel Industrial Supplies',
-    company: 'Patel Industrial Supplies',
-    email: 'patel@example.com',
-    phone: '+91 98765 12345',
-    city: 'Surat',
-    gstin: '24FGHIJ5678K1Z2',
-    status: 'Active',
-    outstanding: 32000,
-  },
-  {
-    id: 'SUP-003',
-    name: 'National Packaging Co.',
-    company: 'National Packaging Co.',
-    email: 'sales@example.com',
-    phone: '+91 98765 67890',
-    city: 'Vadodara',
-    gstin: '24LMNOP9012Q1Z3',
-    status: 'Inactive',
-    outstanding: 0,
-  },
-  {
-    id: 'SUP-004',
-    name: 'Reliable Raw Materials',
-    company: 'Reliable Raw Materials',
-    email: 'info@example.com',
-    phone: '+91 99887 76655',
-    city: 'Rajkot',
-    gstin: '24RSTUV3456W1Z4',
-    status: 'Active',
-    outstanding: 12500,
-  },
-  {
-    id: 'SUP-005',
-    name: 'Om Enterprise',
-    company: 'Om Enterprise',
-    email: 'contact@example.com',
-    phone: '+91 98989 89898',
-    city: 'Gandhinagar',
-    gstin: '24XYZAB7890C1Z6',
-    status: 'Inactive',
-    outstanding: 7500,
-  },
-]
-
-const formatCurrency = (amount) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
-    maximumFractionDigits: 0,
-  }).format(amount)
+import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import TrashBox from '../../TrashBox/TrashBox'
+import Toast from '../../Toast/Toast'
+import { hasPermission, useAuth } from '../../context/AuthContext'
+import Loading from '../Loading/Loading'
 
 const statusStyles = {
-  Active: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-  Inactive: 'bg-slate-100 text-slate-600 ring-slate-500/20',
+  Active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Inactive: 'border-rose-200 bg-rose-50 text-rose-700',
+}
+
+const formatNumber = (value) => new Intl.NumberFormat('en-IN').format(Number(value) || 0)
+
+function getSupplierArray(response) {
+  const data = response?.data
+
+  if (Array.isArray(data?.suppliers)) return data.suppliers
+  if (Array.isArray(data?.data?.suppliers)) return data.data.suppliers
+  if (Array.isArray(data?.data)) return data.data
+
+  return []
 }
 
 export default function CompanySuppliers() {
-  const navigate = useNavigate()
+  const { permissions } = useAuth()
 
-  const [suppliers, setSuppliers] = useState(initialSuppliers)
+  const canCreate = hasPermission(permissions, 'supplier:create')
+  const canView = hasPermission(permissions, 'supplier:view')
+  const canUpdate = hasPermission(permissions, 'supplier:update')
+  const canUpdateStatus = hasPermission(permissions, 'supplier:update-status')
+
+  const [suppliers, setSuppliers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [apiError, setApiError] = useState('')
+
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
-  const [deleteTarget, setDeleteTarget] = useState(null)
+
+  const [pageSize, setPageSize] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const pageSize = 5
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 10,
+    total: 0,
+    totalPages: 1,
+  })
 
-  const stats = useMemo(
-    () => ({
-      total: suppliers.length,
-      active: suppliers.filter((supplier) => supplier.status === 'Active').length,
-      inactive: suppliers.filter((supplier) => supplier.status === 'Inactive').length,
-      outstanding: suppliers.reduce((total, supplier) => total + supplier.outstanding, 0),
-    }),
-    [suppliers],
-  )
+  const [statusTarget, setStatusTarget] = useState(null)
+  const [processingId, setProcessingId] = useState('')
+  const [toast, setToast] = useState(null)
 
-  const filteredSuppliers = useMemo(() => {
-    const query = search.trim().toLowerCase()
+  const breadcrumbItems = [{ title: 'Suppliers', link: null }]
 
-    return suppliers.filter((supplier) => {
-      const matchesSearch = !query || [supplier.id, supplier.name, supplier.company, supplier.email, supplier.phone, supplier.city, supplier.gstin].some((value) => value.toLowerCase().includes(query))
-
-      const matchesStatus = statusFilter === 'All' || supplier.status === statusFilter
-
-      return matchesSearch && matchesStatus
+  const showToast = (type, message) => {
+    setToast({
+      id: Date.now(),
+      type,
+      message,
+      duration: 3000,
     })
-  }, [suppliers, search, statusFilter])
+  }
 
-  const totalPages = Math.max(1, Math.ceil(filteredSuppliers.length / pageSize))
+  useEffect(() => {
+    document.title = 'Suppliers | MineERP'
+  }, [])
 
+  // Debounce search input.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim())
+    }, 350)
+
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  // Fetch suppliers with server-side search, filters and pagination.
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchSuppliers() {
+      if (!hasLoaded) {
+        setLoading(true)
+      }
+
+      setApiError('')
+
+      try {
+        const response = await axiosInstance.get('/erp/suppliers', {
+          params: {
+            page: currentPage,
+            limit: pageSize,
+            search: debouncedSearch || undefined,
+
+            // The backend accepts only Active or Inactive.
+            status: statusFilter === 'All' ? undefined : statusFilter,
+          },
+        })
+
+        const data = response.data
+
+        if (data?.success === false) {
+          throw new Error(data.message || 'Unable to load suppliers.')
+        }
+
+        if (cancelled) return
+
+        const list = getSupplierArray(response)
+        setSuppliers(list)
+
+        const serverPagination = data?.pagination
+
+        if (serverPagination) {
+          setPagination({
+            page: Number(serverPagination.page) || currentPage,
+            limit: Number(serverPagination.limit) || pageSize,
+            total: Number(serverPagination.total) || 0,
+            totalPages: Math.max(1, Number(serverPagination.totalPages) || 1),
+          })
+        } else {
+          setPagination({
+            page: currentPage,
+            limit: pageSize,
+            total: list.length,
+            totalPages: 1,
+          })
+        }
+
+        setHasLoaded(true)
+      } catch (error) {
+        if (cancelled) return
+
+        setApiError(error.response?.data?.message || error.message || 'Unable to load suppliers.')
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    fetchSuppliers()
+
+    return () => {
+      cancelled = true
+    }
+  }, [currentPage, pageSize, debouncedSearch, statusFilter, refreshKey])
+
+  // Keep the current page within the available page range.
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(Math.max(1, pagination.totalPages))
+    }
+  }, [currentPage, pagination.totalPages])
+
+  const totalPages = Math.max(1, pagination.totalPages)
   const safePage = Math.min(currentPage, totalPages)
+  const startIndex = (safePage - 1) * pageSize
 
-  const paginatedSuppliers = filteredSuppliers.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const activeOnPage = suppliers.filter((supplier) => supplier.status === 'Active').length
 
-  const handleSearch = (value) => {
-    setSearch(value)
+  const inactiveOnPage = suppliers.filter((supplier) => supplier.status === 'Inactive').length
+
+  const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All'
+
+  const resetFilters = () => {
+    setSearch('')
+    setDebouncedSearch('')
+    setStatusFilter('All')
     setCurrentPage(1)
   }
 
-  const handleStatusChange = (value) => {
-    setStatusFilter(value)
-    setCurrentPage(1)
+  const handleRefresh = () => {
+    if (refreshing || loading) return
+
+    setRefreshing(true)
+    setLoading(true)
+    setRefreshKey((previous) => previous + 1)
   }
 
-  const handleDelete = () => {
-    if (!deleteTarget) return
+  const confirmToggleStatus = async () => {
+    if (!statusTarget || processingId || !canUpdateStatus) return
 
-    setSuppliers((previous) => previous.filter((supplier) => supplier.id !== deleteTarget.id))
+    const supplier = statusTarget
+    const nextStatus = supplier.status === 'Active' ? 'Inactive' : 'Active'
 
-    setDeleteTarget(null)
+    setProcessingId(String(supplier._id))
+
+    try {
+      const { data } = await axiosInstance.patch(`/erp/suppliers/${encodeURIComponent(supplier._id)}/status`, { status: nextStatus })
+
+      if (data?.success === false) {
+        throw new Error(data.message || 'Unable to update supplier status.')
+      }
+
+      setStatusTarget(null)
+
+      showToast('success', data?.message || `${supplier.supplierName} marked ${nextStatus}.`)
+
+      setRefreshKey((previous) => previous + 1)
+    } catch (error) {
+      showToast('error', error.response?.data?.message || error.message || 'Unable to update supplier status.')
+    } finally {
+      setProcessingId('')
+    }
+  }
+
+  const statCards = [
+    {
+      title: 'Total Suppliers',
+      value: pagination.total,
+      icon: Truck,
+      color: 'text-violet-700',
+      border: 'border-violet-200',
+    },
+    {
+      title: 'Active on Page',
+      value: activeOnPage,
+      icon: CheckCircle2,
+      color: 'text-emerald-700',
+      border: 'border-emerald-200',
+    },
+    {
+      title: 'Inactive on Page',
+      value: inactiveOnPage,
+      icon: XCircle,
+      color: 'text-rose-700',
+      border: 'border-rose-200',
+    },
+  ]
+
+  if (loading) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={breadcrumbItems} />
+          </div>
+        </section>
+
+        <section className="min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading suppliers" description="Please wait while we load your company's supplier records." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
-      {/* Page heading */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Truck size={16} />
-            <span>Business Management</span>
-            <span>/</span>
-            <span className="text-erp-primary">Suppliers</span>
+    <div className="min-w-0 space-y-4 pb-8 text-sm">
+      {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
+
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
+
+        <div className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+          <BreadCrumb items={breadcrumbItems} />
+
+          <div className="flex  items-center gap-2">
+            {statCards.map((card) => {
+              const Icon = card.icon
+
+              return (
+                <div key={card.title} title={card.title} className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border ${card.border} px-3`}>
+                  <Icon size={15} className={card.color} />
+                  <span className={`hidden text-xs font-medium lg:inline ${card.color}`}>{card.title}</span>
+                  <span className="text-sm font-bold text-erp-text">{formatNumber(card.value)}</span>
+                </div>
+              )
+            })}
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+
+            {canCreate && (
+              <Link
+                to="/company/suppliers/new"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+              >
+                <Plus size={15} />
+                Add Supplier
+              </Link>
+            )}
           </div>
-
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">Suppliers Management</h1>
-
-          <p className="mt-1 text-sm text-slate-500">Manage your suppliers and keep their contact information organized.</p>
         </div>
+      </section>
 
-        <button
-          type="button"
-          onClick={() => navigate('/company/suppliers/new')}
-          className="inline-flex items-center justify-center gap-2 rounded-xl bg-erp-primary px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-erp-primary-hover"
-        >
-          <Plus size={18} />
-          Add Supplier
-        </button>
-      </div>
+      {apiError && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+          <AlertCircle size={15} className="mt-0.5 shrink-0" />
+          <p>{apiError}</p>
 
-      {/* Statistics */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Total Suppliers" value={stats.total} icon={Truck} iconClass="bg-violet-50 text-violet-600" description="All registered suppliers" />
+          <button type="button" onClick={handleRefresh} className="ml-auto shrink-0 font-semibold underline">
+            Retry
+          </button>
+        </div>
+      )}
 
-        <StatCard title="Active Suppliers" value={stats.active} icon={CheckCircle2} iconClass="bg-emerald-50 text-emerald-600" description="Currently active" />
-
-        <StatCard title="Inactive Suppliers" value={stats.inactive} icon={XCircle} iconClass="bg-slate-100 text-slate-600" description="Currently inactive" />
-
-        <StatCard title="Total Outstanding" value={formatCurrency(stats.outstanding)} icon={Users} iconClass="bg-amber-50 text-amber-600" description="Sample outstanding balance" compact />
-      </div>
-
-      {/* Suppliers table */}
-      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:p-5 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">All Suppliers</h2>
-            <p className="mt-1 text-sm text-slate-500">
-              {filteredSuppliers.length} supplier
-              {filteredSuppliers.length === 1 ? '' : 's'} found
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative sm:w-72">
-              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="flex flex-col gap-3 border-b border-erp-border p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex min-w-0 gap-2">
+            <div className="relative min-w-0 flex-1 lg:w-md">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
               <input
                 type="search"
                 value={search}
-                onChange={(event) => handleSearch(event.target.value)}
-                placeholder="Search suppliers..."
-                className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-erp-primary focus:ring-4 focus:ring-erp-primary/10"
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setCurrentPage(1)
+                }}
+                placeholder="Search name, code, contact, email or phone..."
+                aria-label="Search suppliers"
+                className="h-9 w-full rounded-lg border border-erp-border bg-erp-surface pl-9 pr-3 text-xs text-erp-text outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 sm:text-sm"
               />
             </div>
 
-            <div className="relative sm:w-44">
-              <Filter size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            {hasActiveFilters && (
+              <button type="button" onClick={resetFilters} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover">
+                <FilterX size={14} />
+                Clear
+              </button>
+            )}
+          </div>
 
-              <select
-                value={statusFilter}
-                onChange={(event) => handleStatusChange(event.target.value)}
-                className="w-full appearance-none rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm outline-none focus:border-erp-primary focus:ring-4 focus:ring-erp-primary/10"
-              >
-                <option value="All">All statuses</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={statusFilter}
+              onChange={(event) => {
+                setStatusFilter(event.target.value)
+                setCurrentPage(1)
+              }}
+              aria-label="Filter supplier status"
+              className="h-9 min-w-32 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs text-erp-text outline-none focus:border-erp-primary sm:text-sm"
+            >
+              <option value="All">All Statuses</option>
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {loading && hasLoaded && (
+          <div className="flex items-center justify-center gap-2 border-b border-erp-border px-4 py-3 text-xs text-erp-muted">
+            <LoaderCircle size={15} className="animate-spin text-erp-primary" />
+            Updating supplier list...
+          </div>
+        )}
+
+        {/* Desktop table */}
+        <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[950px] text-left">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-100">
-                <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Supplier</th>
-                <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Contact Information</th>
-                <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">City</th>
-                <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Outstanding</th>
-                <th className="px-5 py-4 text-xs font-semibold uppercase tracking-wider text-slate-500">Status</th>
-                <th className="px-5 py-4 text-right text-xs font-semibold uppercase tracking-wider text-slate-500">Actions</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Supplier</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Contact</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Location</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Opening Balance</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+                <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {paginatedSuppliers.map((supplier) => (
-                <tr key={supplier.id} className="transition hover:bg-slate-50/70">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light font-bold text-erp-primary">{supplier.name.charAt(0).toUpperCase()}</div>
+              {suppliers.map((supplier) => (
+                <tr key={supplier._id} className="transition hover:bg-slate-50/70">
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
+                        <Truck size={17} />
+                      </div>
 
-                      <div>
-                        <p className="font-semibold text-slate-800">{supplier.name}</p>
-                        <p className="mt-1 text-xs text-slate-500">{supplier.id}</p>
+                      <div className="min-w-0">
+                        <p className="max-w-52 truncate text-xs font-semibold text-erp-text sm:text-sm">{supplier.supplierName}</p>
+                        <p className="mt-0.5 text-[10px] text-erp-muted">Code: {supplier.supplierCode || '—'}</p>
+                        {supplier.gstNumber && <p className="mt-0.5 text-[10px] text-slate-500">GST: {supplier.gstNumber}</p>}
                       </div>
                     </div>
                   </td>
 
-                  <td className="px-5 py-4">
+                  <td className="px-4 py-3">
                     <div className="space-y-1.5">
-                      <p className="flex items-center gap-2 text-sm text-slate-700">
-                        <Mail size={14} className="shrink-0 text-slate-400" />
-                        {supplier.email}
-                      </p>
-                      <p className="flex items-center gap-2 text-xs text-slate-500">
-                        <Phone size={14} className="shrink-0 text-slate-400" />
-                        {supplier.phone}
-                      </p>
+                      <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                        <Users size={14} className="shrink-0 text-slate-400" />
+                        <span className="max-w-44 truncate">{supplier.contactPerson || 'No contact person'}</span>
+                      </div>
+
+                      {supplier.phone && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <Phone size={13} className="shrink-0 text-slate-400" />
+                          <span>{supplier.phone}</span>
+                        </div>
+                      )}
+
+                      {supplier.email && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <Mail size={13} className="shrink-0 text-slate-400" />
+                          <span className="max-w-48 truncate">{supplier.email}</span>
+                        </div>
+                      )}
                     </div>
                   </td>
 
-                  <td className="px-5 py-4">
-                    <p className="flex items-center gap-2 text-sm text-slate-700">
-                      <MapPin size={15} className="text-slate-400" />
-                      {supplier.city}
-                    </p>
+                  <td className="px-4 py-3">
+                    <div className="flex max-w-48 items-start gap-1.5 text-xs text-slate-600">
+                      <MapPin size={14} className="mt-0.5 shrink-0 text-slate-400" />
+                      <span>{[supplier.city, supplier.state, supplier.country].filter(Boolean).join(', ') || supplier.address || '—'}</span>
+                    </div>
                   </td>
 
-                  <td className="px-5 py-4">
-                    <span className="text-sm font-semibold tabular-nums text-slate-800">{formatCurrency(supplier.outstanding)}</span>
+                  <td className="px-4 py-3">
+                    <span className="text-xs font-semibold text-erp-text">₹{formatNumber(supplier.openingBalance)}</span>
                   </td>
 
-                  <td className="px-5 py-4">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyles[supplier.status]}`}>{supplier.status}</span>
+                  <td className="px-4 py-3">
+                    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold ${statusStyles[supplier.status] || statusStyles.Inactive}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${supplier.status === 'Active' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                      {supplier.status || 'Inactive'}
+                    </span>
                   </td>
 
-                  <td className="px-5 py-4">
+                  <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <ActionButton label="View supplier" onClick={() => navigate(`/company/suppliers/${supplier.id}`)}>
-                        <Eye size={17} />
-                      </ActionButton>
+                      {canView && (
+                        <Link to={`/company/suppliers/${supplier._id}`} title="View supplier" aria-label={`View ${supplier.supplierName}`} className="rounded-lg p-2 text-slate-500 hover:bg-erp-primary-light hover:text-erp-primary">
+                          <Eye size={15} />
+                        </Link>
+                      )}
 
-                      <ActionButton label="Edit supplier" onClick={() => navigate(`/company/suppliers/${supplier.id}/edit`)}>
-                        <Pencil size={17} />
-                      </ActionButton>
+                      {canUpdate && (
+                        <Link to={`/company/suppliers/${supplier._id}/edit`} title="Edit supplier" aria-label={`Edit ${supplier.supplierName}`} className="rounded-lg p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600">
+                          <Pencil size={15} />
+                        </Link>
+                      )}
 
-                      <ActionButton label="Delete supplier" danger onClick={() => setDeleteTarget(supplier)}>
-                        <Trash2 size={17} />
-                      </ActionButton>
+                      {canUpdateStatus && (
+                        <button
+                          type="button"
+                          onClick={() => setStatusTarget(supplier)}
+                          title={supplier.status === 'Active' ? 'Deactivate supplier' : 'Activate supplier'}
+                          aria-label={`Change status for ${supplier.supplierName}`}
+                          disabled={Boolean(processingId)}
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg border disabled:opacity-50 ${
+                            supplier.status === 'Active' ? 'border-orange-200 bg-orange-50 text-orange-600 hover:bg-orange-100' : 'border-emerald-200 bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                          }`}
+                        >
+                          <Power size={15} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
               ))}
 
-              {paginatedSuppliers.length === 0 && (
+              {suppliers.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-16 text-center">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                      <Search size={22} />
-                    </div>
-                    <p className="mt-3 font-semibold text-slate-800">No suppliers found</p>
-                    <p className="mt-1 text-sm text-slate-500">Try another search term or change the status filter.</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearch('')
-                        setStatusFilter('All')
-                        setCurrentPage(1)
-                      }}
-                      className="mt-3 text-sm font-semibold text-erp-primary hover:underline"
-                    >
-                      Clear filters
-                    </button>
+                  <td colSpan={6} className="px-4 py-14 text-center">
+                    <Truck size={25} className="mx-auto text-slate-400" />
+                    <h3 className="mt-3 text-sm font-bold text-erp-text">No suppliers found</h3>
+                    <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No suppliers have been created yet.'}</p>
+                    {!hasActiveFilters && canCreate && (
+                      <Link to="/company/suppliers/new" className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-erp-primary px-3 py-2 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                        <Plus size={14} />
+                        Add your first supplier
+                      </Link>
+                    )}
                   </td>
                 </tr>
               )}
@@ -306,100 +490,208 @@ export default function CompanySuppliers() {
           </table>
         </div>
 
-        {/* Pagination */}
-        <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <p className="text-sm text-slate-500">
-            Showing {filteredSuppliers.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to {Math.min(safePage * pageSize, filteredSuppliers.length)} of {filteredSuppliers.length} suppliers
-          </p>
+        {/* Mobile cards */}
+        <div className="divide-y divide-slate-100 md:hidden">
+          {suppliers.map((supplier) => (
+            <article key={supplier._id} className="space-y-3 p-3">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
+                  <Truck size={19} />
+                </div>
 
-          <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <h3 className="break-words text-sm font-semibold text-erp-text">{supplier.supplierName}</h3>
+                  <p className="mt-1 break-words text-xs text-erp-muted">Code: {supplier.supplierCode || '—'}</p>
+                  {supplier.gstNumber && <p className="mt-1 break-words text-xs text-slate-500">GST: {supplier.gstNumber}</p>}
+                </div>
+
+                <span className={`shrink-0 rounded-full border px-2 py-1 text-[10px] font-semibold ${statusStyles[supplier.status] || statusStyles.Inactive}`}>{supplier.status || 'Inactive'}</span>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 rounded-lg bg-slate-50 p-3">
+                <div>
+                  <p className="text-[10px] text-slate-500">Contact Person</p>
+                  <p className="mt-1 flex items-center gap-1.5 break-words text-xs font-medium text-slate-700">
+                    <Users size={13} className="shrink-0" />
+                    {supplier.contactPerson || 'Not provided'}
+                  </p>
+                </div>
+
+                {supplier.phone && (
+                  <div>
+                    <p className="text-[10px] text-slate-500">Phone</p>
+                    <p className="mt-1 flex items-center gap-1.5 break-all text-xs text-slate-700">
+                      <Phone size={13} className="shrink-0" />
+                      {supplier.phone}
+                    </p>
+                  </div>
+                )}
+
+                {supplier.email && (
+                  <div>
+                    <p className="text-[10px] text-slate-500">Email</p>
+                    <p className="mt-1 flex items-center gap-1.5 break-all text-xs text-slate-700">
+                      <Mail size={13} className="shrink-0" />
+                      {supplier.email}
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-[10px] text-slate-500">Location</p>
+                  <p className="mt-1 flex items-start gap-1.5 break-words text-xs text-slate-700">
+                    <MapPin size={13} className="mt-0.5 shrink-0" />
+                    {[supplier.city, supplier.state, supplier.country].filter(Boolean).join(', ') || supplier.address || 'Not provided'}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-[10px] text-slate-500">Opening Balance</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-800">₹{formatNumber(supplier.openingBalance)}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2">
+                {canView && (
+                  <Link to={`/company/suppliers/${supplier._id}`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
+                    <Eye size={14} />
+                    View
+                  </Link>
+                )}
+
+                {canUpdate && (
+                  <Link to={`/company/suppliers/${supplier._id}/edit`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
+                    <Pencil size={14} />
+                    Edit
+                  </Link>
+                )}
+
+                {canUpdateStatus && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusTarget(supplier)}
+                    disabled={Boolean(processingId)}
+                    className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover disabled:opacity-50"
+                  >
+                    <Power size={14} />
+                    {supplier.status === 'Active' ? 'Deactivate' : 'Activate'}
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+
+          {suppliers.length === 0 && (
+            <div className="px-4 py-12 text-center">
+              <Truck size={25} className="mx-auto text-slate-400" />
+              <h3 className="mt-3 font-semibold text-erp-text">No suppliers found</h3>
+              <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No suppliers have been created yet.'}</p>
+              {!hasActiveFilters && canCreate && (
+                <Link to="/company/suppliers/new" className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-erp-primary px-3 py-2 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                  <Plus size={14} />
+                  Add Supplier
+                </Link>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Pagination */}
+        <div className="flex flex-col gap-3 border-t border-erp-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xs text-erp-text-secondary sm:text-sm">
+              Showing{' '}
+              <span className="font-semibold text-erp-text">
+                {pagination.total === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + suppliers.length, pagination.total)}
+              </span>{' '}
+              of <span className="font-semibold text-erp-text">{formatNumber(pagination.total)}</span> suppliers
+            </p>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="supplier-page-size" className="whitespace-nowrap text-xs text-erp-text-secondary">
+                Rows:
+              </label>
+
+              <select
+                id="supplier-page-size"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value))
+                  setCurrentPage(1)
+                }}
+                disabled={loading}
+                className="h-8 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs text-erp-text-secondary outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-ring disabled:opacity-50"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              disabled={safePage === 1}
-              onClick={() => setCurrentPage(safePage - 1)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage <= 1 || loading}
+              onClick={() => setCurrentPage(1)}
+              aria-label="First page"
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Previous
+              First
             </button>
 
-            <span className="rounded-lg bg-erp-primary-light px-3.5 py-2 text-sm font-semibold text-erp-primary">
-              {safePage} / {totalPages}
+            <button
+              type="button"
+              disabled={safePage <= 1 || loading}
+              onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+              aria-label="Previous page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <span className="min-w-20 px-1 text-center text-xs text-erp-text-secondary sm:text-sm">
+              Page {safePage} of {totalPages}
             </span>
 
             <button
               type="button"
-              disabled={safePage === totalPages}
-              onClick={() => setCurrentPage(safePage + 1)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage >= totalPages || loading}
+              onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+              aria-label="Next page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Next
+              <ChevronRight size={16} />
+            </button>
+
+            <button
+              type="button"
+              disabled={safePage >= totalPages || loading}
+              onClick={() => setCurrentPage(totalPages)}
+              aria-label="Last page"
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Last
             </button>
           </div>
         </div>
       </section>
 
-      {/* Delete confirmation */}
-      {deleteTarget && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/40 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setDeleteTarget(null)
-            }
-          }}
-        >
-          <div role="dialog" aria-modal="true" aria-labelledby="delete-supplier-title" className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-50 text-red-600">
-              <Trash2 size={22} />
-            </div>
-
-            <h2 id="delete-supplier-title" className="mt-4 text-lg font-bold text-slate-900">
-              Delete supplier?
-            </h2>
-
-            <p className="mt-2 text-sm leading-6 text-slate-600">
-              Are you sure you want to delete <span className="font-semibold text-slate-800">{deleteTarget.name}</span>? This removes the supplier from the current sample list.
-            </p>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button type="button" onClick={() => setDeleteTarget(null)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                Cancel
-              </button>
-
-              <button type="button" onClick={handleDelete} className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700">
-                Delete Supplier
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Activate / Deactivate confirmation */}
+      <TrashBox
+        isOpen={Boolean(statusTarget)}
+        onClose={() => {
+          if (!processingId) setStatusTarget(null)
+        }}
+        title={statusTarget?.status === 'Inactive' ? 'Activate Supplier?' : 'Deactivate Supplier?'}
+        message={statusTarget?.status === 'Inactive' ? `Are you sure you want to activate "${statusTarget?.supplierName}"?` : `Are you sure you want to deactivate "${statusTarget?.supplierName}"?`}
+        actionButtonText={statusTarget?.status === 'Inactive' ? 'Activate Supplier' : 'Deactivate Supplier'}
+        cancelButtonText="Cancel"
+        onAction={confirmToggleStatus}
+        isProcessing={Boolean(processingId)}
+        variant={statusTarget?.status === 'Inactive' ? 'activate' : 'deactivate'}
+      />
     </div>
-  )
-}
-
-function StatCard({ title, value, icon: Icon, iconClass, description, compact = false }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-slate-500">{title}</p>
-          <p className={`mt-3 font-bold tracking-tight text-slate-900 ${compact ? 'text-xl' : 'text-2xl'}`}>{value}</p>
-        </div>
-
-        <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${iconClass}`}>
-          <Icon size={21} />
-        </div>
-      </div>
-
-      <p className="mt-3 text-xs text-slate-500">{description}</p>
-    </div>
-  )
-}
-
-function ActionButton({ children, label, onClick, danger = false }) {
-  return (
-    <button type="button" title={label} aria-label={label} onClick={onClick} className={`rounded-lg p-2 transition ${danger ? 'text-slate-400 hover:bg-red-50 hover:text-red-600' : 'text-slate-500 hover:bg-erp-primary-light hover:text-erp-primary'}`}>
-      {children}
-    </button>
   )
 }
