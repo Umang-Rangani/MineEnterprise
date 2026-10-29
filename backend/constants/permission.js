@@ -116,6 +116,7 @@ const ACTIONS = {
   Purchase: {
     LIST: 'purchase:list',
     VIEW: 'purchase:view',
+    HISTORY: 'purchase:history',
     CREATE: 'purchase:create',
     UPDATE: 'purchase:update',
     UPDATE_STATUS: 'purchase:update-status',

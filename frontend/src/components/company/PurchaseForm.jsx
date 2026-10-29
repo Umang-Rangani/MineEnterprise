@@ -577,7 +577,7 @@ export default function PurchaseForm() {
   if (loading) {
     return (
       <div className="min-w-0 space-y-3">
-        <section className="h-14 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
           <div className="h-1 bg-erp-primary" />
           <div className="flex h-[calc(100%-4px)] items-center px-3 sm:px-4">
             <BreadCrumb items={itemsBreadcrumb} />
@@ -607,10 +607,10 @@ export default function PurchaseForm() {
   return (
     <div className="min-w-0 space-y-3 text-sm">
       {/* Header */}
-      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card h-17">
         <div className="h-1 bg-erp-primary" />
 
-        <div className="flex min-w-0 items-center justify-between gap-2 px-3 py-2.5 sm:px-4">
+        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
           <div className="min-w-0 flex-1 overflow-hidden">
             <BreadCrumb items={itemsBreadcrumb} />
           </div>
@@ -629,35 +629,35 @@ export default function PurchaseForm() {
         </div>
       </section>
 
-      {isEdit && (
-        <section className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-erp-border bg-erp-surface px-3 py-2.5 shadow-erp-card">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
-              <Hash size={16} />
-            </div>
-
-            <div className="min-w-0">
-              <p className="text-[10px] text-erp-text-secondary">Purchase Number</p>
-              <p className="break-words text-xs font-bold text-erp-text">{purchaseNumber || 'Purchase'}</p>
-            </div>
-          </div>
-
-          <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">{originalStatus}</span>
-        </section>
-      )}
-
       <form onSubmit={handleSubmit} className="space-y-3">
         {/* Basic Information */}
         <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
-          <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
-              <ShoppingCart size={15} />
+          <div className="flex min-w-0 flex-col gap-2 border-b border-erp-border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+                <ShoppingCart size={15} />
+              </div>
+
+              <div className="min-w-0">
+                <h2 className="text-xs font-bold leading-4 text-erp-text">Basic Information</h2>
+                <p className="text-[10px] leading-4 text-erp-text-secondary">Select the supplier and purchase dates.</p>
+              </div>
             </div>
 
-            <div>
-              <h2 className="text-xs font-bold text-erp-text">Basic Information</h2>
-              <p className="text-[10px] text-erp-text-secondary">Select the supplier and purchase dates.</p>
-            </div>
+            {isEdit && (
+              <div className="flex min-w-0 items-center gap-2 rounded-lg border border-erp-border bg-erp-hover/40 px-2.5 py-1.5 sm:ml-auto">
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+                  <Hash size={15} />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[10px] leading-4 text-erp-text-secondary">Purchase Number</p>
+                  <p className="break-words text-xs font-bold leading-4 text-erp-text">{purchaseNumber || 'Purchase'}</p>
+                </div>
+
+                <span className="ml-1 shrink-0 rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">{originalStatus}</span>
+              </div>
+            )}
           </div>
 
           <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -812,7 +812,7 @@ export default function PurchaseForm() {
                     </button>
                   </div>
 
-                  <div className="grid gap-3 p-2.5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                  <div className="grid gap-3 p-2.5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,0.5fr)]">
                     {/* Product fields */}
                     <div className="grid content-start gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
                       <div className="min-w-0 space-y-1 sm:col-span-2 xl:col-span-4">
@@ -943,95 +943,123 @@ export default function PurchaseForm() {
 
         {/* Purchase Summary */}
         <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
-          <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
-              <Receipt size={15} />
+          {/* Header */}
+          <div className="flex items-center gap-2 border-b border-erp-border px-4 py-3">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+              <Receipt size={16} />
             </div>
 
-            <div>
-              <h2 className="text-xs font-bold text-erp-text">Purchase Summary</h2>
-              <p className="text-[10px] text-erp-text-secondary">Purchase discount, tax and final amount.</p>
-            </div>
-          </div>
-
-          <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
-            <div className="min-w-0 space-y-1">
-              <label htmlFor="purchase-discount" className={labelClass}>
-                Purchase Discount (₹)
-              </label>
-
-              <input id="purchase-discount" type="number" min="0" step="any" value={form.discountAmount} onChange={(event) => updateField('discountAmount', event.target.value)} disabled={saving} className={inputClass('discountAmount')} />
-
-              {errorText('discountAmount')}
-            </div>
-
-            <div className="min-w-0 space-y-1">
-              <label htmlFor="purchase-shipping" className={labelClass}>
-                Shipping Charges (₹)
-              </label>
-
-              <input id="purchase-shipping" type="number" min="0" step="any" value={form.shippingCharges} onChange={(event) => updateField('shippingCharges', event.target.value)} disabled={saving} className={inputClass('shippingCharges')} />
-
-              {errorText('shippingCharges')}
-            </div>
-
-            <div className="min-w-0 space-y-1">
-              <label htmlFor="purchase-adjustment" className={labelClass}>
-                Adjustment (₹)
-              </label>
-
-              <input id="purchase-adjustment" type="number" step="any" value={form.adjustmentAmount} onChange={(event) => updateField('adjustmentAmount', event.target.value)} disabled={saving} className={inputClass('adjustmentAmount')} />
-
-              {errorText('adjustmentAmount')}
-
-              <p className="text-[10px] text-erp-text-muted">Use a negative amount for a reduction.</p>
-            </div>
-
-            <div className="min-w-0 space-y-1">
-              <label className={labelClass}>Total Item Quantity</label>
-
-              <div className="flex h-9 items-center gap-2 rounded-lg border border-erp-border bg-erp-hover/40 px-2.5">
-                <Boxes size={14} className="text-erp-primary" />
-                <span className="text-xs font-semibold text-erp-text">{items.reduce((sum, item) => sum + phoneNumber(item.quantity), 0)}</span>
-              </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-bold text-erp-text">Purchase Summary</h2>
+              <p className="text-xs text-erp-text-secondary">Discount, tax and final amount</p>
             </div>
           </div>
 
-          <div className="border-t border-erp-border bg-erp-hover/20 p-3">
-            <div className="ml-auto space-y-2 sm:max-w-sm">
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-erp-text-secondary">Subtotal</span>
-                <span className="font-semibold text-erp-text">{formatMoney(calculations.subtotal)}</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2">
+            {/* LEFT SIDE — INPUTS */}
+            <div className="grid grid-cols-1 content-start gap-3 p-4 ">
+              {/* Discount */}
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="purchase-discount" className={labelClass}>
+                  Purchase Discount (₹)
+                </label>
+
+                <input id="purchase-discount" type="number" min="0" step="any" value={form.discountAmount} onChange={(event) => updateField('discountAmount', event.target.value)} disabled={saving} className={inputClass('discountAmount')} />
+
+                {errorText('discountAmount')}
               </div>
 
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-erp-text-secondary">Purchase Discount</span>
-                <span className="font-semibold text-rose-600">− {formatMoney(calculations.purchaseDiscount)}</span>
+              {/* Shipping */}
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="purchase-shipping" className={labelClass}>
+                  Shipping Charges (₹)
+                </label>
+
+                <input id="purchase-shipping" type="number" min="0" step="any" value={form.shippingCharges} onChange={(event) => updateField('shippingCharges', event.target.value)} disabled={saving} className={inputClass('shippingCharges')} />
+
+                {errorText('shippingCharges')}
               </div>
 
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-erp-text-secondary">Tax</span>
-                <span className="font-semibold text-erp-text">{formatMoney(calculations.taxTotal)}</span>
+              {/* Adjustment */}
+              <div className="min-w-0 space-y-1">
+                <label htmlFor="purchase-adjustment" className={labelClass}>
+                  Adjustment (₹)
+                </label>
+
+                <input id="purchase-adjustment" type="number" step="any" value={form.adjustmentAmount} onChange={(event) => updateField('adjustmentAmount', event.target.value)} disabled={saving} className={inputClass('adjustmentAmount')} />
+
+                {errorText('adjustmentAmount')}
+
+                <p className="text-[11px] leading-4 text-erp-text-secondary">Negative value reduces the total.</p>
               </div>
 
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-erp-text-secondary">Shipping Charges</span>
-                <span className="font-semibold text-erp-text">{formatMoney(calculations.shippingCharges)}</span>
-              </div>
+              {/* Total Quantity */}
+              <div className="min-w-0 space-y-1">
+                <label className={labelClass}>Total Item Quantity</label>
 
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <span className="text-erp-text-secondary">Adjustment</span>
-                <span className="font-semibold text-erp-text">{formatMoney(calculations.adjustmentAmount)}</span>
-              </div>
-
-              <div className="border-t border-erp-border pt-2">
-                <div className="flex items-center justify-between gap-3 rounded-lg bg-erp-primary/10 px-3 py-2.5">
-                  <div>
-                    <p className="text-xs font-bold text-erp-text">Grand Total</p>
-                    <p className="text-[10px] text-erp-text-secondary">Final purchase amount</p>
+                <div className="flex h-10 items-center justify-between gap-2 rounded-lg border border-erp-border bg-erp-hover/30 px-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <Boxes size={16} className="shrink-0 text-erp-primary" />
+                    <span className="truncate text-xs text-erp-text-secondary">Total quantity</span>
                   </div>
 
-                  <p className="text-base font-extrabold text-erp-primary">{formatMoney(calculations.totalAmount)}</p>
+                  <span className="text-sm font-bold tabular-nums text-erp-text">{items.reduce((sum, item) => sum + phoneNumber(item.quantity), 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT SIDE — CALCULATION */}
+            <div className="border-t border-erp-border bg-erp-hover/20 p-4 lg:border-l lg:border-t-0 my-auto">
+              <div className="space-y-3">
+                {/* Subtotal */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-erp-text-secondary">Subtotal</span>
+                  <span className="text-sm font-semibold tabular-nums text-erp-text">{formatMoney(calculations.subtotal)}</span>
+                </div>
+
+                {/* Discount */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-erp-text-secondary">Purchase Discount</span>
+                  <span className="text-sm font-semibold tabular-nums text-rose-600">− {formatMoney(calculations.purchaseDiscount)}</span>
+                </div>
+
+                {/* Tax */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-erp-text-secondary">Tax</span>
+                  <span className="text-sm font-semibold tabular-nums text-erp-text">{formatMoney(calculations.taxTotal)}</span>
+                </div>
+
+                {/* Shipping */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-erp-text-secondary">Shipping Charges</span>
+                  <span className="text-sm font-semibold tabular-nums text-erp-text">{formatMoney(calculations.shippingCharges)}</span>
+                </div>
+
+                {/* Adjustment */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-erp-text-secondary">Adjustment</span>
+                  <span className={`text-sm font-semibold tabular-nums ${phoneNumber(form.adjustmentAmount) < 0 ? 'text-rose-600' : 'text-erp-text'}`}>
+                    {phoneNumber(form.adjustmentAmount) > 0 ? '+' : ''}
+                    {formatMoney(calculations.adjustmentAmount)}
+                  </span>
+                </div>
+
+                {/* Grand Total */}
+                <div className="border-t border-erp-border pt-3">
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-erp-primary/20 bg-erp-primary/10 px-3 py-3 sm:px-4">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
+                        <Receipt size={18} />
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-erp-text">Grand Total</p>
+                        <p className="text-[11px] text-erp-text-secondary">Final purchase amount</p>
+                      </div>
+                    </div>
+
+                    <p className="shrink-0 text-base font-extrabold tabular-nums text-erp-primary sm:text-lg">{formatMoney(calculations.totalAmount)}</p>
+                  </div>
                 </div>
               </div>
             </div>

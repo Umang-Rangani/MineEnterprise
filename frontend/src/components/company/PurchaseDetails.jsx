@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ShoppingCart, Package, RefreshCw, Pencil, CheckCircle2, FileText, CalendarDays, Clock, AlertCircle, Ban, Phone, Mail, Building2, Hash, Truck, Wallet, Calculator, Receipt, ArrowLeft } from 'lucide-react'
+import { ShoppingCart, Package, RefreshCw, Pencil, CheckCircle2, FileText, CalendarDays, Clock, AlertCircle, Ban, Phone, Mail, Building2, Hash, Truck, Wallet, Calculator, ArrowLeft } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
@@ -64,37 +64,6 @@ function formatDateTime(date) {
   })
 }
 
-function DetailItem({ label, value, icon: Icon, inactive }) {
-  const displayValue = value === null || value === undefined || value === '' ? 'Not provided' : value
-
-  return (
-    <div className={`min-w-0 rounded-lg border p-3 ${inactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border bg-erp-surface'}`}>
-      <p className={`mb-2 flex items-center gap-2 text-xs ${inactive ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>
-        {Icon && <Icon size={14} className="shrink-0" />}
-        {label}
-      </p>
-
-      <div className={`break-words text-sm font-semibold ${inactive ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{displayValue}</div>
-    </div>
-  )
-}
-
-function SectionHeader({ icon: Icon, title, description, inactive }) {
-  return (
-    <div className="mb-4 flex min-w-0 items-center gap-3">
-      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${inactive ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
-        <Icon size={19} />
-      </div>
-
-      <div className="min-w-0">
-        <h2 className={`text-sm font-bold ${inactive ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{title}</h2>
-
-        <p className={`mt-0.5 text-xs ${inactive ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>{description}</p>
-      </div>
-    </div>
-  )
-}
-
 function StatusBadge({ status }) {
   const normalizedStatus = String(status || '').toLowerCase()
 
@@ -110,20 +79,7 @@ function StatusBadge({ status }) {
     style = 'bg-red-50 text-red-600'
   }
 
-  return <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${style}`}>{status || 'Not specified'}</span>
-}
-
-function SummaryRow({ label, value, negative = false, emphasized = false }) {
-  return (
-    <div className={`flex items-start justify-between gap-4 py-2.5 ${emphasized ? 'border-t border-erp-border pt-4' : ''}`}>
-      <span className={`text-sm ${emphasized ? 'font-bold text-erp-text' : 'text-erp-text-secondary'}`}>{label}</span>
-
-      <span className={`shrink-0 text-right tabular-nums ${emphasized ? 'text-base font-bold text-erp-primary' : negative ? 'font-medium text-red-600' : 'font-semibold text-erp-text'}`}>
-        {negative && Number(value) > 0 ? '− ' : ''}
-        {formatMoney(value)}
-      </span>
-    </div>
-  )
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${style}`}>{status || 'Not specified'}</span>
 }
 
 function getPurchaseFromResponse(response) {
@@ -150,14 +106,13 @@ export default function PurchaseDetails() {
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
   const [toast, setToast] = useState(null)
-  const [showCancelModal, setShowCancelModal] = useState(false)
 
-  const isCancelled = purchase?.status === 'Cancelled'
+  const [actionTarget, setActionTarget] = useState(null)
+  const [actionType, setActionType] = useState('')
+
+  const isCancelled = String(purchase?.status || '').toLowerCase() === 'cancelled'
 
   const panelClass = 'border-erp-border bg-erp-surface'
-
-  const headingTextClass = 'text-erp-text'
-  const secondaryTextClass = 'text-erp-text-secondary'
 
   const canEdit = canUpdate && purchase?.status === 'Draft'
 
@@ -224,13 +179,39 @@ export default function PurchaseDetails() {
     navigate(`/company/purchases/${encodeURIComponent(purchase._id || purchase.id)}/edit`)
   }
 
-  async function handleApprove() {
-    if (!purchase || actionLoading || !canApprovePurchase) return
+  function openActionConfirmation(type) {
+    if (!purchase || actionLoading || refreshing) return
+
+    if (type === 'approve' && !canApprovePurchase) return
+    if (type === 'cancel' && !canCancelPurchase) return
+
+    setActionTarget(purchase)
+    setActionType(type)
+  }
+
+  function closeActionConfirmation() {
+    if (actionLoading) return
+
+    setActionTarget(null)
+    setActionType('')
+  }
+
+  async function confirmPurchaseAction() {
+    if (!actionTarget || !actionType || actionLoading) return
+
+    const purchaseId = String(actionTarget._id || actionTarget.id)
+    const currentAction = actionType
 
     setActionLoading(true)
 
     try {
-      const response = await axiosInstance.patch(`/erp/purchases/${encodeURIComponent(purchase._id || purchase.id)}/approve`)
+      const response = await axiosInstance.patch(`/erp/purchases/${encodeURIComponent(purchaseId)}/${currentAction}`)
+
+      const data = response.data
+
+      if (data?.success === false) {
+        throw new Error(data.message || 'Unable to update purchase.')
+      }
 
       const updated = getPurchaseFromResponse(response)
 
@@ -240,39 +221,53 @@ export default function PurchaseDetails() {
         await fetchPurchase()
       }
 
-      showToast('success', response.data?.message || 'Purchase approved successfully.')
+      const emailStatus = String(data?.email?.status || '').toLowerCase()
+
+      if (emailStatus === 'failed' || emailStatus === 'skipped') {
+        showToast('error', data.message || 'The purchase action completed, but the email could not be delivered.')
+      } else {
+        showToast('success', data?.message || (currentAction === 'approve' ? 'Purchase approved successfully.' : 'Purchase cancelled successfully.'))
+      }
+
+      setActionTarget(null)
+      setActionType('')
     } catch (err) {
-      showToast('error', err.response?.data?.message || 'Unable to approve purchase.')
+      showToast('error', err.response?.data?.message || err.message || 'Unable to update purchase.')
     } finally {
       setActionLoading(false)
     }
   }
 
-  async function handleCancel() {
-    if (!purchase || actionLoading || !canCancelPurchase) return
+  function getActionDialogProps() {
+    if (!actionTarget) return {}
 
-    setActionLoading(true)
-
-    try {
-      const response = await axiosInstance.patch(`/erp/purchases/${encodeURIComponent(purchase._id || purchase.id)}/cancel`)
-
-      const updated = getPurchaseFromResponse(response)
-
-      if (updated) {
-        setPurchase(updated)
-      } else {
-        await fetchPurchase()
+    if (actionType === 'approve') {
+      return {
+        variant: 'activate',
+        title: 'Approve Purchase?',
+        message: (
+          <>
+            Are you sure you want to approve <strong className="font-bold text-slate-900">{actionTarget.purchaseNumber || 'this purchase'}</strong>? Its status will change from Draft to Ordered. The supplier purchase order email will be attempted.
+            Inventory will not be updated by this action.
+          </>
+        ),
+        actionButtonText: 'Approve Purchase',
+        cancelButtonText: 'Keep Purchase',
       }
+    }
 
-      setShowCancelModal(false)
-
-      showToast('success', response.data?.message || 'Purchase cancelled successfully.')
-    } catch (err) {
-      setShowCancelModal(false)
-
-      showToast('error', err.response?.data?.message || 'Unable to cancel purchase.')
-    } finally {
-      setActionLoading(false)
+    return {
+      variant: 'deactivate',
+      title: 'Cancel Purchase?',
+      message: (
+        <>
+          Are you sure you want to cancel <strong className="font-bold text-slate-900">{actionTarget.purchaseNumber || 'this purchase'}</strong>?{' '}
+          {actionTarget.status === 'Ordered' ? 'Its status will return from Ordered to Draft and a cancellation email will be attempted.' : 'This Draft purchase has not been sent to the supplier, so no cancellation email will be sent.'} Inventory
+          will not be updated by this action.
+        </>
+      ),
+      actionButtonText: 'Cancel Purchase',
+      cancelButtonText: 'Keep Purchase',
     }
   }
 
@@ -283,6 +278,26 @@ export default function PurchaseDetails() {
       link: null,
     },
   ]
+
+  const items = Array.isArray(purchase?.items) ? purchase.items : []
+
+  const subtotal = Number(purchase?.subtotal) || 0
+  const combinedDiscount = Number(purchase?.discountAmount) || 0
+
+  const itemDiscountTotal = items.reduce((total, item) => total + (Number(item.discountAmount) || 0), 0)
+
+  const purchaseDiscount = Math.max(0, combinedDiscount - itemDiscountTotal)
+
+  const taxAmount = Number(purchase?.taxAmount) || 0
+  const shippingCharges = Number(purchase?.shippingCharges) || 0
+  const adjustmentAmount = Number(purchase?.adjustmentAmount) || 0
+  const totalAmount = Number(purchase?.totalAmount) || 0
+  const paidAmount = Number(purchase?.paidAmount) || 0
+  const balanceDue = Math.max(0, totalAmount - paidAmount)
+
+  const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0)
+
+  const supplier = purchase?.supplierId && typeof purchase.supplierId === 'object' ? purchase.supplierId : null
 
   if (!canView) {
     return (
@@ -301,79 +316,39 @@ export default function PurchaseDetails() {
     )
   }
 
-  const items = Array.isArray(purchase?.items) ? purchase.items : []
-
-  const subtotal = Number(purchase?.subtotal) || 0
-  const combinedDiscount = Number(purchase?.discountAmount) || 0
-
-  const itemDiscountTotal = items.reduce((total, item) => total + (Number(item.discountAmount) || 0), 0)
-
-  // Backend stores item discount + purchase-level discount together.
-  const purchaseDiscount = Math.max(0, combinedDiscount - itemDiscountTotal)
-
-  const taxAmount = Number(purchase?.taxAmount) || 0
-  const shippingCharges = Number(purchase?.shippingCharges) || 0
-  const adjustmentAmount = Number(purchase?.adjustmentAmount) || 0
-  const totalAmount = Number(purchase?.totalAmount) || 0
-  const paidAmount = Number(purchase?.paidAmount) || 0
-  const balanceDue = Math.max(0, totalAmount - paidAmount)
-
-  const supplier = purchase?.supplierId && typeof purchase.supplierId === 'object' ? purchase.supplierId : null
-
   if (loading) {
     return (
-      <div className="min-w-0 space-y-4">
-        <div className="rounded-xl border border-erp-border bg-erp-surface p-4">
-          <BreadCrumb items={breadcrumbItems} />
-        </div>
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={breadcrumbItems} />
+          </div>
+        </section>
 
-        <Loading label="Loading purchase details..." description="Fetching purchase information from MineERP..." />
+        <section className="min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading label="Loading purchase details..." description="Fetching purchase information from MineERP..." />
+          </div>
+        </section>
       </div>
     )
   }
 
   return (
-    <div className="min-w-0 space-y-4 text-erp-text">
+    <div className="min-w-0 space-y-3 text-erp-text">
       {toast && <Toast toast={toast} onClose={closeToast} />}
 
-      {/* Cancel Confirmation */}
-      <TrashBox
-        isOpen={showCancelModal}
-        onClose={() => {
-          if (!actionLoading) setShowCancelModal(false)
-        }}
-        title="Cancel Purchase?"
-        message={
-          <>
-            Are you sure you want to cancel <strong className="font-bold text-slate-900">{purchase?.purchaseNumber || 'this purchase'}</strong>? This action will change the purchase status to Cancelled.
-          </>
-        }
-        actionButtonText="Cancel Purchase"
-        cancelButtonText="Keep Purchase"
-        onAction={handleCancel}
-        isProcessing={actionLoading}
-        variant="delete"
-      />
-
-      {/* Header */}
-      <section className={`overflow-hidden rounded-xl border shadow-erp-card ${panelClass}`}>
+      <section className={`h-17 overflow-hidden rounded-xl border shadow-erp-card ${panelClass} ${isCancelled ? 'border-erp-disabled-border' : ''}`}>
         <div className={`h-1 ${isCancelled ? 'bg-erp-disabled' : 'bg-erp-primary'}`} />
 
         <div className="flex min-w-0 flex-col gap-3 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0 flex-1 overflow-hidden">
             <BreadCrumb items={breadcrumbItems} />
-
-            <div className="mt-2 flex min-w-0 flex-wrap items-center gap-2">
-              <h1 className="break-words text-lg font-bold text-erp-text">{purchase?.purchaseNumber || 'Purchase Details'}</h1>
-
-              <StatusBadge status={purchase?.status} />
-            </div>
-
-            <p className="mt-1 text-xs text-erp-text-secondary">Purchase information, product lines and payment summary.</p>
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <button type="button" onClick={() => fetchPurchase(true)} disabled={loading || refreshing || actionLoading} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
+            <button type="button" onClick={() => fetchPurchase(true)} disabled={refreshing || actionLoading} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
@@ -386,14 +361,14 @@ export default function PurchaseDetails() {
             )}
 
             {canApprovePurchase && (
-              <button type="button" onClick={handleApprove} disabled={actionLoading || refreshing} className={`${buttonBase} bg-emerald-600 text-white hover:bg-emerald-700`}>
+              <button type="button" onClick={() => openActionConfirmation('approve')} disabled={actionLoading || refreshing} className={`${buttonBase} bg-emerald-600 text-white hover:bg-emerald-700`}>
                 <CheckCircle2 size={14} />
-                {actionLoading ? 'Processing...' : 'Approve'}
+                Approve
               </button>
             )}
 
             {canCancelPurchase && (
-              <button type="button" onClick={() => setShowCancelModal(true)} disabled={actionLoading || refreshing} className={`${buttonBase} border border-red-200 bg-red-50 text-red-600 hover:bg-red-100`}>
+              <button type="button" onClick={() => openActionConfirmation('cancel')} disabled={actionLoading || refreshing} className={`${buttonBase} border border-red-200 bg-red-50 text-red-600 hover:bg-red-100`}>
                 <Ban size={14} />
                 Cancel
               </button>
@@ -402,10 +377,9 @@ export default function PurchaseDetails() {
         </div>
       </section>
 
-      {/* Error */}
       {error && (
-        <section className="rounded-xl border border-erp-danger-border bg-erp-danger-light p-4">
-          <div className="flex items-start gap-3">
+        <section className="rounded-lg border border-erp-danger-border bg-erp-danger-light p-3">
+          <div className="flex items-start gap-2">
             <AlertCircle size={18} className="mt-0.5 shrink-0 text-erp-danger" />
 
             <div className="min-w-0 flex-1">
@@ -423,331 +397,381 @@ export default function PurchaseDetails() {
       )}
 
       {!error && purchase && (
-        <>
+        <div className="min-w-0 space-y-3">
           {isCancelled && (
-            <div className="flex items-start gap-3 rounded-xl border border-erp-disabled-border bg-erp-disabled-light p-4">
-              <Ban size={19} className="mt-0.5 shrink-0 text-erp-disabled" />
+            <div className="flex items-center gap-2 rounded-lg border border-erp-disabled-border bg-erp-disabled-light px-3 py-2">
+              <Ban size={16} className="shrink-0 text-erp-disabled" />
 
-              <div>
-                <h2 className="text-sm font-bold text-erp-disabled-text">This purchase is cancelled</h2>
-
-                <p className="mt-1 text-xs leading-5 text-erp-disabled-text">This purchase cannot be edited or cancelled again through the current API.</p>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-erp-disabled-text">This purchase is cancelled</p>
+                <p className="text-xs text-erp-disabled-text">This purchase cannot be edited or cancelled again through the current API.</p>
               </div>
             </div>
           )}
 
-          {/* Overview Cards */}
-          <div className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <section className="min-w-0 rounded-xl border border-erp-border bg-erp-surface p-4 shadow-erp-card">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-erp-text-secondary">Grand Total</p>
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-erp-border bg-erp-border sm:grid-cols-4">
+            {[
+              {
+                label: 'Grand Total',
+                value: formatMoney(totalAmount),
+                icon: Wallet,
+              },
+              {
+                label: 'Paid Amount',
+                value: formatMoney(paidAmount),
+                icon: CheckCircle2,
+              },
+              {
+                label: 'Balance Due',
+                value: formatMoney(balanceDue),
+                icon: Clock,
+              },
+              {
+                label: 'Product Lines',
+                value: String(items.length),
+                icon: Package,
+              },
+            ].map(({ label, value, icon: Icon }) => (
+              <div key={label} className="min-w-0 bg-erp-surface px-3 py-2.5">
+                <div className="flex items-center gap-1.5 text-erp-text-secondary">
+                  <Icon size={14} className="shrink-0" />
+                  <p className="truncate text-xs">{label}</p>
+                </div>
 
-                <div className="rounded-lg bg-erp-primary-light p-2 text-erp-primary">
-                  <Wallet size={17} />
+                <p className="mt-1 break-words text-base font-bold text-erp-text">{value}</p>
+
+                {label === 'Balance Due' && <p className="mt-0.5 text-xs text-erp-text-secondary">Remaining payment</p>}
+
+                {label === 'Product Lines' && <p className="mt-0.5 text-xs text-erp-text-secondary">{formatQuantity(totalQuantity)} units</p>}
+              </div>
+            ))}
+          </div>
+
+          <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
+            <section className="min-w-0 overflow-hidden rounded-lg border border-erp-border bg-erp-surface">
+              <div className="flex min-w-0 items-center gap-2.5 border-b border-erp-border px-3 py-2.5">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isCancelled ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
+                  <ShoppingCart size={16} />
+                </div>
+
+                <div className="min-w-0">
+                  <h2 className={`text-sm font-semibold ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>Purchase Information</h2>
+                  <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Purchase identification and dates</p>
                 </div>
               </div>
 
-              <p className="mt-3 break-words text-xl font-bold text-erp-text">{formatMoney(totalAmount)}</p>
+              <div className="grid grid-cols-1 gap-x-4 px-3 sm:grid-cols-2">
+                {[
+                  {
+                    label: 'Purchase Number',
+                    value: purchase.purchaseNumber,
+                    icon: Hash,
+                  },
+                  {
+                    label: 'Purchase Date',
+                    value: formatDate(purchase.purchaseDate),
+                    icon: CalendarDays,
+                  },
+                  {
+                    label: 'Expected Delivery',
+                    value: formatDate(purchase.expectedDeliveryDate),
+                    icon: Truck,
+                  },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="flex min-w-0 items-start gap-2 border-b border-erp-border/70 py-2">
+                    <Icon size={14} className={`mt-0.5 shrink-0 ${isCancelled ? 'text-erp-disabled' : 'text-erp-text-secondary'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>{label}</p>
+                      <div className={`mt-0.5 break-words text-sm font-medium ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{value || 'Not provided'}</div>
+                    </div>
+                  </div>
+                ))}
 
-              <p className="mt-1 text-xs text-erp-text-secondary">Final purchase amount</p>
+                <div className="flex min-w-0 items-start gap-2 border-b border-erp-border/70 py-2">
+                  <CheckCircle2 size={14} className={`mt-0.5 shrink-0 ${isCancelled ? 'text-erp-disabled' : 'text-erp-text-secondary'}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Purchase Status</p>
+                    <div className="mt-0.5">
+                      <StatusBadge status={purchase.status} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-3 pb-3 pt-2">
+                <div className={`flex items-start gap-2 rounded-md px-2.5 py-2 ${isCancelled ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
+                  <AlertCircle size={14} className={`mt-0.5 shrink-0 ${isCancelled ? 'text-erp-disabled' : 'text-erp-text-muted'}`} />
+                  <p className={`text-xs leading-4 ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Approving a Draft purchase changes its status to Ordered. It does not update inventory.</p>
+                </div>
+              </div>
             </section>
 
-            <section className="min-w-0 rounded-xl border border-erp-border bg-erp-surface p-4 shadow-erp-card">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-erp-text-secondary">Paid Amount</p>
+            <section className="min-w-0 overflow-hidden rounded-lg border border-erp-border bg-erp-surface">
+              <div className="flex min-w-0 items-center gap-2.5 border-b border-erp-border px-3 py-2.5">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isCancelled ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
+                  <Building2 size={16} />
+                </div>
 
-                <div className="rounded-lg bg-emerald-50 p-2 text-emerald-600">
-                  <CheckCircle2 size={17} />
+                <div className="min-w-0">
+                  <h2 className={`text-sm font-semibold ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>Supplier Details</h2>
+                  <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Supplier connected to this purchase</p>
                 </div>
               </div>
 
-              <p className="mt-3 break-words text-xl font-bold text-erp-text">{formatMoney(paidAmount)}</p>
-
-              <div className="mt-2">
-                <StatusBadge status={purchase.paymentStatus} />
+              <div className="grid grid-cols-1 gap-x-4 px-3 pb-2 sm:grid-cols-2">
+                {[
+                  {
+                    label: 'Supplier Name',
+                    value: supplier?.supplierName || purchase.supplierName,
+                    icon: Building2,
+                  },
+                  {
+                    label: 'Supplier Code',
+                    value: supplier?.supplierCode,
+                    icon: Hash,
+                  },
+                  {
+                    label: 'Email',
+                    value: supplier?.email,
+                    icon: Mail,
+                  },
+                  {
+                    label: 'Phone',
+                    value: supplier?.phone,
+                    icon: Phone,
+                  },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="flex min-w-0 items-start gap-2 border-b border-erp-border/70 py-2 last:border-b-0">
+                    <Icon size={14} className={`mt-0.5 shrink-0 ${isCancelled ? 'text-erp-disabled' : 'text-erp-text-secondary'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>{label}</p>
+                      <div className={`mt-0.5 break-words text-sm font-medium ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{value || 'Not provided'}</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </section>
-
-            <section className="min-w-0 rounded-xl border border-erp-border bg-erp-surface p-4 shadow-erp-card">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-erp-text-secondary">Balance Due</p>
-
-                <div className="rounded-lg bg-amber-50 p-2 text-amber-600">
-                  <Clock size={17} />
-                </div>
-              </div>
-
-              <p className="mt-3 break-words text-xl font-bold text-erp-text">{formatMoney(balanceDue)}</p>
-
-              <p className="mt-1 text-xs text-erp-text-secondary">Remaining payment</p>
-            </section>
-
-            <section className="min-w-0 rounded-xl border border-erp-border bg-erp-surface p-4 shadow-erp-card">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-erp-text-secondary">Product Lines</p>
-
-                <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
-                  <Package size={17} />
-                </div>
-              </div>
-
-              <p className="mt-3 text-xl font-bold text-erp-text">{items.length}</p>
-
-              <p className="mt-1 text-xs text-erp-text-secondary">{formatQuantity(items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0))} total units</p>
             </section>
           </div>
 
-          <div className="grid min-w-0 grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
-            {/* Purchase Information */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={ShoppingCart} title="Purchase Information" description="Basic purchase details and identification" inactive={isCancelled} />
-
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <DetailItem label="Purchase Number" value={purchase.purchaseNumber} icon={Hash} inactive={isCancelled} />
-
-                <DetailItem label="Purchase Date" value={formatDate(purchase.purchaseDate)} icon={CalendarDays} inactive={isCancelled} />
-
-                <DetailItem label="Expected Delivery" value={formatDate(purchase.expectedDeliveryDate)} icon={Truck} inactive={isCancelled} />
-
-                <DetailItem label="Purchase Status" value={<StatusBadge status={purchase.status} />} icon={CheckCircle2} inactive={isCancelled} />
-              </div>
-
-              <div className={`mt-4 rounded-lg p-3 ${isCancelled ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
-                <p className={`text-xs leading-5 ${secondaryTextClass}`}>Purchase status is controlled by the backend. Approving a Draft purchase changes its status to Ordered; it does not update inventory.</p>
-              </div>
-            </section>
-
-            {/* Supplier Details */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={Building2} title="Supplier Details" description="Supplier connected to this purchase" inactive={isCancelled} />
-
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <DetailItem label="Supplier Name" value={supplier?.supplierName || purchase.supplierName} icon={Building2} inactive={isCancelled} />
-
-                <DetailItem label="Supplier Code" value={supplier?.supplierCode} icon={Hash} inactive={isCancelled} />
-
-                <DetailItem label="Email" value={supplier?.email} icon={Mail} inactive={isCancelled} />
-
-                <DetailItem label="Phone" value={supplier?.phone} icon={Phone} inactive={isCancelled} />
-              </div>
-            </section>
-
-            {/* Purchase Items */}
-            <section className={`min-w-0 overflow-hidden rounded-xl border shadow-erp-card lg:col-span-2 ${panelClass}`}>
-              <div className="p-4 pb-0 sm:p-5 sm:pb-0">
-                <SectionHeader icon={Package} title="Purchase Items" description="Product quantities, prices, discounts and taxes" inactive={isCancelled} />
-              </div>
-
-              {items.length === 0 ? (
-                <div className="p-5 text-sm text-erp-text-secondary">No purchase items found.</div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[1000px] text-left text-sm">
-                    <thead className="border-y border-erp-border bg-erp-surface-secondary/60">
-                      <tr className="text-xs font-semibold text-erp-text-secondary">
-                        <th className="px-4 py-3">Product</th>
-                        <th className="px-4 py-3">SKU</th>
-                        <th className="px-4 py-3 text-right">Quantity</th>
-                        <th className="px-4 py-3 text-right">Unit Price</th>
-                        <th className="px-4 py-3 text-right">Gross Amount</th>
-                        <th className="px-4 py-3 text-right">Discount</th>
-                        <th className="px-4 py-3 text-right">Tax</th>
-                        <th className="px-4 py-3 text-right">Line Total</th>
-                      </tr>
-                    </thead>
-
-                    <tbody className="divide-y divide-erp-border">
-                      {items.map((item, index) => {
-                        const product = item.productId && typeof item.productId === 'object' ? item.productId : null
-
-                        const quantity = Number(item.quantity) || 0
-                        const unitPrice = Number(item.unitPrice) || 0
-                        const discount = Number(item.discountAmount) || 0
-
-                        const grossAmount = Math.round((quantity * unitPrice + Number.EPSILON) * 100) / 100
-
-                        const taxableAmount = item.taxableAmount !== undefined ? Number(item.taxableAmount) : Math.max(0, grossAmount - discount)
-
-                        const taxAmount = item.taxAmount !== undefined ? Number(item.taxAmount) : (taxableAmount * (Number(item.taxRate) || 0)) / 100
-
-                        const lineTotal = item.lineTotal !== undefined ? Number(item.lineTotal) : taxableAmount + taxAmount
-
-                        return (
-                          <tr key={item._id || product?._id || item.productId || index} className="transition-colors hover:bg-erp-hover">
-                            <td className="px-4 py-4">
-                              <p className="font-semibold text-erp-text">{item.productName || product?.name || '—'}</p>
-
-                              <p className="mt-1 text-xs text-erp-text-secondary">{item.unit || product?.unit || 'Piece'}</p>
-                            </td>
-
-                            <td className="px-4 py-4 text-erp-text-secondary">{item.sku || product?.sku || '—'}</td>
-
-                            <td className="px-4 py-4 text-right tabular-nums">{formatQuantity(quantity)}</td>
-
-                            <td className="px-4 py-4 text-right tabular-nums">{formatMoney(unitPrice)}</td>
-
-                            <td className="px-4 py-4 text-right tabular-nums">{formatMoney(grossAmount)}</td>
-
-                            <td className="px-4 py-4 text-right tabular-nums text-red-600">{formatMoney(discount)}</td>
-
-                            <td className="px-4 py-4 text-right tabular-nums">
-                              <p>{formatMoney(taxAmount)}</p>
-                              <p className="mt-1 text-xs text-erp-text-secondary">{(Number(item.taxRate) || 0).toFixed(2)}%</p>
-                            </td>
-
-                            <td className="px-4 py-4 text-right font-bold tabular-nums text-erp-text">{formatMoney(lineTotal)}</td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+          <div className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2">
+            <section className="min-w-0 overflow-hidden rounded-lg border border-erp-border bg-erp-surface">
+              <div className="flex min-w-0 items-center gap-2.5 border-b border-erp-border px-3 py-2.5">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isCancelled ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
+                  <Calculator size={16} />
                 </div>
-              )}
 
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-erp-border bg-erp-surface-secondary/40 px-4 py-3 sm:px-5">
-                <span className="text-xs text-erp-text-secondary">
-                  {items.length} product line{items.length === 1 ? '' : 's'}
-                </span>
-
-                <span className="text-sm font-bold text-erp-text">Subtotal: {formatMoney(subtotal)}</span>
+                <div className="min-w-0">
+                  <h2 className={`text-sm font-semibold ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>Purchase Summary</h2>
+                  <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Discounts, taxes and adjustments</p>
+                </div>
               </div>
-            </section>
 
-            {/* Item Calculations */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={Calculator} title="Purchase Calculation" description="Item-wise price calculation" inactive={isCancelled} />
-
-              <div className="space-y-3">
-                {items.length === 0 && <p className="text-sm text-erp-text-secondary">No item calculations available.</p>}
-
-                {items.map((item, index) => {
-                  const quantity = Number(item.quantity) || 0
-                  const unitPrice = Number(item.unitPrice) || 0
-                  const discount = Number(item.discountAmount) || 0
-
-                  const grossAmount = Math.round((quantity * unitPrice + Number.EPSILON) * 100) / 100
-
-                  const taxableAmount = item.taxableAmount !== undefined ? Number(item.taxableAmount) : Math.max(0, grossAmount - discount)
-
-                  const taxAmount = item.taxAmount !== undefined ? Number(item.taxAmount) : (taxableAmount * (Number(item.taxRate) || 0)) / 100
-
-                  const lineTotal = item.lineTotal !== undefined ? Number(item.lineTotal) : taxableAmount + taxAmount
+              <div className="px-3">
+                {[
+                  { label: 'Subtotal', value: subtotal, negative: false },
+                  {
+                    label: 'Item Discount',
+                    value: itemDiscountTotal,
+                    negative: true,
+                  },
+                  {
+                    label: 'Purchase Discount',
+                    value: purchaseDiscount,
+                    negative: true,
+                  },
+                  {
+                    label: 'Tax Amount',
+                    value: taxAmount,
+                    negative: false,
+                  },
+                  {
+                    label: 'Shipping Charges',
+                    value: shippingCharges,
+                    negative: false,
+                  },
+                  {
+                    label: 'Adjustment',
+                    value: adjustmentAmount,
+                    negative: adjustmentAmount < 0,
+                  },
+                ].map(({ label, value, negative }) => {
+                  const amount = Number(value) || 0
 
                   return (
-                    <div key={item._id || item.productId?._id || item.productId || index} className="rounded-lg border border-erp-border p-3">
-                      <p className="mb-3 break-words text-sm font-semibold text-erp-text">{item.productName || 'Product'}</p>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between gap-3 text-xs">
-                          <span className="text-erp-text-secondary">
-                            {formatQuantity(quantity)} × {formatMoney(unitPrice)}
-                          </span>
-                          <span className="font-medium text-erp-text">{formatMoney(grossAmount)}</span>
-                        </div>
-
-                        <div className="flex justify-between gap-3 text-xs">
-                          <span className="text-erp-text-secondary">Item Discount</span>
-                          <span className="text-red-600">− {formatMoney(discount)}</span>
-                        </div>
-
-                        <div className="flex justify-between gap-3 border-t border-dashed border-erp-border pt-2 text-xs">
-                          <span className="text-erp-text-secondary">Taxable Amount</span>
-                          <span className="font-semibold text-erp-text">{formatMoney(taxableAmount)}</span>
-                        </div>
-
-                        <div className="flex justify-between gap-3 text-xs">
-                          <span className="text-erp-text-secondary">Tax ({(Number(item.taxRate) || 0).toFixed(2)}%)</span>
-                          <span className="font-medium text-erp-text">{formatMoney(taxAmount)}</span>
-                        </div>
-
-                        <div className="flex justify-between gap-3 border-t border-erp-border pt-2 text-sm">
-                          <span className="font-bold text-erp-text">Line Total</span>
-                          <span className="font-bold text-erp-primary">{formatMoney(lineTotal)}</span>
-                        </div>
-                      </div>
+                    <div key={label} className="flex items-center justify-between gap-3 border-b border-erp-border/70 py-2 last:border-b-0">
+                      <span className="text-xs text-erp-text-secondary">{label}</span>
+                      <span className={`shrink-0 text-right text-sm font-medium tabular-nums ${negative && amount > 0 ? 'text-red-600' : 'text-erp-text'}`}>
+                        {negative && amount > 0 ? '− ' : ''}
+                        {formatMoney(Math.abs(amount))}
+                      </span>
                     </div>
                   )
                 })}
               </div>
             </section>
 
-            {/* Purchase Summary */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={Receipt} title="Purchase Summary" description="Final amount with discounts, taxes and adjustments" inactive={isCancelled} />
+            <section className="min-w-0 overflow-hidden rounded-lg border border-erp-border bg-erp-surface">
+              <div className="flex min-w-0 items-center gap-2.5 border-b border-erp-border px-3 py-2.5">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isCancelled ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
+                  <Wallet size={16} />
+                </div>
 
-              <div className="rounded-lg border border-erp-border p-4">
-                <SummaryRow label="Subtotal" value={subtotal} />
-
-                <SummaryRow label="Item Discount" value={itemDiscountTotal} negative />
-
-                <SummaryRow label="Purchase Discount" value={purchaseDiscount} negative />
-
-                <SummaryRow label="Tax Amount" value={taxAmount} />
-
-                <SummaryRow label="Shipping Charges" value={shippingCharges} />
-
-                <SummaryRow label="Adjustment" value={adjustmentAmount} negative={adjustmentAmount < 0} />
-
-                <SummaryRow label="Grand Total" value={totalAmount} emphasized />
+                <div className="min-w-0">
+                  <h2 className={`text-sm font-semibold ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>Payment Information</h2>
+                  <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Payment status and record activity</p>
+                </div>
               </div>
 
-              <div className="mt-4 rounded-lg bg-erp-primary-light p-4">
-                <p className="text-xs font-medium text-erp-primary">Outstanding Balance</p>
+              <div className="px-3 pb-2">
+                {[
+                  {
+                    label: 'Created On',
+                    value: formatDateTime(purchase.createdAt),
+                    icon: CalendarDays,
+                  },
+                  {
+                    label: 'Last Updated',
+                    value: formatDateTime(purchase.updatedAt),
+                    icon: Clock,
+                  },
+                ].map(({ label, value, icon: Icon }) => (
+                  <div key={label} className="flex min-w-0 items-start gap-2 border-b border-erp-border/70 py-2 last:border-b-0">
+                    <Icon size={14} className={`mt-0.5 shrink-0 ${isCancelled ? 'text-erp-disabled' : 'text-erp-text-secondary'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>{label}</p>
+                      <div className={`mt-0.5 break-words text-sm font-medium ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{value}</div>
+                    </div>
+                  </div>
+                ))}
 
-                <p className="mt-1 break-words text-xl font-bold text-erp-primary">{formatMoney(balanceDue)}</p>
+                <div className="flex min-w-0 items-start gap-2 border-b border-erp-border/70 py-2">
+                  <CheckCircle2 size={14} className={`mt-0.5 shrink-0 ${isCancelled ? 'text-erp-disabled' : 'text-erp-text-secondary'}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Payment Status</p>
+                    <div className="mt-0.5">
+                      <StatusBadge status={purchase.paymentStatus} />
+                    </div>
+                  </div>
+                </div>
 
-                <p className="mt-1 text-xs text-erp-primary">Grand Total − Paid Amount</p>
-              </div>
-            </section>
-
-            {/* Payment Information */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={Wallet} title="Payment Information" description="Saved payment amounts and outstanding balance" inactive={isCancelled} />
-
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <DetailItem label="Grand Total" value={formatMoney(totalAmount)} icon={Receipt} inactive={isCancelled} />
-
-                <DetailItem label="Paid Amount" value={formatMoney(paidAmount)} icon={CheckCircle2} inactive={isCancelled} />
-
-                <DetailItem label="Balance Due" value={formatMoney(balanceDue)} icon={Wallet} inactive={isCancelled} />
-
-                <DetailItem label="Payment Status" value={<StatusBadge status={purchase.paymentStatus} />} icon={Clock} inactive={isCancelled} />
-              </div>
-
-              <div className="mt-4 rounded-lg bg-erp-surface-secondary/60 p-3">
-                <p className="text-xs leading-5 text-erp-text-secondary">These values come from the saved purchase record. Payment recording is not available through the purchase detail endpoints currently implemented.</p>
-              </div>
-            </section>
-
-            {/* Additional Details */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={FileText} title="Additional Details" description="Purchase notes and record activity" inactive={isCancelled} />
-
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <DetailItem label="Created On" value={formatDateTime(purchase.createdAt)} icon={CalendarDays} inactive={isCancelled} />
-
-                <DetailItem label="Last Updated" value={formatDateTime(purchase.updatedAt)} icon={Clock} inactive={isCancelled} />
-              </div>
-
-              <div className="mt-4">
-                <p className="mb-2 text-xs font-medium text-erp-text-secondary">Purchase Notes</p>
-
-                <div className="min-h-20 whitespace-pre-wrap break-words rounded-lg border border-erp-border bg-erp-surface-secondary/40 p-3 text-sm leading-6 text-erp-text">{purchase.notes || 'No additional notes provided.'}</div>
+                {purchase.paymentMethod && (
+                  <div className="flex min-w-0 items-start gap-2 border-b border-erp-border/70 py-2 last:border-b-0">
+                    <Wallet size={14} className={`mt-0.5 shrink-0 ${isCancelled ? 'text-erp-disabled' : 'text-erp-text-secondary'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Payment Method</p>
+                      <div className={`mt-0.5 break-words text-sm font-medium ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>{purchase.paymentMethod}</div>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           </div>
-        </>
+
+          <section className="min-w-0 overflow-hidden rounded-lg border border-erp-border bg-erp-surface">
+            <div className="flex min-w-0 items-center gap-2.5 border-b border-erp-border px-3 py-2.5">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isCancelled ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
+                <Package size={16} />
+              </div>
+
+              <div className="min-w-0">
+                <h2 className={`text-sm font-semibold ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>Purchase Items</h2>
+                <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Quantity, unit price, discount, tax and line total</p>
+              </div>
+            </div>
+
+            {items.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-erp-text-secondary">No purchase items found.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-left text-sm">
+                  <thead className="border-b border-erp-border bg-erp-surface-secondary/60">
+                    <tr className="text-xs font-semibold text-erp-text-secondary">
+                      <th className="px-3 py-2">Product</th>
+                      <th className="px-3 py-2">SKU</th>
+                      <th className="px-3 py-2 text-right">Quantity</th>
+                      <th className="px-3 py-2 text-right">Unit Price</th>
+                      <th className="px-3 py-2 text-right">Gross Amount</th>
+                      <th className="px-3 py-2 text-right">Discount</th>
+                      <th className="px-3 py-2 text-right">Tax</th>
+                      <th className="px-3 py-2 text-right">Line Total</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-erp-border">
+                    {items.map((item, index) => {
+                      const product = item.productId && typeof item.productId === 'object' ? item.productId : null
+
+                      const quantity = Number(item.quantity) || 0
+                      const unitPrice = Number(item.unitPrice) || 0
+                      const discount = Number(item.discountAmount) || 0
+
+                      const grossAmount = Math.round((quantity * unitPrice + Number.EPSILON) * 100) / 100
+
+                      const taxableAmount = item.taxableAmount !== undefined ? Number(item.taxableAmount) || 0 : Math.max(0, grossAmount - discount)
+
+                      const lineTax = item.taxAmount !== undefined ? Number(item.taxAmount) || 0 : (taxableAmount * (Number(item.taxRate) || 0)) / 100
+
+                      const lineTotal = item.lineTotal !== undefined ? Number(item.lineTotal) || 0 : taxableAmount + lineTax
+
+                      return (
+                        <tr key={item._id || product?._id || item.productId || index} className="transition-colors hover:bg-erp-hover">
+                          <td className="px-3 py-2">
+                            <p className="font-medium text-erp-text">{item.productName || product?.name || '—'}</p>
+                            <p className="text-xs text-erp-text-secondary">{item.unit || product?.unit || 'Piece'}</p>
+                          </td>
+
+                          <td className="px-3 py-2 text-erp-text-secondary">{item.sku || product?.sku || '—'}</td>
+
+                          <td className="px-3 py-2 text-right tabular-nums">{formatQuantity(quantity)}</td>
+
+                          <td className="px-3 py-2 text-right tabular-nums">{formatMoney(unitPrice)}</td>
+
+                          <td className="px-3 py-2 text-right tabular-nums">{formatMoney(grossAmount)}</td>
+
+                          <td className="px-3 py-2 text-right tabular-nums text-red-600">{formatMoney(discount)}</td>
+
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            <p>{formatMoney(lineTax)}</p>
+                            <p className="text-xs text-erp-text-secondary">{(Number(item.taxRate) || 0).toFixed(2)}%</p>
+                          </td>
+
+                          <td className="px-3 py-2 text-right font-semibold tabular-nums text-erp-text">{formatMoney(lineTotal)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2 border-t border-erp-border px-3 py-2">
+              <span className="text-xs text-erp-text-secondary">
+                {items.length} product line{items.length === 1 ? '' : 's'}
+              </span>
+              <span className="text-xs text-erp-text-secondary">{formatQuantity(totalQuantity)} total units</span>
+            </div>
+          </section>
+
+          <section className="min-w-0 overflow-hidden rounded-lg border border-erp-border bg-erp-surface">
+            <div className="flex min-w-0 items-center gap-2.5 border-b border-erp-border px-3 py-2.5">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${isCancelled ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary-light text-erp-primary'}`}>
+                <FileText size={16} />
+              </div>
+
+              <div className="min-w-0">
+                <h2 className={`text-sm font-semibold ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text'}`}>Purchase Notes</h2>
+                <p className={`text-xs ${isCancelled ? 'text-erp-disabled-text' : 'text-erp-text-secondary'}`}>Additional information saved with this purchase</p>
+              </div>
+            </div>
+
+            <div className="px-3 py-2.5">
+              <p className="whitespace-pre-wrap break-words text-sm leading-5 text-erp-text">{purchase.notes || 'No additional notes provided.'}</p>
+            </div>
+          </section>
+        </div>
       )}
 
-      {/* Footer */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-erp-text-secondary">Purchase details are retrieved from your company purchase records.</p>
-
-        <button type="button" onClick={() => navigate('/company/purchases')} className={`${buttonBase} border border-erp-border bg-erp-surface hover:bg-erp-hover`}>
-          <ArrowLeft size={14} />
-          Back to Purchases
-        </button>
-      </div>
+      {actionTarget && actionType && <TrashBox isOpen={Boolean(actionTarget && actionType)} onClose={closeActionConfirmation} onAction={confirmPurchaseAction} isProcessing={actionLoading} {...getActionDialogProps()} />}
     </div>
   )
 }

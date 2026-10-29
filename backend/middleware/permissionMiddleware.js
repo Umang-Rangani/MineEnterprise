@@ -34,7 +34,7 @@ const permissionMiddleware = (section, action) => {
         return res.status(403).json({
           success: false,
           message: 'Approved company not found',
-        })
+        })  
       }
 
       const allowed = hasPermission(req.user, company, section, action)

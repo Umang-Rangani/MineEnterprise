@@ -41,6 +41,7 @@ import SupplierDetails from './components/company/SupplierDetails'
 import CompanyPurchases from './components/company/CompanyPurchases'
 import PurchaseForm from './components/company/PurchaseForm'
 import PurchaseDetails from './components/company/PurchaseDetails'
+import CompanyPurchaseHistory from './components/company/CompanyPurchaseHistory'
 
 export default function App() {
   return (
@@ -112,6 +113,7 @@ export default function App() {
           <Route path="purchases" element={<CompanyPurchases />} />
           <Route path="purchases/new" element={<PurchaseForm />} />
           <Route path="purchases/:id" element={<PurchaseDetails />} />
+          <Route path="purchases/:id/history" element={<CompanyPurchaseHistory />} />
           <Route path="purchases/:id/edit" element={<PurchaseForm />} />
         </Route>
       </Route>

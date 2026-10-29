@@ -40,15 +40,15 @@ router.get('/my-permissions', authMiddleware, async (req, res, next) => {
 
     const company = await getCompanyForUser(req.user)
 
-    console.log(
-      'COMPANY FOUND:',
-      company
-        ? {
-            id: company._id,
-            status: company.status,
-          }
-        : null,
-    )
+    // console.log(
+    //   'COMPANY FOUND:',
+    //   company
+    //     ? {
+    //         id: company._id,
+    //         status: company.status,
+    //       }
+    //     : null,
+    // )
 
     if (!company) {
       return res.status(403).json({

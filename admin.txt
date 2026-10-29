@@ -1,42 +1,135 @@
+# MineERP — MASTER PROJECT CONTEXT
 
-=> category  is demo , tena jevi layoute , same Ui , searchbar, selectbar, pagination, APi, header, export view active-deactive, create button 
+## 1. Project Identity
+- Project name: MineERP
+- MineERP is a standalone ERP SaaS project.
+- Do NOT reuse MineKart branding, authentication, project structure, or business logic.
+- Frontend: React + Vite + Tailwind CSS v4.
+- Backend: Node.js + Express (CommonJS) + MongoDB + Mongoose.
+- API requests use the existing axiosInstance.
+- Use Gujarati explanations.
+- Work step by step. Wait for my "next" before proceeding when appropriate.
+- Do not use useCallback in frontend code.
+- Preserve existing working code and project architecture.
 
+## 2. MineERP UI Rules
+- Primary color: #6d28d9.
+- Hover color: #5b21b6.
+- Light color: #ede9fe.
+- Accent color: #8b5cf6.
+- Background: #f8fafc.
+- Do not add a Light/Dark toggle.
+- Shared CompanyRoute already provides main-content layout and padding. Avoid redundant max-w-*, w-* and p-* classes on the main content section.
+- Add/Edit forms must use separate components and separate routes, not embedded in listing components or modals unless specifically approved.
+- Use the existing UI demo/reference I provide before designing a new UI.
+- Inspect existing code before making changes.
+- Give full code for the file being changed when requested.
 
-=> UI CompanyCategories.jsx ના demo પ્રમાણે રાખ્યું છે,  
+## 3. Current Goal
+Build the Complete Purchase Workflow and connect Purchase, Supplier, Inventory, Warehouse, Goods Receipt, Payment, Accounting and Reports.
 
-=> chnage  kri ne full API aapo
-=> chnage  kri ne full code aapo
+## 4. Agreed Purchase Workflow
 
+STEP 1 — Create Purchase Draft
+- Select Supplier.
+- Select Products.
+- Enter quantities, purchase rates, tax and totals.
+- Draft can be edited or deleted according to permissions.
 
-=> permission-based setup
+STEP 2 — Approve / Place Purchase Order
+- Generate a unique Purchase Order number.
+- Change status from Draft to Ordered.
+- Send the Purchase Order to the Supplier by email.
+- Record approver and approval time.
+- Record email status and allow retry if email fails.
+- Do not increase actual stock at this stage.
 
+STEP 3 — Inventory Pending/Inward Orders
+- Ordered quantities should appear as pending incoming stock.
+- Link the order to the appropriate warehouse where applicable.
+- Show ordered, received and pending quantities.
+- Pending incoming quantity is NOT available stock.
 
-=> problem em che k admin e role & permission ma permission ne change kre to , F5 vagar permission aavi javi joye
+STEP 4 — Goods Receipt
+- Receive goods against the existing Purchase Order.
+- Record actual received quantity and damaged quantity where applicable.
+- Support partial receipts.
+- Prevent receiving more than the allowed quantity unless explicitly authorized.
+- Update Purchase status to Partially Received or Received based on received quantities.
 
+STEP 5 — Automatic Stock-In
+- After Goods Receipt is confirmed, automatically update actual warehouse stock.
+- Create stock movement/history records.
+- Prevent duplicate receipt processing and duplicate stock updates.
+- Never increase stock merely because a Purchase Order was approved.
 
+STEP 6 — Warehouse / Stock Transfer
+- Allow authorized users to transfer stock between warehouses.
+- Reduce stock at the source and increase stock at the destination.
+- Record transfer history.
+- Do not treat a warehouse transfer as a new purchase.
 
-No.	Route	Component
-1	/company/warehouses	CompanyWarehouses.jsx
-2	/company/warehouses/create	WarehouseForm.jsx
-3	/company/warehouses/:id/edit	WarehouseForm.jsx
-4	/company/warehouses/:id	WarehouseDetails.jsx
-5	/company/warehouses/:id/stock	Warehouse stock component
-6	/company/warehouses/:id/history	Warehouse history component
+STEP 7 — Supplier Payment
+- Track purchase payable, paid amount and outstanding balance.
+- Support partial and full payments.
+- Track payment dates, methods and transaction history.
+- Show Unpaid, Partially Paid and Paid statuses as appropriate.
 
+STEP 8 — Accounting
+- Record purchase/inventory value, supplier payable, payment entries and applicable GST/tax according to accounting rules.
+- Prevent duplicate accounting entries.
+- Do not create accounting entries blindly without checking existing accounting architecture.
 
+STEP 9 — Reports
+- Purchase history and supplier-wise purchase reports.
+- Ordered and pending incoming stock.
+- Partial and complete goods receipts.
+- Warehouse stock and stock movement.
+- Supplier outstanding balances and payments.
+- Purchase costs and applicable tax reports.
 
-1. Stock — Warehouse માં અત્યારે કેટલો stock છે.
-2. Capacity — Warehouse માં વધુમાં વધુ કેટલો stock રાખી શકાય.
-આ બંનેને Inventory ના Transfer Stock સાથે જોડીને બનાવવું પડશે.
-\
+## 5. Purchase Status and Action Rules
+- Draft: View, Edit, Approve and Delete according to permissions.
+- Ordered: View, History and Receive Goods; do not show normal Edit, Approve or Delete actions.
+- Partially Received: View, History and Receive Remaining Goods.
+- Received: View and History.
+- Cancelled: View and History.
 
+- Cancellation after ordering must use a separate audited cancellation workflow and supplier notification.
+- Do not silently change an already ordered purchase back to Draft.
+- Retry order email only when appropriate.
+- Backend must enforce permissions and status transitions; hiding frontend buttons alone is insufficient.
 
+## 6. Stock-In Sources
+- Supplier purchase: Goods Receipt against an existing Purchase Order.
+- Opening stock: separate opening-stock workflow.
+- Customer returns: return workflow.
+- Manufacturing output: production workflow.
+- Warehouse transfer: transfer workflow, not a new purchase.
 
+## 7. Company Isolation and Permissions
+- All company data must remain isolated by companyId.
+- Validate authorization and company ownership on the backend.
+- Reuse the existing MineERP permission architecture.
+- Do not introduce new models or restructure authentication without first reviewing existing code.
 
-'new product ma hu stoack 100 nakhu , pachi kevi rute kya warehoser ma mare stock ne 
+## 8. How We Must Work
+1. First inspect the existing code and relevant dependencies.
+2. Explain what is already implemented, what must change, and what is missing.
+3. Do not rewrite working code unnecessarily.
+4. Implement one logical step at a time.
+5. Check related models, routes, controllers, permissions, email services and UI before changing business logic.
+6. If UI work is needed, first inspect the backend and wait for my UI demo/reference.
+7. Explain in Gujarati and wait for my "next" when proceeding step by step.
+8. Never assume a feature is implemented just because its frontend button exists.
 
-W-A ma 40 & W-A ma 60 warehouser ma nakhvo
+## 9. Current Starting Point
+We are preparing to start Complete Purchase Workflow implementation.
+The current Purchase frontend includes Draft/Ordered/Partially Received/Received/Cancelled concepts and actions such as Approve, Cancel, and email retry.
+Its actual backend behavior has not yet been fully reviewed in this workflow.
 
-stockin & stockout e product mate kevi rite - + krvo k warehouser mate kevi rite - + krvo
+NEXT ACTION:
+Ask me to provide the existing Purchase model, controller, routes and Supplier email service. Review these files first, then identify exact changes before writing code.
 
-Product ma stock - + hoy to Product modul ma pn upload thavojoye
+IMPORTANT:
+Treat this document as the agreed project context, not proof that any feature is already implemented. Always verify the actual code I provide before making changes.

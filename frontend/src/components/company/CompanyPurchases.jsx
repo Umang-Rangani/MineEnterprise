@@ -1,12 +1,37 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Eye, Pencil, ShoppingCart, Truck, CheckCircle2, XCircle, Clock, ChevronLeft, ChevronRight, RefreshCw, FilterX, AlertCircle, LoaderCircle, Download, CalendarDays, IndianRupee, FileText } from 'lucide-react'
+import {
+  Plus,
+  Search,
+  Eye,
+  Pencil,
+  ShoppingCart,
+  Truck,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  RefreshCw,
+  FilterX,
+  AlertCircle,
+  LoaderCircle,
+  Download,
+  CalendarDays,
+  Trash2,
+  Mail,
+  RotateCcw,
+  History,
+  Ban,
+  Landmark,
+} from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
-import { hasPermission, useAuth } from '../../context/AuthContext'
 import Loading from '../Loading/Loading'
+import TrashBox from '../../TrashBox/TrashBox'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 const statusStyles = {
   Draft: 'border-slate-200 bg-slate-50 text-slate-700',
@@ -20,6 +45,14 @@ const paymentStyles = {
   Unpaid: 'border-rose-200 bg-rose-50 text-rose-700',
   'Partially Paid': 'border-amber-200 bg-amber-50 text-amber-700',
   Paid: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+}
+
+const emailStyles = {
+  Sent: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  Failed: 'border-rose-200 bg-rose-50 text-rose-700',
+  Pending: 'border-amber-200 bg-amber-50 text-amber-700',
+  'Not Sent': 'border-slate-200 bg-slate-50 text-slate-600',
+  'Not Required': 'border-slate-200 bg-slate-50 text-slate-500',
 }
 
 const formatNumber = (value) =>
@@ -62,14 +95,46 @@ function getPurchaseStatusColor(status) {
   return statusStyles[status] || statusStyles.Draft
 }
 
+function getEmailStatus(status) {
+  return status || 'Not Sent'
+}
+
+function getEmailStatusColor(status) {
+  return emailStyles[status] || emailStyles['Not Sent']
+}
+
+function wasPreviouslyApproved(purchase) {
+  return purchase?.everApproved === true
+}
+
+function canEditPurchase(purchase) {
+  return purchase?.status === 'Draft' && (!wasPreviouslyApproved(purchase) || purchase?.cancellationEmailStatus !== undefined)
+}
+
+function canDeletePurchase(purchase) {
+  return purchase?.status === 'Draft' && !wasPreviouslyApproved(purchase)
+}
+
+function canRetryOrderEmail(purchase) {
+  return purchase?.status === 'Ordered' && getEmailStatus(purchase?.orderEmailStatus) !== 'Sent'
+}
+
+function canRetryCancellationEmail(purchase) {
+  const status = getEmailStatus(purchase?.cancellationEmailStatus)
+
+  return purchase?.status === 'Draft' && wasPreviouslyApproved(purchase) && !['Not Required', 'Sent'].includes(status)
+}
+
 export default function CompanyPurchases() {
   const { permissions } = useAuth()
 
   const canCreate = hasPermission(permissions, 'purchase:create')
   const canView = hasPermission(permissions, 'purchase:view')
+  const canViewHistory = hasPermission(permissions, 'purchase:history')
   const canUpdate = hasPermission(permissions, 'purchase:update')
   const canApprove = hasPermission(permissions, 'purchase:approve')
   const canCancel = hasPermission(permissions, 'purchase:cancel')
+  const canDelete = hasPermission(permissions, 'purchase:delete')
   const canExport = hasPermission(permissions, 'purchase:export')
 
   const [purchases, setPurchases] = useState([])
@@ -109,6 +174,13 @@ export default function CompanyPurchases() {
       message,
       duration: 3000,
     })
+  }
+
+  const closeActionConfirmation = () => {
+    if (processingId) return
+
+    setActionTarget(null)
+    setActionType('')
   }
 
   useEffect(() => {
@@ -279,6 +351,26 @@ export default function CompanyPurchases() {
   const openActionConfirmation = (purchase, type) => {
     if (processingId) return
 
+    if (type === 'approve' && (!canApprove || purchase.status !== 'Draft')) {
+      return
+    }
+
+    if (type === 'cancel' && (!canCancel || purchase.status !== 'Ordered')) {
+      return
+    }
+
+    if (type === 'delete' && (!canDelete || !canDeletePurchase(purchase))) {
+      return
+    }
+
+    if (type === 'retry-order-email' && (!canApprove || !canRetryOrderEmail(purchase))) {
+      return
+    }
+
+    if (type === 'retry-cancellation-email' && (!canCancel || !canRetryCancellationEmail(purchase))) {
+      return
+    }
+
     setActionTarget(purchase)
     setActionType(type)
   }
@@ -292,15 +384,44 @@ export default function CompanyPurchases() {
     setProcessingId(purchaseId)
 
     try {
-      const endpoint = actionType === 'approve' ? `/erp/purchases/${encodeURIComponent(purchaseId)}/approve` : `/erp/purchases/${encodeURIComponent(purchaseId)}/cancel`
+      let response
 
-      const { data } = await axiosInstance.patch(endpoint)
+      if (actionType === 'delete') {
+        response = await axiosInstance.delete(`/erp/purchases/${encodeURIComponent(purchaseId)}`)
+      } else {
+        const actionRoutes = {
+          approve: 'approve',
+          cancel: 'cancel',
+          'retry-order-email': 'retry-order-email',
+          'retry-cancellation-email': 'retry-cancellation-email',
+        }
+
+        const action = actionRoutes[actionType]
+
+        response = await axiosInstance.patch(`/erp/purchases/${encodeURIComponent(purchaseId)}/${action}`)
+      }
+
+      const data = response.data
 
       if (data?.success === false) {
         throw new Error(data.message || 'Unable to update purchase.')
       }
 
-      showToast('success', data?.message || (actionType === 'approve' ? 'Purchase approved successfully.' : 'Purchase cancelled successfully.'))
+      const emailStatus = String(data?.email?.status || '').toLowerCase()
+
+      if (emailStatus === 'failed' || emailStatus === 'skipped') {
+        showToast('error', data.message || 'The purchase action completed, but the email could not be delivered.')
+      } else {
+        const successMessages = {
+          approve: 'Purchase approved successfully.',
+          cancel: 'Purchase cancelled successfully.',
+          delete: 'Draft purchase deleted successfully.',
+          'retry-order-email': 'Order email retry completed.',
+          'retry-cancellation-email': 'Cancellation email retry completed.',
+        }
+
+        showToast('success', data?.message || successMessages[actionType])
+      }
 
       setActionTarget(null)
       setActionType('')
@@ -309,6 +430,62 @@ export default function CompanyPurchases() {
       showToast('error', error.response?.data?.message || error.message || 'Unable to update purchase.')
     } finally {
       setProcessingId('')
+    }
+  }
+
+  const getActionDialogProps = () => {
+    if (!actionTarget) return {}
+
+    if (actionType === 'approve') {
+      const previouslyApproved = wasPreviouslyApproved(actionTarget)
+
+      return {
+        variant: 'activate',
+        title: previouslyApproved ? 'Re-approve Purchase?' : 'Approve Purchase?',
+        message: previouslyApproved
+          ? `Re-approve ${actionTarget.purchaseNumber || 'this purchase'}? Its status will change from Draft to Ordered and the order email will be attempted again.`
+          : `Approve ${actionTarget.purchaseNumber || 'this purchase'}? Its status will change from Draft to Ordered. The supplier purchase order email will be attempted. Inventory will not be updated by this action.`,
+        actionButtonText: previouslyApproved ? 'Re-approve Purchase' : 'Approve Purchase',
+        cancelButtonText: 'Keep Purchase',
+      }
+    }
+
+    if (actionType === 'cancel') {
+      return {
+        variant: 'deactivate',
+        title: 'Cancel Purchase?',
+        message: `Cancel ${actionTarget.purchaseNumber || 'this purchase'}? Its status will return from Ordered to Draft and a cancellation email will be attempted. This purchase will not be marked as Cancelled by this action.`,
+        actionButtonText: 'Cancel Purchase',
+        cancelButtonText: 'Keep Purchase',
+      }
+    }
+
+    if (actionType === 'retry-order-email') {
+      return {
+        variant: 'activate',
+        title: 'Retry Order Email?',
+        message: `Retry sending the purchase order email for ${actionTarget.purchaseNumber || 'this purchase'}? The purchase must remain Ordered.`,
+        actionButtonText: 'Retry Email',
+        cancelButtonText: 'Go Back',
+      }
+    }
+
+    if (actionType === 'retry-cancellation-email') {
+      return {
+        variant: 'deactivate',
+        title: 'Retry Cancellation Email?',
+        message: `Retry sending the cancellation email for ${actionTarget.purchaseNumber || 'this purchase'}? The purchase will remain in Draft status.`,
+        actionButtonText: 'Retry Email',
+        cancelButtonText: 'Go Back',
+      }
+    }
+
+    return {
+      variant: 'delete',
+      title: 'Delete Purchase?',
+      message: `Permanently delete Draft purchase ${actionTarget.purchaseNumber || ''}? Only Draft purchases that have never been approved can be deleted.`,
+      actionButtonText: 'Delete Purchase',
+      cancelButtonText: 'Keep Purchase',
     }
   }
 
@@ -346,7 +523,7 @@ export default function CompanyPurchases() {
   if (loading && !hasLoaded) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
-        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
           <div className="h-1 bg-erp-primary" />
           <div className="flex min-h-16 items-center px-4 sm:px-5">
             <BreadCrumb items={breadcrumbItems} />
@@ -362,11 +539,105 @@ export default function CompanyPurchases() {
     )
   }
 
+  const renderPurchaseActions = (purchase, isProcessing) => {
+    const purchaseId = String(purchase._id)
+    const editable = canEditPurchase(purchase)
+    const deletable = canDeletePurchase(purchase)
+    const previouslyApproved = wasPreviouslyApproved(purchase)
+
+    return (
+      <>
+        {canView && (
+          <Link to={`/company/purchases/${purchaseId}`} title="View purchase" aria-label={`View ${purchase.purchaseNumber}`} className="rounded-lg p-2 text-slate-500 hover:bg-erp-primary-light hover:text-erp-primary">
+            <Eye size={15} />
+          </Link>
+        )}
+
+        {canViewHistory && (
+          <Link to={`/company/purchases/${purchaseId}/history`} title="View purchase history" aria-label={`View history for ${purchase.purchaseNumber}`} className="rounded-lg p-2 text-violet-600 hover:bg-violet-50">
+            <Landmark size={15} />
+          </Link>
+        )}
+
+        {canUpdate && editable && (
+          <Link to={`/company/purchases/${purchaseId}/edit`} title="Edit draft purchase" aria-label={`Edit ${purchase.purchaseNumber}`} className="rounded-lg p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600">
+            <Pencil size={15} />
+          </Link>
+        )}
+
+        {canApprove && purchase.status === 'Draft' && (
+          <button
+            type="button"
+            title={previouslyApproved ? 'Re-approve purchase' : 'Approve purchase'}
+            aria-label={`${previouslyApproved ? 'Re-approve' : 'Approve'} ${purchase.purchaseNumber}`}
+            disabled={Boolean(processingId)}
+            onClick={() => openActionConfirmation(purchase, 'approve')}
+            className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+          >
+            {isProcessing ? <LoaderCircle size={15} className="animate-spin" /> : previouslyApproved ? <RotateCcw size={15} /> : <CheckCircle2 size={15} />}
+          </button>
+        )}
+
+        {canCancel && purchase.status === 'Ordered' && (
+          <button
+            type="button"
+            title="Cancel ordered purchase"
+            aria-label={`Cancel ${purchase.purchaseNumber}`}
+            disabled={Boolean(processingId)}
+            onClick={() => openActionConfirmation(purchase, 'cancel')}
+            className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+          >
+            <Ban size={15} />
+          </button>
+        )}
+
+        {canApprove && canRetryOrderEmail(purchase) && (
+          <button
+            type="button"
+            title={`Retry order email (${getEmailStatus(purchase.orderEmailStatus)})`}
+            aria-label={`Retry order email for ${purchase.purchaseNumber}`}
+            disabled={Boolean(processingId)}
+            onClick={() => openActionConfirmation(purchase, 'retry-order-email')}
+            className="rounded-lg p-2 text-amber-600 hover:bg-amber-50 disabled:opacity-50"
+          >
+            {isProcessing ? <LoaderCircle size={15} className="animate-spin" /> : <Mail size={15} />}
+          </button>
+        )}
+
+        {canCancel && canRetryCancellationEmail(purchase) && (
+          <button
+            type="button"
+            title={`Retry cancellation email (${getEmailStatus(purchase.cancellationEmailStatus)})`}
+            aria-label={`Retry cancellation email for ${purchase.purchaseNumber}`}
+            disabled={Boolean(processingId)}
+            onClick={() => openActionConfirmation(purchase, 'retry-cancellation-email')}
+            className="rounded-lg p-2 text-amber-600 hover:bg-amber-50 disabled:opacity-50"
+          >
+            {isProcessing ? <LoaderCircle size={15} className="animate-spin" /> : <Mail size={15} />}
+          </button>
+        )}
+
+        {canDelete && deletable && (
+          <button
+            type="button"
+            title="Delete draft purchase"
+            aria-label={`Delete ${purchase.purchaseNumber}`}
+            disabled={Boolean(processingId)}
+            onClick={() => openActionConfirmation(purchase, 'delete')}
+            className="rounded-lg p-2 text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            {isProcessing ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+          </button>
+        )}
+      </>
+    )
+  }
+
   return (
     <div className="min-w-0 space-y-4 pb-8 text-sm">
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
 
-      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
 
         <div className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
@@ -379,9 +650,7 @@ export default function CompanyPurchases() {
               return (
                 <div key={card.title} title={card.title} className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border ${card.border} px-3`}>
                   <Icon size={15} className={card.color} />
-
                   <span className={`hidden text-xs font-medium lg:inline ${card.color}`}>{card.title}</span>
-
                   <span className="text-sm font-bold text-erp-text">{formatNumber(card.value)}</span>
                 </div>
               )
@@ -488,7 +757,7 @@ export default function CompanyPurchases() {
         )}
 
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[1050px] text-left">
+          <table className="w-full min-w-[1100px] text-left">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-100">
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Purchase</th>
@@ -498,6 +767,7 @@ export default function CompanyPurchases() {
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Amount</th>
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Payment</th>
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Order Email</th>
                 <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
               </tr>
             </thead>
@@ -517,7 +787,6 @@ export default function CompanyPurchases() {
 
                         <div className="min-w-0">
                           <p className="max-w-44 truncate text-xs font-semibold text-erp-text sm:text-sm">{purchase.purchaseNumber || '—'}</p>
-
                           <p className="mt-0.5 text-[10px] text-erp-muted">{formatNumber(purchase.items?.length)} items</p>
                         </div>
                       </div>
@@ -544,7 +813,6 @@ export default function CompanyPurchases() {
 
                     <td className="px-4 py-3">
                       <p className="whitespace-nowrap text-xs font-bold text-erp-text">{formatCurrency(purchase.totalAmount)}</p>
-
                       <p className="mt-0.5 text-[10px] text-erp-muted">Paid: {formatCurrency(purchase.paidAmount)}</p>
                     </td>
 
@@ -554,48 +822,22 @@ export default function CompanyPurchases() {
 
                     <td className="px-4 py-3">
                       <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold ${getPurchaseStatusColor(purchase.status)}`}>{purchase.status || 'Draft'}</span>
+
+                      {wasPreviouslyApproved(purchase) && purchase.status === 'Draft' && <p className="mt-1 whitespace-nowrap text-[10px] text-amber-700">Previously approved</p>}
                     </td>
 
                     <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {canView && (
-                          <Link to={`/company/purchases/${purchaseId}`} title="View purchase" aria-label={`View ${purchase.purchaseNumber}`} className="rounded-lg p-2 text-slate-500 hover:bg-erp-primary-light hover:text-erp-primary">
-                            <Eye size={15} />
-                          </Link>
-                        )}
+                      <span className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold ${getEmailStatusColor(getEmailStatus(purchase.orderEmailStatus))}`}>{getEmailStatus(purchase.orderEmailStatus)}</span>
 
-                        {canUpdate && purchase.status === 'Draft' && (
-                          <Link to={`/company/purchases/${purchaseId}/edit`} title="Edit draft purchase" aria-label={`Edit ${purchase.purchaseNumber}`} className="rounded-lg p-2 text-slate-500 hover:bg-blue-50 hover:text-blue-600">
-                            <Pencil size={15} />
-                          </Link>
-                        )}
+                      {purchase.orderEmailError && (
+                        <p className="mt-1 max-w-36 truncate text-[10px] text-rose-600" title={purchase.orderEmailError}>
+                          {purchase.orderEmailError}
+                        </p>
+                      )}
+                    </td>
 
-                        {canApprove && purchase.status === 'Draft' && (
-                          <button
-                            type="button"
-                            title="Approve purchase"
-                            aria-label={`Approve ${purchase.purchaseNumber}`}
-                            disabled={Boolean(processingId)}
-                            onClick={() => openActionConfirmation(purchase, 'approve')}
-                            className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
-                          >
-                            {isProcessing ? <LoaderCircle size={15} className="animate-spin" /> : <CheckCircle2 size={15} />}
-                          </button>
-                        )}
-
-                        {canCancel && ['Draft', 'Ordered'].includes(purchase.status) && (
-                          <button
-                            type="button"
-                            title="Cancel purchase"
-                            aria-label={`Cancel ${purchase.purchaseNumber}`}
-                            disabled={Boolean(processingId)}
-                            onClick={() => openActionConfirmation(purchase, 'cancel')}
-                            className="rounded-lg p-2 text-rose-600 hover:bg-rose-50 disabled:opacity-50"
-                          >
-                            <XCircle size={15} />
-                          </button>
-                        )}
-                      </div>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-1">{renderPurchaseActions(purchase, isProcessing)}</div>
                     </td>
                   </tr>
                 )
@@ -603,11 +845,9 @@ export default function CompanyPurchases() {
 
               {purchases.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-14 text-center">
+                  <td colSpan={9} className="px-4 py-14 text-center">
                     <ShoppingCart size={26} className="mx-auto text-slate-400" />
-
                     <h3 className="mt-3 text-sm font-bold text-erp-text">No purchases found</h3>
-
                     <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No purchases have been created yet.'}</p>
 
                     {!hasActiveFilters && canCreate && (
@@ -625,7 +865,7 @@ export default function CompanyPurchases() {
 
         <div className="divide-y divide-slate-100 md:hidden">
           {purchases.map((purchase) => {
-            const purchaseId = String(purchase._id)
+            const isProcessing = processingId === String(purchase._id)
 
             return (
               <article key={purchase._id} className="space-y-3 p-3">
@@ -636,9 +876,7 @@ export default function CompanyPurchases() {
 
                   <div className="min-w-0 flex-1">
                     <h3 className="break-words text-sm font-semibold text-erp-text">{purchase.purchaseNumber || 'Purchase'}</h3>
-
                     <p className="mt-1 break-words text-xs text-erp-muted">{purchase.supplierName || purchase.supplierId?.supplierName || 'Unknown supplier'}</p>
-
                     <p className="mt-1 text-xs text-slate-500">{formatDate(purchase.purchaseDate)}</p>
                   </div>
 
@@ -648,45 +886,65 @@ export default function CompanyPurchases() {
                 <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
                   <div>
                     <p className="text-[10px] text-slate-500">Total Amount</p>
-
                     <p className="mt-1 text-sm font-bold text-erp-text">{formatCurrency(purchase.totalAmount)}</p>
                   </div>
 
                   <div>
                     <p className="text-[10px] text-slate-500">Paid Amount</p>
-
                     <p className="mt-1 text-xs font-semibold text-slate-700">{formatCurrency(purchase.paidAmount)}</p>
                   </div>
 
                   <div>
                     <p className="text-[10px] text-slate-500">Expected Delivery</p>
-
                     <p className="mt-1 text-xs font-medium text-slate-700">{formatDate(purchase.expectedDeliveryDate)}</p>
                   </div>
 
                   <div>
                     <p className="text-[10px] text-slate-500">Payment Status</p>
-
                     <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${paymentStyles[purchase.paymentStatus] || paymentStyles.Unpaid}`}>{purchase.paymentStatus || 'Unpaid'}</span>
                   </div>
 
-                  <div className="col-span-2 border-t border-slate-200 pt-2">
-                    <p className="text-[10px] text-slate-500">Items</p>
+                  <div>
+                    <p className="text-[10px] text-slate-500">Order Email</p>
+                    <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${getEmailStatusColor(getEmailStatus(purchase.orderEmailStatus))}`}>{getEmailStatus(purchase.orderEmailStatus)}</span>
+                  </div>
 
+                  <div>
+                    <p className="text-[10px] text-slate-500">Items</p>
                     <p className="mt-1 text-xs font-medium text-slate-700">{formatNumber(purchase.items?.length)} items</p>
                   </div>
+
+                  {wasPreviouslyApproved(purchase) && purchase.status === 'Draft' && (
+                    <div className="col-span-2 border-t border-slate-200 pt-2">
+                      <p className="text-xs font-medium text-amber-700">Previously approved — editing and deleting are disabled.</p>
+                    </div>
+                  )}
+
+                  {purchase.cancellationEmailStatus && (
+                    <div className="col-span-2 border-t border-slate-200 pt-2">
+                      <p className="text-[10px] text-slate-500">Cancellation Email</p>
+                      <span className={`mt-1 inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold ${getEmailStatusColor(getEmailStatus(purchase.cancellationEmailStatus))}`}>{getEmailStatus(purchase.cancellationEmailStatus)}</span>
+                    </div>
+                  )}
                 </div>
 
-                <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2">
+                <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-2">
                   {canView && (
-                    <Link to={`/company/purchases/${purchaseId}`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
+                    <Link to={`/company/purchases/${purchase._id}`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
                       <Eye size={14} />
                       View
                     </Link>
                   )}
 
-                  {canUpdate && purchase.status === 'Draft' && (
-                    <Link to={`/company/purchases/${purchaseId}/edit`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
+                  {canViewHistory && (
+                    <Link to={`/company/purchases/${purchase._id}/history`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-violet-200 text-xs font-semibold text-violet-700 hover:bg-violet-50">
+                      <History size={14} />
+                      History
+                    </Link>
+                  )}
+
+                  {canUpdate && canEditPurchase(purchase) && (
+                    <Link to={`/company/purchases/${purchase._id}/edit`} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-erp-border text-xs font-semibold text-slate-700 hover:bg-erp-hover">
                       <Pencil size={14} />
                       Edit
                     </Link>
@@ -699,20 +957,56 @@ export default function CompanyPurchases() {
                       disabled={Boolean(processingId)}
                       className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-emerald-200 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
                     >
-                      <CheckCircle2 size={14} />
-                      Approve
+                      {isProcessing ? <LoaderCircle size={14} className="animate-spin" /> : wasPreviouslyApproved(purchase) ? <RotateCcw size={14} /> : <CheckCircle2 size={14} />}
+                      {wasPreviouslyApproved(purchase) ? 'Re-approve' : 'Approve'}
                     </button>
                   )}
 
-                  {canCancel && ['Draft', 'Ordered'].includes(purchase.status) && (
+                  {canCancel && purchase.status === 'Ordered' && (
                     <button
                       type="button"
                       onClick={() => openActionConfirmation(purchase, 'cancel')}
                       disabled={Boolean(processingId)}
                       className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-rose-200 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                     >
-                      <XCircle size={14} />
+                      <Ban size={14} />
                       Cancel
+                    </button>
+                  )}
+
+                  {canApprove && canRetryOrderEmail(purchase) && (
+                    <button
+                      type="button"
+                      onClick={() => openActionConfirmation(purchase, 'retry-order-email')}
+                      disabled={Boolean(processingId)}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      <Mail size={14} />
+                      Retry Order Email
+                    </button>
+                  )}
+
+                  {canCancel && canRetryCancellationEmail(purchase) && (
+                    <button
+                      type="button"
+                      onClick={() => openActionConfirmation(purchase, 'retry-cancellation-email')}
+                      disabled={Boolean(processingId)}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-amber-200 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                    >
+                      <Mail size={14} />
+                      Retry Cancellation Email
+                    </button>
+                  )}
+
+                  {canDelete && canDeletePurchase(purchase) && (
+                    <button
+                      type="button"
+                      onClick={() => openActionConfirmation(purchase, 'delete')}
+                      disabled={Boolean(processingId)}
+                      className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {isProcessing ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                      Delete
                     </button>
                   )}
                 </div>
@@ -723,10 +1017,15 @@ export default function CompanyPurchases() {
           {purchases.length === 0 && (
             <div className="px-4 py-12 text-center">
               <ShoppingCart size={26} className="mx-auto text-slate-400" />
-
               <h3 className="mt-3 font-semibold text-erp-text">No purchases found</h3>
-
               <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No purchases have been created yet.'}</p>
+
+              {!hasActiveFilters && canCreate && (
+                <Link to="/company/purchases/new" className="mt-4 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                  <Plus size={14} />
+                  Create First Purchase
+                </Link>
+              )}
             </div>
           )}
         </div>
@@ -811,62 +1110,7 @@ export default function CompanyPurchases() {
         </div>
       </section>
 
-      {actionTarget && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !processingId) {
-              setActionTarget(null)
-              setActionType('')
-            }
-          }}
-        >
-          <section role="dialog" aria-modal="true" aria-labelledby="purchase-action-title" className="w-full max-w-md rounded-xl border border-erp-border bg-erp-surface p-5 shadow-xl">
-            <div className="flex items-start gap-3">
-              <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${actionType === 'approve' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
-                {actionType === 'approve' ? <CheckCircle2 size={21} /> : <XCircle size={21} />}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <h2 id="purchase-action-title" className="text-base font-bold text-erp-text">
-                  {actionType === 'approve' ? 'Approve Purchase?' : 'Cancel Purchase?'}
-                </h2>
-
-                <p className="mt-2 text-sm leading-6 text-erp-text-secondary">
-                  {actionType === 'approve'
-                    ? `Approve ${actionTarget.purchaseNumber}? Its status will change from Draft to Ordered. Inventory will not be updated by this action.`
-                    : `Cancel ${actionTarget.purchaseNumber}? This action is only available for Draft or Ordered purchases.`}
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                disabled={Boolean(processingId)}
-                onClick={() => {
-                  setActionTarget(null)
-                  setActionType('')
-                }}
-                className="h-9 rounded-lg border border-erp-border px-4 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-50"
-              >
-                Keep Purchase
-              </button>
-
-              <button
-                type="button"
-                disabled={Boolean(processingId)}
-                onClick={confirmPurchaseAction}
-                className={`inline-flex h-9 items-center gap-2 rounded-lg px-4 text-xs font-semibold text-white disabled:opacity-60 ${actionType === 'approve' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
-              >
-                {processingId && <LoaderCircle size={14} className="animate-spin" />}
-
-                {actionType === 'approve' ? 'Approve Purchase' : 'Cancel Purchase'}
-              </button>
-            </div>
-          </section>
-        </div>
-      )}
+      {actionTarget && <TrashBox isOpen={Boolean(actionTarget)} onClose={closeActionConfirmation} onAction={confirmPurchaseAction} isProcessing={processingId === String(actionTarget._id)} {...getActionDialogProps()} />}
     </div>
   )
 }
