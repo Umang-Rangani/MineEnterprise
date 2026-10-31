@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { Building2, Users, Package, ShoppingCart, IndianRupee, RefreshCw, AlertCircle, Mail, Phone, Globe, MapPin, BriefcaseBusiness, CheckCircle2, Clock3, XCircle } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import Loading from '../Loading/Loading'
 
 export default function CompanyDashboard() {
   const [company, setCompany] = useState(null)
@@ -14,63 +16,72 @@ export default function CompanyDashboard() {
   })
 
   const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [error, setError] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const fetchDashboardData = async (activeCheck = () => true) => {
-    setLoading(true)
-    setError('')
-
-    try {
-      const results = await Promise.allSettled([axiosInstance.get('/companies/me'), axiosInstance.get('/erp/employees')])
-
-      if (!activeCheck()) return
-
-      const [companyResult, employeesResult] = results
-
-      if (companyResult.status === 'fulfilled' && companyResult.value.data?.success) {
-        setCompany(companyResult.value.data.company)
-      } else {
-        const message = companyResult.status === 'rejected' ? companyResult.reason?.response?.data?.message : null
-
-        setError(message || 'Unable to load company details.')
-      }
-
-      if (employeesResult.status === 'fulfilled' && employeesResult.value.data?.success) {
-        const employeeData = employeesResult.value.data
-
-        setStats((previous) => ({
-          ...previous,
-          employees: typeof employeeData.count === 'number' ? employeeData.count : Array.isArray(employeeData.employees) ? employeeData.employees.length : 0,
-        }))
-      } else {
-        setStats((previous) => ({
-          ...previous,
-          employees: null,
-        }))
-      }
-    } catch {
-      if (activeCheck()) {
-        setError('Unable to load dashboard data.')
-      }
-    } finally {
-      if (activeCheck()) {
-        setLoading(false)
-      }
-    }
-  }
+  const items = [{ title: 'Dashboard', link: null }]
 
   useEffect(() => {
-    let active = true
+    let cancelled = false
 
-    fetchDashboardData(() => active)
+    const fetchDashboardData = async () => {
+      setLoading(true)
+      setError('')
+
+      try {
+        const results = await Promise.allSettled([axiosInstance.get('/companies/me'), axiosInstance.get('/erp/employees')])
+
+        if (cancelled) return
+
+        const [companyResult, employeesResult] = results
+
+        if (companyResult.status === 'fulfilled' && companyResult.value.data?.success) {
+          setCompany(companyResult.value.data.company)
+        } else {
+          const message = companyResult.status === 'rejected' ? companyResult.reason?.response?.data?.message : null
+
+          setError(message || 'Unable to load company details.')
+        }
+
+        if (employeesResult.status === 'fulfilled' && employeesResult.value.data?.success) {
+          const employeeData = employeesResult.value.data
+
+          setStats((previous) => ({
+            ...previous,
+            employees: typeof employeeData.count === 'number' ? employeeData.count : Array.isArray(employeeData.employees) ? employeeData.employees.length : 0,
+          }))
+        } else {
+          setStats((previous) => ({
+            ...previous,
+            employees: null,
+          }))
+        }
+      } catch {
+        if (!cancelled) {
+          setError('Unable to load dashboard data.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setHasLoaded(true)
+        }
+      }
+    }
+
+    fetchDashboardData()
 
     return () => {
-      active = false
+      cancelled = true
     }
-  }, [])
+  }, [refreshKey])
 
-  const handleRetry = () => {
-    fetchDashboardData()
+  const handleRefresh = () => {
+    if (loading) return
+
+    setLoading(true)
+    setHasLoaded(false)
+    setRefreshKey((key) => key + 1)
   }
 
   const statCards = [
@@ -157,41 +168,87 @@ export default function CompanyDashboard() {
 
   const fullAddress = [company?.addressLine1, company?.addressLine2, company?.city, company?.state, company?.postalCode, company?.country].filter(Boolean).join(', ')
 
-  if (loading && !company && !error) {
+  // Full page loading
+  if (loading && !hasLoaded) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="flex flex-col items-center gap-2">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-erp-primary-light border-t-erp-primary" />
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
 
-          <p className="text-xs text-slate-500">Loading dashboard...</p>
-        </div>
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading dashboard" description="Please wait while we load dashboard data." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
       </div>
     )
   }
 
+  // Error screen
   if (error && !company) {
     return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <div className="w-full max-w-sm rounded-xl border border-red-100 bg-white p-6 text-center shadow-sm">
-          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-red-50">
-            <AlertCircle size={22} className="text-red-600" />
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
           </div>
+        </section>
 
-          <h2 className="mt-3 text-base font-bold text-slate-900">Unable to load dashboard</h2>
+        <section className="flex min-h-[400px] items-center justify-center rounded-xl border border-erp-border bg-erp-surface p-6 shadow-erp-card">
+          <div className="w-full max-w-sm rounded-xl border border-red-100 bg-white p-6 text-center shadow-sm">
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-red-50">
+              <AlertCircle size={22} className="text-red-600" />
+            </div>
 
-          <p className="mt-2 text-xs text-slate-500">{error}</p>
+            <h2 className="mt-3 text-base font-bold text-slate-900">Unable to load dashboard</h2>
 
-          <button type="button" onClick={handleRetry} disabled={loading} className="mt-4 inline-flex items-center gap-2 rounded-lg bg-erp-primary px-4 py-2 text-xs font-semibold text-white transition hover:bg-erp-primary-hover disabled:opacity-60">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            Try Again
-          </button>
-        </div>
+            <p className="mt-2 text-xs text-slate-500">{error}</p>
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={loading}
+              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-erp-primary px-4 py-2 text-xs font-semibold text-white transition hover:bg-erp-primary-hover disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              Try Again
+            </button>
+          </div>
+        </section>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 text-sm">
+    <div className="min-w-0 space-y-4 text-sm">
+      {/* Header */}
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
+
+        <div className="flex min-h-16 items-center justify-between gap-3 px-4 sm:px-5">
+          <BreadCrumb items={items} />
+
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={loading}
+            title="Refresh dashboard"
+            aria-label="Refresh dashboard"
+            className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
+        </div>
+      </section>
+
       {/* Error notice */}
       {error && company && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -205,58 +262,38 @@ export default function CompanyDashboard() {
         </div>
       )}
 
-      {/* Company welcome card */}
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="h-1.5 bg-gradient-to-r from-erp-primary via-erp-accent to-violet-300" />
-
-        <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
-              <Building2 size={24} />
-            </div>
-
-            <div className="min-w-0">
-              <p className="text-xs text-slate-500">Welcome to your workspace</p>
-
-              <h2 className="mt-1 break-words text-lg font-bold text-slate-900">{company?.companyName || 'Your Company'}</h2>
-
-              <p className="mt-1 text-xs text-slate-500">{company?.businessType || 'Business type not available'}</p>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${currentStatus.className}`}>
-              <StatusIcon size={13} />
-              {companyStatus}
-            </span>
-
-            <p className="text-[11px] text-slate-500">Company account status</p>
-          </div>
-        </div>
-      </section>
-
       {/* Statistics */}
-      <section>
-        <div className='flex justify-between'>
-          <div className="mb-3">
-            <h2 className="text-base font-bold text-slate-900">Business Overview</h2>
+      <section >
+        {/* Company welcome card */}
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm mb-3" >
 
-            <p className="mt-0.5 text-xs text-slate-500">Your company statistics at a glance.</p>
-          </div>
+          <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
+                <Building2 size={24} />
+              </div>
 
-          {/* Compact page actions */}
-          <div className="flex items-center justify-end">
-            <button
-              type="button"
-              onClick={handleRetry}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-              Refresh
-            </button>
+              <div className="min-w-0">
+                <p className="text-xs text-slate-500">Welcome to your workspace</p>
+
+                <h2 className="mt-1 break-words text-lg font-bold text-slate-900">{company?.companyName || 'Your Company'}</h2>
+
+                <p className="mt-1 text-xs text-slate-500">{company?.businessType || 'Business type not available'}</p>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${currentStatus.className}`}>
+                <StatusIcon size={13} />
+                {companyStatus}
+              </span>
+
+              <p className="text-[11px] text-slate-500">Company account status</p>
+            </div>
           </div>
         </div>
+
+
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {statCards.map((stat) => {
@@ -269,7 +306,7 @@ export default function CompanyDashboard() {
                     <p className="text-xs font-medium text-slate-500">{stat.label}</p>
 
                     <p className="mt-2 text-xl font-bold text-slate-900">
-                      {loading ? '...' : stat.value === null ? '—' : stat.label === 'Revenue' ? `${company?.currency || 'INR'} ${Number(stat.value).toLocaleString('en-IN')}` : Number(stat.value).toLocaleString('en-IN')}
+                      {stat.value === null ? '—' : stat.label === 'Revenue' ? `${company?.currency || 'INR'} ${Number(stat.value).toLocaleString('en-IN')}` : Number(stat.value).toLocaleString('en-IN')}
                     </p>
                   </div>
 

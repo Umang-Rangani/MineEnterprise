@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Plus, ShieldCheck, RefreshCw, Search, Pencil, Trash2, Users, Eye, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, LockKeyhole, LoaderCircle, Power, ShieldAlert } from 'lucide-react'
 
@@ -68,11 +68,12 @@ export default function CompanyRoles() {
     predefinedRoles: 0,
     customRoles: 0,
   })
-
-  const [initialLoading, setInitialLoading] = useState(true)
-  const [isFetching, setIsFetching] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  const hasLoadedRef = useRef(false)
 
   const [deletingRole, setDeletingRole] = useState(null)
   const [deletingId, setDeletingId] = useState('')
@@ -108,13 +109,19 @@ export default function CompanyRoles() {
     async function fetchRoles() {
       if (!canList) {
         setRoles([])
-        setInitialLoading(false)
-        setIsFetching(false)
+        setLoading(false)
         setRefreshing(false)
+        setHasLoaded(true)
+        hasLoadedRef.current = true
         return
       }
 
-      setIsFetching(true)
+      if (!hasLoadedRef.current) {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
+
       setError('')
 
       try {
@@ -169,9 +176,10 @@ export default function CompanyRoles() {
         }
       } finally {
         if (!cancelled) {
-          setIsFetching(false)
-          setInitialLoading(false)
+          setLoading(false)
           setRefreshing(false)
+          setHasLoaded(true)
+          hasLoadedRef.current = true
         }
       }
     }
@@ -195,9 +203,13 @@ export default function CompanyRoles() {
   }, [location.state, location.pathname, navigate])
 
   const handleRefresh = () => {
-    if (isFetching || !canList) return
+    if (loading || refreshing || !canList) return
 
-    setRefreshing(true)
+    setLoading(true)
+    setHasLoaded(false)
+    hasLoadedRef.current = false
+    setRefreshing(false)
+
     setRefreshKey((key) => key + 1)
   }
 
@@ -313,6 +325,25 @@ export default function CompanyRoles() {
     setCurrentPage(1)
   }
 
+  if (loading && !hasLoaded) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading roles" description="Please wait while we load role records." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   if (!canList) {
     return (
       <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
@@ -357,13 +388,13 @@ export default function CompanyRoles() {
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={isFetching}
+              disabled={loading || refreshing}
               title="Refresh roles"
               aria-label="Refresh roles"
               className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">Refresh</span>
+              <span className="hidden sm:inline">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
             </button>
 
             {canCreate && (
@@ -433,11 +464,13 @@ export default function CompanyRoles() {
 
         {/* Table and loading overlay */}
         <div className="relative min-h-[220px]">
-          {initialLoading ? (
-            <div className="flex min-h-[280px] items-center justify-center">
-              <Loading fullScreen={false} label="Loading roles" description="Fetching role records..." className="!h-full min-h-[220px]" />
+          {refreshing && hasLoaded && (
+            <div className="flex items-center justify-center gap-2 border-b border-slate-100 px-4 py-3 text-xs text-slate-500">
+              <LoaderCircle size={15} className="animate-spin text-erp-primary" />
+              Updating roles...
             </div>
-          ) : roles.length === 0 ? (
+          )}
+          {roles.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                 <PackageOpen size={24} />
@@ -482,8 +515,6 @@ export default function CompanyRoles() {
                       const isPredefined = role.type === 'Predefined'
                       const isCustom = role.type === 'Custom'
                       const isInactive = role.isActive === false
-
-                     
 
                       const canToggleThisRole = canChangeStatus
                       const canDeleteThisRole = isCustom && canDelete
@@ -640,7 +671,7 @@ export default function CompanyRoles() {
                             </button>
                           )}
 
-                          {canChangeStatus && canDelete && (
+                          {canChangeStatus && (
                             <button
                               type="button"
                               onClick={() => setRoleStatusTarget(role)}
@@ -673,16 +704,10 @@ export default function CompanyRoles() {
               </div>
             </>
           )}
-
-          {!initialLoading && isFetching && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
-              <Loading fullScreen={false} label="Updating roles" description="Refreshing role records..." className="!h-full min-h-[220px]" />
-            </div>
-          )}
         </div>
 
         {/* Server-side pagination */}
-        {!initialLoading && (
+        {hasLoaded && (
           <div className="flex flex-col gap-3 border-t border-slate-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs text-slate-500 sm:text-sm">
@@ -705,7 +730,7 @@ export default function CompanyRoles() {
                     setPageSize(Number(event.target.value))
                     setCurrentPage(1)
                   }}
-                  disabled={isFetching}
+                  disabled={loading || refreshing}
                   className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-700 outline-none focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
                 >
                   <option value={5}>5</option>
@@ -718,7 +743,7 @@ export default function CompanyRoles() {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                disabled={safePage <= 1 || isFetching}
+                disabled={safePage <= 1 || loading || refreshing}
                 onClick={() => setCurrentPage(1)}
                 aria-label="First page"
                 className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -728,7 +753,7 @@ export default function CompanyRoles() {
 
               <button
                 type="button"
-                disabled={safePage <= 1 || isFetching}
+                disabled={safePage <= 1 || loading || refreshing}
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 aria-label="Previous page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -742,7 +767,7 @@ export default function CompanyRoles() {
 
               <button
                 type="button"
-                disabled={safePage >= totalPages || isFetching}
+                disabled={safePage >= totalPages || loading || refreshing}
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 aria-label="Next page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -752,7 +777,7 @@ export default function CompanyRoles() {
 
               <button
                 type="button"
-                disabled={safePage >= totalPages || isFetching}
+                disabled={safePage >= totalPages || loading || refreshing}
                 onClick={() => setCurrentPage(totalPages)}
                 aria-label="Last page"
                 className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"

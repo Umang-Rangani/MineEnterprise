@@ -107,7 +107,7 @@ export default function RoleDetails() {
   const canView = hasPermission(permissions, 'role:view')
   const canUpdate = hasPermission(permissions, 'role:update')
 
-  const canEdit = canUpdate 
+  const canEdit = canUpdate
 
   const [role, setRole] = useState(null)
   const [availablePermissions, setAvailablePermissions] = useState({})
@@ -249,7 +249,7 @@ export default function RoleDetails() {
 
   const breadcrumbItems = [
     { title: 'Roles & Permissions', link: '/company/roles' },
-    { title: role?.name || 'Role Details', link: null },
+    { title: role?.name || '...', link: null },
   ]
 
   if (!canView) {
@@ -264,6 +264,27 @@ export default function RoleDetails() {
         <button type="button" onClick={() => navigate('/company/roles')} className="mt-4 rounded-lg bg-erp-primary px-4 py-2 text-xs font-semibold text-white hover:bg-erp-primary-hover">
           Back to Roles
         </button>
+      </div>
+    )
+  }
+
+  //  INITIAL LOADING
+  if (loading) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={breadcrumbItems} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading role details..." description="Please wait while we load your company's role details." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
       </div>
     )
   }
@@ -310,9 +331,6 @@ export default function RoleDetails() {
           </div>
         </div>
       </section>
-
-      {/* Loading */}
-      {loading && <Loading label="Loading role details..." />}
 
       {/* Error */}
       {!loading && error && (

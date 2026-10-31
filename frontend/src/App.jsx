@@ -18,6 +18,8 @@ import EmployeeForm from './components/company/EmployeeForm'
 
 import CompanyRoles from './components/company/CompanyRoles'
 import RoleForm from './components/company/RoleForm'
+import RoleDetails from './components/company/RoleDetails'
+import Forbidden from './components/company/Forbidden'
 
 import CompanyProducts from './components/company/CompanyProducts'
 import CompanyCategories from './components/company/CompanyCategories'
@@ -26,22 +28,29 @@ import CompanyInventory from './components/company/CompanyInventory'
 import CompanyWarehouses from './components/company/CompanyWarehouses'
 import WarehouseForm from './components/company/WarehouseForm'
 import WarehouseDetails from './components/company/WarehouseDetails'
-import RoleDetails from './components/company/RoleDetails'
-import Forbidden from './components/company/Forbidden'
+
 import CategoryForm from './components/company/CategoryForm'
 import CategoryDetails from './components/company/CategoryDetails'
+
 import ProductsForm from './components/company/ProductsForm'
 import ProductsDetails from './components/company/ProductsDetails'
+
 import InventoryStockForm from './components/company/InventoryStockForm'
 import InventoryHistory from './components/company/InventoryHistory'
 import StockTransfer from './components/company/StockTransfer'
+
 import CompanySuppliers from './components/company/CompanySuppliers'
 import SupplierForm from './components/company/SupplierForm'
 import SupplierDetails from './components/company/SupplierDetails'
+
 import CompanyPurchases from './components/company/CompanyPurchases'
 import PurchaseForm from './components/company/PurchaseForm'
 import PurchaseDetails from './components/company/PurchaseDetails'
 import CompanyPurchaseHistory from './components/company/CompanyPurchaseHistory'
+import CompanyGoodsReceipts from './components/company/CompanyGoodsReceipts'
+import GoodsReceiptForm from './components/company/GoodsReceiptForm'
+import GoodsReceiptDetails from './components/company/GoodsReceiptDetails'
+
 
 export default function App() {
   return (
@@ -77,13 +86,13 @@ export default function App() {
           <Route path="roles/:id" element={<RoleDetails />} />
           <Route path="roles/:id/edit" element={<RoleForm />} />
 
-          {/* categories */}
+          {/* Categories */}
           <Route path="categories" element={<CompanyCategories />} />
           <Route path="categories/new" element={<CategoryForm />} />
           <Route path="categories/:id" element={<CategoryDetails />} />
           <Route path="categories/:id/edit" element={<CategoryForm />} />
 
-          {/* Products  */}
+          {/* Products */}
           <Route path="products" element={<CompanyProducts />} />
           <Route path="products/new" element={<ProductsForm />} />
           <Route path="products/:id" element={<ProductsDetails />} />
@@ -94,7 +103,6 @@ export default function App() {
           <Route path="inventory/:id/stock-in" element={<InventoryStockForm />} />
           <Route path="inventory/:id/stock-out" element={<InventoryStockForm />} />
           <Route path="inventory/:id/history" element={<InventoryHistory />} />
-
           <Route path="inventory/stock-transfer" element={<StockTransfer />} />
 
           {/* Warehouses */}
@@ -115,12 +123,19 @@ export default function App() {
           <Route path="purchases/:id" element={<PurchaseDetails />} />
           <Route path="purchases/:id/history" element={<CompanyPurchaseHistory />} />
           <Route path="purchases/:id/edit" element={<PurchaseForm />} />
+
+          {/* Goods Receipts / GRN */}
+          <Route path="goods-receipts" element={<CompanyGoodsReceipts />} />
+          <Route path="goods-receipts/new" element={<GoodsReceiptForm />} />
+          <Route path="goods-receipts/:id/edit" element={<GoodsReceiptForm />} />
+          <Route path="goods-receipts/:id" element={<GoodsReceiptDetails />} />
         </Route>
       </Route>
 
-      {/* Fallback */}
+      {/* Forbidden */}
       <Route path="/forbidden" element={<Forbidden />} />
 
+      {/* Fallback */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

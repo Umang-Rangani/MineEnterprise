@@ -62,6 +62,7 @@ const userSchema = new mongoose.Schema(
       type: [assignedRoleSchema],
       default: [],
     },
+
     permissionOverrides: {
       type: [String],
       default: undefined,
@@ -72,6 +73,25 @@ const userSchema = new mongoose.Schema(
       ref: 'CompanyEnterPrise',
       default: null,
       index: true,
+    },
+
+    // Employee's default warehouse
+    defaultWarehouseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WarehouseMineERP',
+      default: null,
+      index: true,
+    },
+
+    // Warehouses assigned to the employee
+    assignedWarehouses: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'WarehouseMineERP',
+        },
+      ],
+      default: [],
     },
 
     status: {

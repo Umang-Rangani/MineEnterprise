@@ -133,3 +133,80 @@ Ask me to provide the existing Purchase model, controller, routes and Supplier e
 
 IMPORTANT:
 Treat this document as the agreed project context, not proof that any feature is already implemented. Always verify the actual code I provide before making changes.
+
+
+
+
+
+
+
+
+
+
+
+  Customer: {
+    LIST: 'customer:list',
+    VIEW: 'customer:view',
+    CREATE: 'customer:create',
+    UPDATE: 'customer:update',
+    DELETE: 'customer:delete',
+  },
+
+  Sales: {
+    LIST: 'sales:list',
+    VIEW: 'sales:view',
+    CREATE: 'sales:create',
+    UPDATE: 'sales:update',
+    DELETE: 'sales:delete',
+    APPROVE: 'sales:approve',
+    CANCEL: 'sales:cancel',
+  },
+
+  Invoice: {
+    LIST: 'invoice:list',
+    VIEW: 'invoice:view',
+    CREATE: 'invoice:create',
+    UPDATE: 'invoice:update',
+    DELETE: 'invoice:delete',
+    DOWNLOAD: 'invoice:download',
+  },
+
+  Payment: {
+    LIST: 'payment:list',
+    VIEW: 'payment:view',
+    RECORD: 'payment:record',
+    UPDATE: 'payment:update',
+    REFUND: 'payment:refund',
+  },
+
+  Expense: {
+    LIST: 'expense:list',
+    VIEW: 'expense:view',
+    CREATE: 'expense:create',
+    UPDATE: 'expense:update',
+    DELETE: 'expense:delete',
+    APPROVE: 'expense:approve',
+  },
+
+  Accounting: {
+    VIEW: 'accounting:view',
+    VIEW_LEDGER: 'accounting:view-ledger',
+    MANAGE_ACCOUNTS: 'accounting:manage-accounts',
+    JOURNAL_ENTRY: 'accounting:journal-entry',
+    RECONCILE: 'accounting:reconcile',
+  },
+
+  Reports: {
+    VIEW: 'reports:view',
+    EXPORT: 'reports:export',
+    FINANCIAL: 'reports:financial',
+    INVENTORY: 'reports:inventory',
+    SALES: 'reports:sales',
+    PURCHASE: 'reports:purchase',
+  },
+
+  Settings: {
+    VIEW: 'settings:view',
+    UPDATE_COMPANY: 'settings:update-company',
+    UPDATE_PREFERENCES: 'settings:update-preferences',
+  },

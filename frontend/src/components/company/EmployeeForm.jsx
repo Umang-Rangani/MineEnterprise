@@ -434,17 +434,24 @@ export default function EmployeeForm() {
     ]
   }
 
+
+
   if (loading) {
     return (
-      <div className="min-w-0 space-y-3">
+      <div className="min-w-0 space-y-4 text-sm">
         <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
           <div className="h-1 bg-erp-primary" />
-          <div className="flex h-[calc(100%-4px)] items-center px-4 sm:px-5">
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
             <BreadCrumb items={items} />
           </div>
         </section>
 
-        <Loading label={isEdit ? 'Loading employee details' : 'Preparing employee form'} description="Fetching employee information, roles and permissions..." />
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label={isEdit ? 'Loading employee details' : 'Preparing employee form'} description="Fetching employee information, roles and permissions..." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
       </div>
     )
   }

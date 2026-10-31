@@ -74,7 +74,7 @@ const purchaseHistorySchema = new mongoose.Schema(
         {
           productId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: 'Product',
+            ref: 'ProductMineERP',
             default: null,
           },
           productName: {

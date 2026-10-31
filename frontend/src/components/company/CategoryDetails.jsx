@@ -183,6 +183,27 @@ export default function CategoryDetails() {
     )
   }
 
+  //  INITIAL LOADING
+  if (loading) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={breadcrumbItems} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading category details..." description="Please wait while we load your company's category details." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="min-w-0 space-y-4 text-erp-text">
       {toast && <Toast toast={toast} onClose={closeToast} />}
@@ -234,9 +255,6 @@ export default function CategoryDetails() {
           </div>
         </div>
       </section>
-
-      {/* Loading */}
-      {loading && <Loading label="Loading category details..." />}
 
       {/* Error */}
       {!loading && error && (

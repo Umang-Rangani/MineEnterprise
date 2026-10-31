@@ -19,34 +19,48 @@ export function AuthProvider({ children }) {
   const [permissions, setPermissions] = useState({})
   const [loading, setLoading] = useState(true)
 
+  const [permissionsLoading, setPermissionsLoading] = useState(true)
+  const [permissionsError, setPermissionsError] = useState('')
+
   const loadPermissions = async (currentUser = user) => {
     if (!currentUser) {
       setPermissions({})
+      setPermissionsError('')
+      setPermissionsLoading(false)
       return {}
     }
 
     if (currentUser.role === 'SuperAdmin') {
       setPermissions(null)
+      setPermissionsError('')
+      setPermissionsLoading(false)
       return null
     }
+
+    setPermissionsLoading(true)
+    setPermissionsError('')
 
     try {
       const response = await axiosInstance.get('/erp/my-permissions')
 
-      if (!response.data?.success) {
-        setPermissions({})
-        return {}
+      if (!response.data?.success || !response.data?.permissions) {
+        throw new Error(response.data?.message || 'Unable to load permissions.')
       }
 
-      const effectivePermissions = response.data.permissions ?? {}
-
-      // console.log('effectivePermissions', effectivePermissions)
+      const effectivePermissions = response.data.permissions
 
       setPermissions(effectivePermissions)
+
       return effectivePermissions
     } catch (error) {
+      console.error('Permission loading failed:', error)
+
       setPermissions({})
+      setPermissionsError(error.response?.data?.message || error.message || 'Unable to load permissions.')
+
       return {}
+    } finally {
+      setPermissionsLoading(false)
     }
   }
 
@@ -130,6 +144,8 @@ export function AuthProvider({ children }) {
     } finally {
       setUser(null)
       setPermissions({})
+      setPermissionsError('')
+      setPermissionsLoading(false)
     }
   }
 
@@ -179,6 +195,8 @@ export function AuthProvider({ children }) {
       value={{
         user,
         permissions,
+        permissionsLoading,
+        permissionsError,
         loading,
         login,
         logout,

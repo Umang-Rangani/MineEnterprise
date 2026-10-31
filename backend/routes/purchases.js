@@ -1019,13 +1019,10 @@ router.patch('/:id', permissionMiddleware('Purchase', 'UPDATE'), async (req, res
 
     const history = existingPurchase.purchaseHistory || []
 
-    const hasCancellationHistory = history.some((entry) => entry.action === 'Cancelled' && entry.fromStatus === 'Ordered' && entry.toStatus === 'Draft')
-
-    // A previously approved purchase can only be edited after cancellation.
-    if (existingPurchase.everApproved && !hasCancellationHistory) {
+    if (existingPurchase.everApproved === true) {
       return res.status(409).json({
         success: false,
-        message: 'This previously approved purchase must be cancelled before editing.',
+        message: 'A previously approved purchase cannot be edited. Create a new purchase if changes are required.',
       })
     }
 
@@ -1223,6 +1220,7 @@ router.patch('/:id/approve', permissionMiddleware('Purchase', 'APPROVE'), async 
 })
 
 // PATCH /erp/purchases/:id/cancel
+
 router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CANCEL'), async (req, res, next) => {
   try {
     const companyId = getCompanyId(req, res)
@@ -1241,19 +1239,34 @@ router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CANCEL'), async (r
       companyId,
       status: 'Ordered',
     })
-      .select('purchaseNumber purchaseDate expectedDeliveryDate supplierName items subtotal discountAmount taxAmount shippingCharges adjustmentAmount totalAmount paidAmount paymentStatus notes')
+      .select('purchaseNumber purchaseDate expectedDeliveryDate supplierName items subtotal discountAmount taxAmount shippingCharges adjustmentAmount totalAmount paidAmount paymentStatus notes supplierId')
+      .populate('supplierId', 'supplierName supplierCode email phone')
       .lean()
 
     if (!purchaseBeforeCancellation) {
+      const existingPurchase = await Purchase.findOne({
+        _id: id,
+        companyId,
+      })
+        .select('_id status')
+        .lean()
+
+      if (!existingPurchase) {
+        return res.status(404).json({
+          success: false,
+          message: 'Purchase not found.',
+        })
+      }
+
       return res.status(409).json({
         success: false,
-        message: 'Purchase is no longer Ordered. Refresh and try again.',
+        message: `Only Ordered purchases without received goods can be cancelled. Current status: "${existingPurchase.status}".`,
       })
     }
 
     const cancellationSnapshot = buildPurchaseSnapshot({
       ...purchaseBeforeCancellation,
-      status: 'Draft',
+      status: 'Cancelled',
     })
 
     const purchase = await Purchase.findOneAndUpdate(
@@ -1264,7 +1277,7 @@ router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CANCEL'), async (r
       },
       {
         $set: {
-          status: 'Draft',
+          status: 'Cancelled',
           updatedBy: userId,
           cancellationEmailStatus: 'Not Sent',
           cancellationEmailSentAt: null,
@@ -1275,7 +1288,7 @@ router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CANCEL'), async (r
             _id: historyId,
             action: 'Cancelled',
             fromStatus: 'Ordered',
-            toStatus: 'Draft',
+            toStatus: 'Cancelled',
             performedBy: userId,
             snapshot: cancellationSnapshot,
             performedAt: new Date(),
@@ -1294,23 +1307,9 @@ router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CANCEL'), async (r
       .lean()
 
     if (!purchase) {
-      const existingPurchase = await Purchase.findOne({
-        _id: id,
-        companyId,
-      })
-        .select('_id status')
-        .lean()
-
-      if (!existingPurchase) {
-        return res.status(404).json({
-          success: false,
-          message: 'Purchase not found.',
-        })
-      }
-
       return res.status(409).json({
         success: false,
-        message: `Only Ordered purchases can be cancelled. Current status: "${existingPurchase.status}".`,
+        message: 'Purchase status changed while cancelling. Refresh and try again.',
       })
     }
 
@@ -1330,8 +1329,8 @@ router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CANCEL'), async (r
       success: true,
       message:
         email.status === 'sent'
-          ? 'Purchase returned to Draft and supplier cancellation email sent successfully. Inventory has not been changed.'
-          : 'Purchase returned to Draft, but the supplier cancellation email failed. You can retry the email. Inventory has not been changed.',
+          ? 'Purchase permanently cancelled and supplier cancellation email sent successfully. Inventory has not been changed.'
+          : 'Purchase cancelled, but the supplier cancellation email failed. You can retry the email. Inventory has not been changed.',
       purchase: email.purchase || purchase,
       email: getEmailResponse(email),
     })
@@ -1409,7 +1408,6 @@ router.patch('/:id/retry-order-email', permissionMiddleware('Purchase', 'APPROVE
 })
 
 // PATCH /erp/purchases/:id/retry-cancellation-email
-// Retry cancellation email for a Draft purchase returned from Ordered
 
 router.patch('/:id/retry-cancellation-email', permissionMiddleware('Purchase', 'CANCEL'), async (req, res, next) => {
   try {
@@ -1425,32 +1423,44 @@ router.patch('/:id/retry-cancellation-email', permissionMiddleware('Purchase', '
     const purchase = await Purchase.findOne({
       _id: id,
       companyId,
-      status: 'Draft',
-      everApproved: true,
+      status: 'Cancelled',
+      cancellationEmailStatus: { $ne: 'Sent' },
+      purchaseHistory: {
+        $elemMatch: {
+          action: 'Cancelled',
+          fromStatus: 'Ordered',
+          toStatus: 'Cancelled',
+        },
+      },
     })
       .populate('supplierId', 'supplierName supplierCode email phone')
       .lean()
 
     if (!purchase) {
-      return res.status(404).json({
-        success: false,
-        message: 'Eligible Draft purchase not found. Cancellation email retry is only available after cancelling an Ordered purchase.',
+      const existingPurchase = await Purchase.findOne({
+        _id: id,
+        companyId,
       })
-    }
+        .select('_id status cancellationEmailStatus')
+        .lean()
 
-    if (purchase.cancellationEmailStatus === 'Not Required') {
+      if (!existingPurchase) {
+        return res.status(404).json({
+          success: false,
+          message: 'Purchase not found.',
+        })
+      }
+
+      if (existingPurchase.cancellationEmailStatus === 'Sent') {
+        return res.status(409).json({
+          success: false,
+          message: 'Cancellation email has already been sent successfully.',
+        })
+      }
+
       return res.status(409).json({
         success: false,
-        message: 'This purchase does not require a cancellation email.',
-        purchase,
-      })
-    }
-
-    if (purchase.cancellationEmailStatus === 'Sent') {
-      return res.status(409).json({
-        success: false,
-        message: 'Cancellation email has already been sent successfully.',
-        purchase,
+        message: 'Cancellation email retry is available only for a permanently cancelled purchase.',
       })
     }
 
@@ -1460,7 +1470,7 @@ router.patch('/:id/retry-cancellation-email', permissionMiddleware('Purchase', '
       userId,
       action: 'Email Retry',
       fromStatus: 'Ordered',
-      toStatus: 'Draft',
+      toStatus: 'Cancelled',
       emailType: 'Cancellation',
     })
 

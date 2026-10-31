@@ -88,47 +88,10 @@ const navigationItems = [
     actions: ['purchase:list'],
   },
   {
-    label: 'Customers',
-    path: '/company/customers',
-    icon: ContactRound,
-    actions: ['customer:list'],
-  },
-  {
-    label: 'Sales & Orders',
-    path: '/company/orders',
-    icon: ShoppingBag,
-    actions: ['sales:list'],
-  },
-  {
-    label: 'Invoices',
-    path: '/company/invoices',
-    icon: FileText,
-    actions: ['invoice:list'],
-  },
-  {
-    label: 'Payments',
-    path: '/company/payments',
-    icon: CreditCard,
-    actions: ['payment:list'],
-  },
-  {
-    label: 'Expenses',
-    path: '/company/expenses',
-    icon: Receipt,
-    actions: ['expense:list'],
-  },
-
-  {
-    label: 'Reports',
-    path: '/company/reports',
-    icon: ChartNoAxesCombined,
-    actions: ['reports:view'],
-  },
-  {
-    label: 'Settings',
-    path: '/company/settings',
-    icon: Settings,
-    actions: ['settings:view'],
+    label: 'Goods Receipts',
+    path: '/company/goods-receipts',
+    icon: Package,
+    actions: ['purchase:list'],
   },
 ]
 
@@ -140,15 +103,9 @@ const pageTitles = {
   products: 'Products',
   inventory: 'Inventory',
   suppliers: 'Suppliers',
-  customers: 'Customers',
   purchases: 'Purchase Management',
-  orders: 'Sales & Orders',
-  invoices: 'Invoices',
-  payments: 'Payments',
-  expenses: 'Expenses',
+  'goods-receipts': 'Goods Receipts',
   warehouses: 'Warehouses',
-  reports: 'Reports & Analytics',
-  settings: 'Company Settings',
 }
 
 const pageDescriptions = {
@@ -159,15 +116,9 @@ const pageDescriptions = {
   products: 'Manage products and pricing',
   inventory: 'Monitor stock and inventory movements',
   suppliers: 'Manage supplier information',
-  customers: 'Manage customer information',
   purchases: 'Manage supplier purchases',
-  orders: 'Manage sales and customer orders',
-  invoices: 'Manage company invoices',
-  payments: 'Track payments and outstanding balances',
-  expenses: 'Manage and track company expenses',
+  'goods-receipts': 'Manage received goods and warehouse stock entries',
   warehouses: 'Manage warehouse locations and stock',
-  reports: 'Review business performance',
-  settings: 'Manage company preferences',
 }
 
 const sectionKey = {
@@ -179,15 +130,11 @@ const sectionKey = {
   inventory: 'Inventory',
   warehouse: 'Warehouse',
   supplier: 'Supplier',
-  customer: 'Customer',
   purchase: 'Purchase',
-  sales: 'Sales',
-  invoice: 'Invoice',
-  payment: 'Payment',
-  expense: 'Expense',
-  accounting: 'Accounting',
-  reports: 'Reports',
-  settings: 'Settings',
+  customer: 'Customer',
+
+
+
 }
 
 const hasPermission = (permissions, actions = []) => {
@@ -342,6 +289,24 @@ const routePermissions = [
     actions: ['purchase:list'],
   },
 
+  // Goods Receipts
+  {
+    pattern: /^\/company\/goods-receipts\/new\/?$/,
+    actions: ['purchase:create'],
+  },
+  {
+    pattern: /^\/company\/goods-receipts\/[^/]+\/edit\/?$/,
+    actions: ['purchase:create'],
+  },
+  {
+    pattern: /^\/company\/goods-receipts\/[^/]+\/?$/,
+    actions: ['purchase:view'],
+  },
+  {
+    pattern: /^\/company\/goods-receipts\/?$/,
+    actions: ['purchase:list'],
+  },
+
   // Sales and orders
   {
     pattern: /^\/company\/orders\/new\/?$/,
@@ -450,7 +415,7 @@ const routePermissions = [
 ]
 
 export default function CompaniesRoute() {
-  const { user, permissions, loading, logout } = useAuth()
+  const { user, permissions, permissionsLoading, permissionsError, loading, logout } = useAuth()
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -486,6 +451,98 @@ export default function CompaniesRoute() {
         <div className="text-center">
           <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-violet-200 border-t-erp-primary" />
           <p className="mt-3 text-xs text-slate-500">Loading workspace...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (permissionsLoading) {
+    return (
+      <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-50">
+        {/* Background Effects */}
+        <div className="absolute left-1/2 top-1/2 h-80 w-80 -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-200/30 blur-3xl" />
+
+        <div className="relative flex flex-col items-center">
+          {/* 3D Loader */}
+          <div className="relative flex h-44 w-44 items-center justify-center">
+            {/* Outer Orbit */}
+            <div className="absolute inset-0 animate-[spin_7s_linear_infinite] rounded-full border border-violet-300/70 [transform:rotateX(65deg)_rotateY(-15deg)]">
+              <span className="absolute -left-1 top-1/2 h-3 w-3 rounded-full bg-violet-500 shadow-[0_0_15px_#8b5cf6]" />
+            </div>
+
+            {/* Middle Orbit */}
+            <div className="absolute inset-3 animate-[spin_5s_linear_infinite_reverse] rounded-full border-2 border-dashed border-purple-300/80 [transform:rotateX(65deg)_rotateY(55deg)]">
+              <span className="absolute -right-1 top-1/2 h-2.5 w-2.5 rounded-full bg-purple-500 shadow-[0_0_12px_#8b5cf6]" />
+            </div>
+
+            {/* Inner Orbit */}
+            <div className="absolute inset-6 animate-[spin_4s_linear_infinite] rounded-full border border-violet-400/60 [transform:rotateX(65deg)_rotateY(-55deg)]" />
+
+            {/* Glow */}
+            <div className="absolute h-24 w-24 rounded-full bg-violet-500/20 blur-2xl" />
+
+            {/* 3D Core */}
+            <div className="relative flex h-20 w-20 items-center justify-center rounded-[26px] border border-white/70 bg-gradient-to-br from-violet-400 via-violet-600 to-indigo-800 shadow-[0_18px_35px_-12px_rgba(109,40,217,0.65),inset_0_2px_5px_rgba(255,255,255,0.5)] [transform:rotateX(12deg)_rotateY(-12deg)] animate-[float_3s_ease-in-out_infinite]">
+              <div className="absolute inset-1 rounded-[22px] border border-white/20" />
+
+              <svg viewBox="0 0 24 24" fill="none" className="h-9 w-9 text-white drop-shadow-lg">
+                <path d="M12 3L19 6V11C19 15.5 16 19 12 21C8 19 5 15.5 5 11V6L12 3Z" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round" />
+                <path d="M9 12L11 14L15 10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+
+              {/* Shine */}
+              <div className="absolute left-3 top-2 h-5 w-10 rotate-[-35deg] rounded-full bg-white/25 blur-md" />
+            </div>
+          </div>
+
+          {/* Loading Text */}
+          <div className="mt-5 text-center">
+            <h3 className="text-sm font-semibold tracking-wide text-slate-800">Securing Your Workspace</h3>
+
+            <p className="mt-2 text-xs text-slate-500">Loading your permissions...</p>
+
+            {/* Animated Progress Dots */}
+            <div className="mt-4 flex items-center justify-center gap-1.5">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-400 [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-500 [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-violet-600 [animation-delay:300ms]" />
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Branding */}
+        <div className="absolute bottom-7 text-[10px] font-medium tracking-[0.25em] text-slate-400">
+          MINEERP <span className="mx-1 text-violet-400">•</span> ENTERPRISE WORKSPACE
+        </div>
+
+        {/* Custom Animation */}
+        <style>
+          {`
+          @keyframes float {
+            0%, 100% {
+              transform: translateY(0) rotateX(12deg) rotateY(-12deg);
+            }
+            50% {
+              transform: translateY(-9px) rotateX(18deg) rotateY(-5deg);
+            }
+          }
+        `}
+        </style>
+      </div>
+    )
+  }
+
+  if (permissionsError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="max-w-sm rounded-xl border border-red-200 bg-white p-6 text-center">
+          <h2 className="text-base font-semibold text-slate-800">Unable to load permissions</h2>
+
+          <p className="mt-2 text-sm text-slate-500">{permissionsError}</p>
+
+          <button type="button" onClick={() => loadPermissions(user)} className="mt-4 rounded-lg bg-erp-primary px-4 py-2 text-xs font-semibold text-white">
+            Try again
+          </button>
         </div>
       </div>
     )

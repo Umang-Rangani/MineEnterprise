@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { UserRoundPlus, Search, RefreshCw, Eye, Pencil, Trash2, ShieldCheck, Mail, Phone, LoaderCircle, PackageOpen, ChevronLeft, ChevronRight, Filter, FilterX, Power, Download } from 'lucide-react'
 
@@ -117,13 +117,16 @@ export default function CompanyEmployees() {
     totalPages: 1,
   })
 
-  const [initialLoading, setInitialLoading] = useState(true)
-  const [isFetching, setIsFetching] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
   const [deletingId, setDeletingId] = useState('')
   const [confirmEmployee, setConfirmEmployee] = useState(null)
   const [toast, setToast] = useState(null)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  const hasLoadedRef = useRef(false)
 
   const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All' || roleFilter !== 'All'
 
@@ -184,7 +187,11 @@ export default function CompanyEmployees() {
     let cancelled = false
 
     async function fetchEmployees() {
-      setIsFetching(true)
+      if (!hasLoadedRef.current) {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
 
       try {
         const response = await axiosInstance.get('/erp/employees', {
@@ -236,9 +243,10 @@ export default function CompanyEmployees() {
         }
       } finally {
         if (!cancelled) {
-          setIsFetching(false)
-          setInitialLoading(false)
+          setLoading(false)
           setRefreshing(false)
+          setHasLoaded(true)
+          hasLoadedRef.current = true
         }
       }
     }
@@ -263,9 +271,8 @@ export default function CompanyEmployees() {
   }, [location.state, location.pathname, navigate])
 
   const handleRefresh = () => {
-    if (isFetching) return
+    if (loading) return
 
-    setRefreshing(true)
     setRefreshKey((key) => key + 1)
   }
 
@@ -409,6 +416,26 @@ export default function CompanyEmployees() {
 
   const items = [{ title: 'Employees', link: null }]
 
+  if (loading && !hasLoaded) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading employees" description="Please wait while we load employee records." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="min-w-0 space-y-4 text-sm">
       <Toast toast={toast} onClose={closeToast} />
@@ -441,7 +468,7 @@ export default function CompanyEmployees() {
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={isFetching}
+              disabled={loading}
               title="Refresh employees"
               aria-label="Refresh employees"
               className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
@@ -543,11 +570,13 @@ export default function CompanyEmployees() {
 
         {/* Table content and in-table loading overlay */}
         <div className="relative min-h-[220px]">
-          {initialLoading ? (
-            <div className="flex min-h-[280px] items-center justify-center">
-              <Loading fullScreen={false} label="Loading employees" description="Fetching employee records..." className="!h-full min-h-[220px]" />
+          {loading && hasLoaded && (
+            <div className="flex items-center justify-center gap-2 border-b border-erp-border px-4 py-3 text-xs text-erp-muted">
+              <LoaderCircle size={15} className="animate-spin text-erp-primary" />
+              Updating employees...
             </div>
-          ) : employees.length === 0 ? (
+          )}
+          {employees.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                 <PackageOpen size={24} />
@@ -770,17 +799,10 @@ export default function CompanyEmployees() {
               </div>
             </>
           )}
-
-          {/* Loading overlay: only the table/list area is covered. */}
-          {!initialLoading && isFetching && (
-            <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
-              <Loading fullScreen={false} label="Updating employees" description="Applying search, filters and pagination..." className="!h-full min-h-[220px]" />
-            </div>
-          )}
         </div>
 
         {/* Pagination */}
-        {!initialLoading && (
+        {!hasLoaded && (
           <div className="flex flex-col gap-3 border-t border-slate-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs text-slate-500 sm:text-sm">
@@ -815,7 +837,7 @@ export default function CompanyEmployees() {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                disabled={safePage <= 1 || isFetching}
+                disabled={safePage <= 1 || loading}
                 onClick={() => setCurrentPage(1)}
                 className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -824,7 +846,7 @@ export default function CompanyEmployees() {
 
               <button
                 type="button"
-                disabled={safePage <= 1 || isFetching}
+                disabled={safePage <= 1 || loading}
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 aria-label="Previous page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -838,7 +860,7 @@ export default function CompanyEmployees() {
 
               <button
                 type="button"
-                disabled={safePage >= totalPages || isFetching}
+                disabled={safePage >= totalPages || loading}
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 aria-label="Next page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -848,7 +870,7 @@ export default function CompanyEmployees() {
 
               <button
                 type="button"
-                disabled={safePage >= totalPages || isFetching}
+                disabled={safePage >= totalPages || loading}
                 onClick={() => setCurrentPage(totalPages)}
                 className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >

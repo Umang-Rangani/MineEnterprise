@@ -465,7 +465,7 @@ export default function CompanyInventory() {
 
         <div className="relative min-h-[420px]">
           {initialLoading ? (
-            <div className="flex min-h-[500px] items-center justify-center">
+            <div className="flex min-h-[480] items-center justify-center">
               <Loading fullScreen={false} label="Loading inventory" description="Fetching stock records..." className="!h-full min-h-[500px]" />
             </div>
           ) : error && items.length === 0 ? (

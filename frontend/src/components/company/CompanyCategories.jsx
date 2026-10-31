@@ -52,10 +52,6 @@ export default function CompanyCategories() {
     inactive: 0,
   })
 
-  const [initialLoading, setInitialLoading] = useState(true)
-  const [isFetching, setIsFetching] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0)
   const [isExporting, setIsExporting] = useState(false)
 
   const [deletingCategory, setDeletingCategory] = useState(null)
@@ -66,6 +62,12 @@ export default function CompanyCategories() {
 
   const [toast, setToast] = useState(null)
   const [error, setError] = useState('')
+
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [isFetching, setIsFetching] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   const items = [{ title: 'Categories', link: null }]
   const hasActiveFilters = Boolean(search.trim()) || statusFilter !== 'All'
@@ -132,7 +134,8 @@ export default function CompanyCategories() {
         }
       } finally {
         if (!cancelled) {
-          setInitialLoading(false)
+          setLoading(false)
+          setHasLoaded(true)
           setIsFetching(false)
           setRefreshing(false)
         }
@@ -161,7 +164,10 @@ export default function CompanyCategories() {
   const handleRefresh = () => {
     if (isFetching) return
 
+    setLoading(true)
+    setHasLoaded(false)
     setRefreshing(true)
+
     setRefreshKey((key) => key + 1)
   }
 
@@ -308,6 +314,26 @@ export default function CompanyCategories() {
     )
   }
 
+  if (loading && !hasLoaded) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading categories" description="Please wait while we load category records." className="!h-full min-h-[480px]" />
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="min-w-0 space-y-4 text-sm">
       <Toast toast={toast} onClose={closeToast} />
@@ -345,8 +371,9 @@ export default function CompanyCategories() {
               aria-label="Refresh categories"
               className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
+
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-              <span className="hidden sm:inline">Refresh</span>
+              <span className="hidden sm:inline">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
             </button>
 
             {canExport && (
@@ -431,11 +458,7 @@ export default function CompanyCategories() {
 
         {/* Table and loading */}
         <div className="relative min-h-[220px]">
-          {initialLoading ? (
-            <div className="flex min-h-[280px] items-center justify-center">
-              <Loading fullScreen={false} label="Loading categories" description="Fetching category records..." className="!h-full min-h-[220px]" />
-            </div>
-          ) : categories.length === 0 ? (
+          { categories.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                 <PackageOpen size={24} />
@@ -650,14 +673,14 @@ export default function CompanyCategories() {
           )}
 
           {/* Loading overlay */}
-          {!initialLoading && isFetching && (
+          {!loading  && isFetching && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
               <Loading fullScreen={false} label="Updating categories" description="Refreshing category records..." className="!h-full min-h-[220px]" />
             </div>
           )}
 
           {/* Fetch error with retry */}
-          {!initialLoading && error && categories.length === 0 && (
+          {hasLoaded && error && categories.length === 0 && (
             <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-center">
               <p className="text-xs text-rose-700">{error}</p>
               <button type="button" onClick={handleRefresh} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">
@@ -669,7 +692,7 @@ export default function CompanyCategories() {
         </div>
 
         {/* Pagination */}
-        {!initialLoading && (
+        {hasLoaded && (
           <div className="flex flex-col gap-3 border-t border-slate-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs text-slate-500 sm:text-sm">

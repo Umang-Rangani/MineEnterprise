@@ -365,6 +365,32 @@ export default function CompanyProducts() {
     )
   }
 
+  // Full page loading — initial load and manual refresh
+  if (initialLoading || refreshing) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[480px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[480px] items-center justify-center">
+            <Loading
+              fullScreen={false}
+              label={refreshing ? 'Refreshing products' : 'Loading products'}
+              description={refreshing ? 'Please wait while we refresh product records.' : 'Please wait while we load product records.'}
+              className="!h-full min-h-[480px]"
+            />
+          </div>
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="min-w-0 space-y-4 text-sm">
       <Toast toast={toast} onClose={closeToast} />
@@ -505,11 +531,7 @@ export default function CompanyProducts() {
 
         {/* Table and loading */}
         <div className="relative min-h-[220px]">
-          {initialLoading ? (
-            <div className="flex min-h-[280px] items-center justify-center">
-              <Loading fullScreen={false} label="Loading products" description="Fetching product records..." className="!h-full min-h-[220px]" />
-            </div>
-          ) : products.length === 0 ? (
+          { products.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                 <Package size={24} />
@@ -787,16 +809,7 @@ export default function CompanyProducts() {
             </div>
           )}
 
-          {/* Fetch error */}
-          {!initialLoading && error && products.length === 0 && (
-            <div className="border-t border-rose-100 bg-rose-50 px-4 py-3 text-center">
-              <p className="text-xs text-rose-700">{error}</p>
-              <button type="button" onClick={handleRefresh} className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100">
-                <RefreshCw size={13} />
-                Try again
-              </button>
-            </div>
-          )}
+          
         </div>
 
         {/* Pagination */}

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowRight, Eye, EyeOff, Layers3, LockKeyhole, Mail, ShieldCheck, Building2 } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Layers3, LockKeyhole, Mail, ShieldCheck, Building2, LoaderCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 
 export default function Login() {
@@ -32,18 +32,32 @@ export default function Login() {
 
   //   try {
   //     const currentUser = await login(email.trim(), password)
+
+  //     if (!currentUser) {
+  //       setError('Invalid email or password.')
+  //       return
+  //     }
+
+  //     const role = currentUser.role
+
+  //     let destination
+
+  //     if (role === 'SuperAdmin') {
+  //       destination = '/superadmin'
+  //     } else if (['CompanyAdmin', 'Employee'].includes(role)) {
+  //       destination = '/company'
+  //     } else {
+  //       setError('Your account does not have a valid role.')
+  //       return
+  //     }
+
   //     const previousPath = location.state?.from?.pathname
 
-  //     const roleDestination = currentUser.role === 'SuperAdmin' ? '/superadmin' : ['CompanyAdmin', 'Employee'].includes(currentUser.role) ? '/company' : '/'
+  //     const isAllowedPath = previousPath && previousPath !== '/login' && (role === 'SuperAdmin' ? previousPath.startsWith('/superadmin') : previousPath.startsWith('/company'))
 
-  //     const destination =
-  //       previousPath && previousPath !== '/login' && (currentUser.role === 'SuperAdmin' ? previousPath.startsWith('/superadmin') : ['CompanyAdmin', 'Employee'].includes(currentUser.role) ? previousPath.startsWith('/company') : true)
-  //         ? previousPath
-  //         : roleDestination
-
-  //     navigate(destination, { replace: true })
+  //     navigate(isAllowedPath ? previousPath : destination, { replace: true })
   //   } catch (err) {
-  //     setError(err.response?.data?.message || err.message || 'Unable to sign in. Please try again.')
+  //     setError(err.response?.data?.message || err.message || 'Invalid email or password.')
   //   } finally {
   //     setSubmitting(false)
   //   }
@@ -51,6 +65,9 @@ export default function Login() {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
+
+    if (submitting || loading) return
+
     setError('')
     setSubmitting(true)
 
@@ -79,7 +96,9 @@ export default function Login() {
 
       const isAllowedPath = previousPath && previousPath !== '/login' && (role === 'SuperAdmin' ? previousPath.startsWith('/superadmin') : previousPath.startsWith('/company'))
 
-      navigate(isAllowedPath ? previousPath : destination, { replace: true })
+      navigate(isAllowedPath ? previousPath : destination, {
+        replace: true,
+      })
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Invalid email or password.')
     } finally {
@@ -215,23 +234,32 @@ export default function Login() {
                 </div>
               )}
 
-              {/* <button
+              <button
                 type="submit"
                 disabled={submitting || loading}
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 text-xs font-semibold text-erp-text-inverse transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {submitting ? 'Signing in...' : 'Sign in securely'}
-                {!submitting && <ArrowRight size={15} />}
-              </button> */}
+                {submitting || loading ? (
+                  <>
+                    <LoaderCircle size={16} className="animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  <>
+                    Sign in securely
+                    <ArrowRight size={15} />
+                  </>
+                )}
+              </button>
 
-              <button
+              {/* <button
                 type="submit"
                 disabled={submitting || loading}
                 className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 text-xs font-semibold text-erp-text-inverse disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {submitting ? 'Signing in...' : 'Sign in securely'}
                 {!submitting && <ArrowRight size={15} />}
-              </button>
+              </button> */}
             </form>
 
             <div className="mt-5 border-t border-erp-border pt-4">
