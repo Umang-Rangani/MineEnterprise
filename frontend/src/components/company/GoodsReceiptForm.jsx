@@ -7,7 +7,19 @@ import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Loading from '../Loading/Loading'
 import { hasPermission, useAuth } from '../../context/AuthContext'
 
-const today = new Date().toISOString().slice(0, 10)
+const getLocalDate = (date = new Date()) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return getLocalDate(new Date())
+  }
+
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
+const today = getLocalDate()
 
 const initialForm = {
   purchaseId: '',
@@ -18,7 +30,9 @@ const initialForm = {
 }
 
 const inputBase = 'h-9 w-full rounded-lg border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-light'
+
 const labelBase = 'mb-1.5 block text-xs font-semibold text-slate-600'
+
 const cardBase = 'rounded-xl border border-slate-200 bg-white p-3 sm:p-4'
 
 const money = (value) =>
@@ -35,6 +49,7 @@ const quantity = (value) =>
 
 const formatDate = (value) => {
   if (!value) return '—'
+
   const date = new Date(value)
 
   return Number.isNaN(date.getTime())
@@ -52,9 +67,11 @@ const unwrapPurchase = (response) => response?.data?.purchase || response?.data?
 
 const getPurchaseOptions = (response) => response?.data?.purchases || response?.data?.data?.purchases || []
 
-const getWarehouseOptions = (response) => response?.data?.data || response?.data?.warehouses || response?.data?.data?.warehouses || []
+const getWarehouseOptions = (response) => response?.data?.data?.warehouses || response?.data?.warehouses || response?.data?.data || []
 
-function normalizePurchaseItem(item) {
+const getReceiptOptions = (response) => response?.data?.receipts || response?.data?.data?.receipts || []
+
+function normalizePurchaseItem(item, otherDraftQuantity = 0) {
   const product = item.productId && typeof item.productId === 'object' ? item.productId : null
 
   return {
@@ -65,6 +82,7 @@ function normalizePurchaseItem(item) {
     unit: item.unit || product?.unit || 'Piece',
     orderedQuantity: Number(item.quantity) || 0,
     previouslyReceivedQuantity: Number(item.receivedQuantity) || 0,
+    otherDraftQuantity: Number(otherDraftQuantity) || 0,
     receivedQuantity: 0,
     damagedQuantity: 0,
     unitPrice: Number(item.unitPrice) || 0,
@@ -72,15 +90,20 @@ function normalizePurchaseItem(item) {
   }
 }
 
-function normalizeReceiptItem(item) {
+function normalizeReceiptItem(item, purchaseItem, otherDraftQuantity = 0) {
+  const orderedQuantity = Number(purchaseItem?.quantity ?? item.orderedQuantity) || 0
+
+  const previouslyReceivedQuantity = Number(purchaseItem?.receivedQuantity ?? item.previouslyReceivedQuantity) || 0
+
   return {
     purchaseItemId: String(item.purchaseItemId?._id || item.purchaseItemId || ''),
     productId: String(item.productId?._id || item.productId || ''),
     productName: item.productName || '',
     sku: item.sku || '',
     unit: item.unit || 'Piece',
-    orderedQuantity: Number(item.orderedQuantity) || 0,
-    previouslyReceivedQuantity: Number(item.previouslyReceivedQuantity) || 0,
+    orderedQuantity,
+    previouslyReceivedQuantity,
+    otherDraftQuantity: Number(otherDraftQuantity) || 0,
     receivedQuantity: Number(item.receivedQuantity) || 0,
     damagedQuantity: Number(item.damagedQuantity) || 0,
     unitPrice: Number(item.unitPrice) || 0,
@@ -96,12 +119,26 @@ function getPurchaseDate(purchase) {
   return purchase?.purchaseDate || purchase?.createdAt
 }
 
-function getRemainingProducts(purchase) {
-  return (purchase?.items || []).filter((item) => Number(item.quantity || 0) - Number(item.receivedQuantity || 0) > 0)
+function getRemainingProducts(purchase, draftQuantities = {}) {
+  return (purchase?.items || []).filter((item) => {
+    const key = `${purchase._id}:${item._id}`
+    const ordered = Number(item.quantity) || 0
+    const received = Number(item.receivedQuantity) || 0
+    const drafted = Number(draftQuantities[key]) || 0
+
+    return ordered - received - drafted > 0
+  })
 }
 
-function getRemainingQuantity(purchase) {
-  return getRemainingProducts(purchase).reduce((total, item) => total + Math.max(0, Number(item.quantity || 0) - Number(item.receivedQuantity || 0)), 0)
+function getRemainingQuantity(purchase, draftQuantities = {}) {
+  return getRemainingProducts(purchase, draftQuantities).reduce((total, item) => {
+    const key = `${purchase._id}:${item._id}`
+    const ordered = Number(item.quantity) || 0
+    const received = Number(item.receivedQuantity) || 0
+    const drafted = Number(draftQuantities[key]) || 0
+
+    return total + Math.max(0, ordered - received - drafted)
+  }, 0)
 }
 
 function getStatusStyle(status) {
@@ -128,13 +165,20 @@ export default function GoodsReceiptForm() {
   const canView = hasPermission(permissions, 'purchase:view')
 
   const [form, setForm] = useState(initialForm)
+
   const [purchases, setPurchases] = useState([])
+  const [draftQuantities, setDraftQuantities] = useState({})
   const [warehouses, setWarehouses] = useState([])
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+
   const [receiptNumber, setReceiptNumber] = useState('')
+  const [receiptStatus, setReceiptStatus] = useState('')
+
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
 
@@ -166,6 +210,7 @@ export default function GoodsReceiptForm() {
       .sort((a, b) => {
         const aDate = new Date(getPurchaseDate(a) || 0).getTime()
         const bDate = new Date(getPurchaseDate(b) || 0).getTime()
+
         return bDate - aDate
       })
   }, [purchases, search, statusFilter])
@@ -184,7 +229,12 @@ export default function GoodsReceiptForm() {
 
           return result
         },
-        { received: 0, damaged: 0, accepted: 0, value: 0 },
+        {
+          received: 0,
+          damaged: 0,
+          accepted: 0,
+          value: 0,
+        },
       ),
     [form.items],
   )
@@ -195,17 +245,40 @@ export default function GoodsReceiptForm() {
     async function loadFormData() {
       setLoading(true)
       setError('')
+      setReceiptStatus('')
 
       try {
-        const [orderedResponse, partialResponse, warehouseResponse] = await Promise.all([
+        const [orderedResponse, partialResponse, warehouseResponse, draftsResponse] = await Promise.all([
           axiosInstance.get('/erp/purchases', {
-            params: { page: 1, limit: 100, status: 'Ordered' },
+            params: {
+              page: 1,
+              limit: 100,
+              status: 'Ordered',
+            },
           }),
+
           axiosInstance.get('/erp/purchases', {
-            params: { page: 1, limit: 100, status: 'Partially Received' },
+            params: {
+              page: 1,
+              limit: 100,
+              status: 'Partially Received',
+            },
           }),
+
           axiosInstance.get('/erp/warehouses', {
-            params: { page: 1, limit: 100, status: 'Active' },
+            params: {
+              page: 1,
+              limit: 100,
+              status: 'Active',
+            },
+          }),
+
+          axiosInstance.get('/erp/goods-receipts', {
+            params: {
+              page: 1,
+              limit: 100,
+              status: 'Draft',
+            },
           }),
         ])
 
@@ -215,6 +288,27 @@ export default function GoodsReceiptForm() {
 
         const uniquePurchases = Array.from(new Map(allPurchases.map((purchase) => [String(purchase._id), purchase])).values())
 
+        const draftReceipts = getReceiptOptions(draftsResponse)
+
+        const draftQuantityMap = {}
+
+        for (const draft of draftReceipts) {
+          const purchaseId = String(draft.purchaseId?._id || draft.purchaseId || '')
+
+          if (!purchaseId) continue
+
+          for (const item of draft.items || []) {
+            const purchaseItemId = String(item.purchaseItemId?._id || item.purchaseItemId || '')
+
+            if (!purchaseItemId) continue
+
+            const key = `${purchaseId}:${purchaseItemId}`
+
+            draftQuantityMap[key] = (draftQuantityMap[key] || 0) + (Number(item.receivedQuantity) || 0)
+          }
+        }
+
+        setDraftQuantities(draftQuantityMap)
         setPurchases(uniquePurchases)
         setWarehouses(getWarehouseOptions(warehouseResponse))
 
@@ -235,18 +329,56 @@ export default function GoodsReceiptForm() {
 
           const purchase = unwrapPurchase(purchaseResponse)
 
-          setReceiptNumber(receipt.receiptNumber || '')
-
-          if (purchase?._id) {
-            setPurchases((current) => (current.some((entry) => String(entry._id) === String(purchase._id)) ? current : [purchase, ...current]))
+          if (!purchase?._id) {
+            throw new Error('Related Purchase Order could not be loaded.')
           }
+
+          const purchaseDraftsResponse = await axiosInstance.get('/erp/goods-receipts', {
+            params: {
+              purchaseId: purchase._id,
+              status: 'Draft',
+              page: 1,
+              limit: 100,
+            },
+          })
+
+          if (!active) return
+
+          const otherDrafts = getReceiptOptions(purchaseDraftsResponse).filter((draft) => String(draft._id) !== String(receipt._id))
+
+          const purchaseItems = new Map((purchase.items || []).map((item) => [String(item._id), item]))
+
+          const otherDraftQuantities = new Map()
+
+          for (const draft of otherDrafts) {
+            for (const draftItem of draft.items || []) {
+              const purchaseItemId = String(draftItem.purchaseItemId?._id || draftItem.purchaseItemId || '')
+
+              if (!purchaseItemId) continue
+
+              const currentQuantity = otherDraftQuantities.get(purchaseItemId) || 0
+
+              otherDraftQuantities.set(purchaseItemId, currentQuantity + (Number(draftItem.receivedQuantity) || 0))
+            }
+          }
+
+          const normalizedItems = (receipt.items || []).map((item) => {
+            const purchaseItemId = String(item.purchaseItemId?._id || item.purchaseItemId || '')
+
+            return normalizeReceiptItem(item, purchaseItems.get(purchaseItemId), otherDraftQuantities.get(purchaseItemId) || 0)
+          })
+
+          setReceiptNumber(receipt.receiptNumber || '')
+          setReceiptStatus(receipt.status || '')
+
+          setPurchases((current) => (current.some((entry) => String(entry._id) === String(purchase._id)) ? current : [purchase, ...current]))
 
           setForm({
             purchaseId: String(receipt.purchaseId?._id || receipt.purchaseId || ''),
             warehouseId: String(receipt.warehouseId?._id || receipt.warehouseId || ''),
-            receiptDate: receipt.receiptDate ? new Date(receipt.receiptDate).toISOString().slice(0, 10) : today,
+            receiptDate: receipt.receiptDate ? getLocalDate(new Date(receipt.receiptDate)) : today,
             notes: receipt.notes || '',
-            items: (receipt.items || []).map(normalizeReceiptItem),
+            items: normalizedItems,
           })
 
           if (receipt.status !== 'Draft') {
@@ -258,7 +390,9 @@ export default function GoodsReceiptForm() {
           setError(getErrorMessage(loadError, 'Unable to load Goods Receipt form.'))
         }
       } finally {
-        if (active) setLoading(false)
+        if (active) {
+          setLoading(false)
+        }
       }
     }
 
@@ -270,7 +404,11 @@ export default function GoodsReceiptForm() {
   }, [id, isEdit])
 
   function updateField(field, value) {
-    setForm((current) => ({ ...current, [field]: value }))
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+
     setError('')
     setNotice('')
   }
@@ -281,7 +419,13 @@ export default function GoodsReceiptForm() {
     setForm((current) => ({
       ...current,
       purchaseId,
-      items: purchase ? (purchase.items || []).map(normalizePurchaseItem) : [],
+      items: purchase
+        ? (purchase.items || []).map((item) => {
+            const key = `${purchaseId}:${item._id}`
+
+            return normalizePurchaseItem(item, draftQuantities[key] || 0)
+          })
+        : [],
     }))
 
     setError('')
@@ -291,7 +435,14 @@ export default function GoodsReceiptForm() {
   function updateItem(index, field, value) {
     setForm((current) => ({
       ...current,
-      items: current.items.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)),
+      items: current.items.map((item, itemIndex) =>
+        itemIndex === index
+          ? {
+              ...item,
+              [field]: value,
+            }
+          : item,
+      ),
     }))
 
     setError('')
@@ -299,15 +450,31 @@ export default function GoodsReceiptForm() {
   }
 
   function validateForm() {
-    if (!form.purchaseId) return 'Please select a Purchase Order.'
-    if (!form.warehouseId) return 'Please select a warehouse.'
-    if (!form.receiptDate) return 'Receipt date is required.'
-    if (!form.items.length) return 'The selected Purchase Order has no items.'
+    if (!form.purchaseId) {
+      return 'Please select a Purchase Order.'
+    }
+
+    if (!form.warehouseId) {
+      return 'Please select a warehouse.'
+    }
+
+    if (!form.receiptDate) {
+      return 'Receipt date is required.'
+    }
+
+    if (form.receiptDate > today) {
+      return 'Receipt date cannot be in the future.'
+    }
+
+    if (!form.items.length) {
+      return 'The selected Purchase Order has no items.'
+    }
 
     for (const item of form.items) {
       const received = Number(item.receivedQuantity)
       const damaged = Number(item.damagedQuantity)
-      const remaining = Number(item.orderedQuantity) - Number(item.previouslyReceivedQuantity)
+
+      const remaining = Number(item.orderedQuantity) - Number(item.previouslyReceivedQuantity) - Number(item.otherDraftQuantity || 0)
 
       if (!Number.isFinite(received) || received < 0) {
         return `Enter a valid received quantity for ${item.productName}.`
@@ -343,11 +510,22 @@ export default function GoodsReceiptForm() {
 
   async function handleSubmit(event) {
     event.preventDefault()
+
     setError('')
     setNotice('')
 
+    if (!canView) {
+      setError('You do not have permission to view Purchase details.')
+      return
+    }
+
     if (!canCreate) {
       setError('You do not have permission to create or edit Goods Receipts.')
+      return
+    }
+
+    if (isEdit && receiptStatus !== 'Draft') {
+      setError('Only Draft Goods Receipts can be edited.')
       return
     }
 
@@ -365,6 +543,7 @@ export default function GoodsReceiptForm() {
       warehouseId: form.warehouseId,
       receiptDate: form.receiptDate,
       notes: form.notes.trim(),
+
       items: form.items
         .filter((item) => Number(item.receivedQuantity) > 0)
         .map((item) => ({
@@ -394,6 +573,8 @@ export default function GoodsReceiptForm() {
     }
   }
 
+  const readOnly = isEdit && receiptStatus !== 'Draft'
+
   if (loading) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
@@ -403,7 +584,10 @@ export default function GoodsReceiptForm() {
           <div className="flex min-h-16 items-center px-4 sm:px-5">
             <BreadCrumb
               items={[
-                { title: 'Goods Receipts', link: '/company/goods-receipts' },
+                {
+                  title: 'Goods Receipts',
+                  link: '/company/goods-receipts',
+                },
                 {
                   title: isEdit ? 'Edit Goods Receipt' : 'New Goods Receipt',
                   link: null,
@@ -422,18 +606,54 @@ export default function GoodsReceiptForm() {
     )
   }
 
+  if (!canView) {
+    return (
+      <div className="space-y-4">
+        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
 
-  const readOnly = isEdit && Boolean(error?.includes('Only Draft'))
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb
+              items={[
+                {
+                  title: 'Goods Receipts',
+                  link: '/company/goods-receipts',
+                },
+                {
+                  title: isEdit ? 'Edit Goods Receipt' : 'New Goods Receipt',
+                  link: null,
+                },
+              ]}
+            />
+          </div>
+        </section>
+
+        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs text-amber-800">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <span>You do not have permission to view Purchase details.</span>
+        </div>
+
+        <Link to="/company/goods-receipts" className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+          <ArrowLeft size={14} />
+          Back to Goods Receipts
+        </Link>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4 pb-20">
       {/* Header */}
-      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card h-17">
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
+
         <div className="flex min-h-16 items-center justify-between gap-3 px-3 sm:px-4">
           <BreadCrumb
             items={[
-              { title: 'Goods Receipts', link: '/company/goods-receipts' },
+              {
+                title: 'Goods Receipts',
+                link: '/company/goods-receipts',
+              },
               {
                 title: isEdit ? 'Edit Goods Receipt' : 'New Goods Receipt',
                 link: null,
@@ -455,7 +675,7 @@ export default function GoodsReceiptForm() {
       {readOnly && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
           <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          <span>{error}</span>
+          <span>{error || 'Only Draft Goods Receipts can be edited.'}</span>
         </div>
       )}
 
@@ -466,11 +686,9 @@ export default function GoodsReceiptForm() {
         </div>
       )}
 
-      {!canView && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">You do not have permission to view purchase details.</div>}
-
       <form onSubmit={handleSubmit}>
         <div className={!isEdit ? 'grid grid-cols-1 items-start gap-3 xl:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.1fr)]' : 'space-y-3'}>
-          {/* LEFT SIDE: PURCHASE REQUESTS */}
+          {/* Purchase Requests */}
           {!isEdit && (
             <section className={`${cardBase} xl:sticky xl:top-3`}>
               <div className="mb-3 flex items-center justify-between gap-2">
@@ -478,6 +696,7 @@ export default function GoodsReceiptForm() {
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-erp-light text-erp-primary">
                     <ShoppingCart size={16} />
                   </div>
+
                   <div className="min-w-0">
                     <h2 className="text-sm font-bold text-slate-800">Purchase Requests</h2>
                     <p className="text-[10px] text-slate-500">Select an order to receive.</p>
@@ -490,6 +709,7 @@ export default function GoodsReceiptForm() {
               <div className="mb-3 space-y-2">
                 <div className="relative">
                   <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
                   <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search PO, supplier or product..." className={`${inputBase} pl-9`} />
                 </div>
 
@@ -503,13 +723,17 @@ export default function GoodsReceiptForm() {
               {filteredPurchases.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-300 px-3 py-8 text-center">
                   <Package size={24} className="mx-auto text-slate-300" />
+
                   <p className="mt-2 text-xs font-semibold text-slate-700">No Purchase Orders Found</p>
+
                   <p className="mt-1 text-[10px] text-slate-500">No matching orders are available for receiving.</p>
                 </div>
               ) : (
                 <div className="space-y-2">
                   {filteredPurchases.map((purchase) => {
                     const isSelected = String(form.purchaseId) === String(purchase._id)
+
+                    const remainingQuantity = getRemainingQuantity(purchase, draftQuantities)
 
                     const productNames = [...new Set((purchase.items || []).map((item) => item.productName || item.productId?.name || 'Product').filter(Boolean))]
 
@@ -519,8 +743,16 @@ export default function GoodsReceiptForm() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-1.5">
-                                <p className="mt-0.5 text-[9px] text-slate-400">{formatDate(getPurchaseDate(purchase))}</p> -<h3 className="text-xs font-bold text-slate-800">{purchase.purchaseNumber || 'Purchase Order'}</h3> -
-                                <p className=" truncate text-[15px] font-semibold text-slate-600">{getSupplierName(purchase)}</p>
+                                <p className="mt-0.5 text-[9px] text-slate-400">{formatDate(getPurchaseDate(purchase))}</p>
+
+                                <span className="text-slate-300">·</span>
+
+                                <h3 className="text-xs font-bold text-slate-800">{purchase.purchaseNumber || 'Purchase Order'}</h3>
+
+                                <span className="text-slate-300">·</span>
+
+                                <p className="truncate text-[15px] font-semibold text-slate-600">{getSupplierName(purchase)}</p>
+
                                 {isSelected && (
                                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700">
                                     <Check size={10} />
@@ -552,18 +784,22 @@ export default function GoodsReceiptForm() {
                           <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
                             <div className="min-w-0">
                               <p className="text-[9px] text-slate-500">Order Total</p>
+
                               <p className="text-xs font-bold text-slate-800">{money(purchase.totalAmount)}</p>
+
+                              <p className="mt-0.5 text-[9px] text-slate-500">Available: {quantity(remainingQuantity)}</p>
                             </div>
 
                             <button
                               type="button"
                               onClick={() => handlePurchaseChange(String(purchase._id))}
-                              disabled={getRemainingQuantity(purchase) <= 0 || readOnly}
+                              disabled={remainingQuantity <= 0 || readOnly || !canCreate}
                               className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg px-3 text-[10px] font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
                                 isSelected ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-erp-primary text-white hover:bg-erp-hover'
                               }`}
                             >
                               {isSelected ? <Check size={13} /> : <Package size={13} />}
+
                               {isSelected ? 'Selected' : 'Receive This Order'}
                             </button>
                           </div>
@@ -576,7 +812,7 @@ export default function GoodsReceiptForm() {
             </section>
           )}
 
-          {/* RIGHT SIDE: RECEIPT FORM */}
+          {/* Receipt Form */}
           <div className="min-w-0 space-y-3">
             {!isEdit && !selectedPurchase ? (
               <section className={`${cardBase} flex min-h-[300px] items-center justify-center`}>
@@ -584,7 +820,9 @@ export default function GoodsReceiptForm() {
                   <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-erp-light text-erp-primary">
                     <ClipboardList size={22} />
                   </div>
+
                   <h2 className="mt-3 text-sm font-bold text-slate-800">Select a Purchase Request</h2>
+
                   <p className="mt-1 text-xs leading-relaxed text-slate-500">Select Receive This Order from the Purchase Requests panel. Receipt Information and Received Items will appear here.</p>
                 </div>
               </section>
@@ -596,8 +834,10 @@ export default function GoodsReceiptForm() {
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-light text-erp-primary">
                       <ClipboardList size={16} />
                     </div>
+
                     <div>
                       <h2 className="text-sm font-bold text-slate-800">Receipt Information</h2>
+
                       <p className="text-[11px] text-slate-500">Select the receiving warehouse and receipt date.</p>
                     </div>
                   </div>
@@ -607,8 +847,10 @@ export default function GoodsReceiptForm() {
                       <label className={labelBase}>
                         Warehouse <span className="text-red-500">*</span>
                       </label>
+
                       <select className={inputBase} value={form.warehouseId} onChange={(event) => updateField('warehouseId', event.target.value)} disabled={readOnly} required>
                         <option value="">Select Active Warehouse</option>
+
                         {warehouses.map((warehouse) => (
                           <option key={warehouse._id} value={warehouse._id}>
                             {warehouse.name} ({warehouse.code})
@@ -623,8 +865,10 @@ export default function GoodsReceiptForm() {
                       <label className={labelBase}>
                         Receipt Date <span className="text-red-500">*</span>
                       </label>
+
                       <div className="relative">
                         <CalendarDays size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+
                         <input type="date" className={`${inputBase} pl-8`} value={form.receiptDate} max={today} onChange={(event) => updateField('receiptDate', event.target.value)} disabled={readOnly} required />
                       </div>
                     </div>
@@ -634,16 +878,19 @@ export default function GoodsReceiptForm() {
                     <div className="mt-3 grid grid-cols-2 gap-2 rounded-lg bg-slate-50 p-3 sm:grid-cols-3">
                       <div>
                         <p className="text-[9px] font-medium uppercase tracking-wide text-slate-500">Purchase Order</p>
+
                         <p className="mt-1 text-[11px] font-bold text-slate-800">{selectedPurchase.purchaseNumber}</p>
                       </div>
 
                       <div>
                         <p className="text-[9px] font-medium uppercase tracking-wide text-slate-500">Supplier</p>
+
                         <p className="mt-1 truncate text-[11px] font-bold text-slate-800">{getSupplierName(selectedPurchase)}</p>
                       </div>
 
                       <div>
                         <p className="text-[9px] font-medium uppercase tracking-wide text-slate-500">Order Total</p>
+
                         <p className="mt-1 text-[11px] font-bold text-slate-800">{money(selectedPurchase.totalAmount)}</p>
                       </div>
                     </div>
@@ -657,8 +904,10 @@ export default function GoodsReceiptForm() {
                       <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-light text-erp-primary">
                         <Truck size={16} />
                       </div>
+
                       <div>
                         <h2 className="text-sm font-bold text-slate-800">Received Items</h2>
+
                         <p className="text-[11px] text-slate-500">Enter physical received and damaged quantities.</p>
                       </div>
                     </div>
@@ -669,16 +918,18 @@ export default function GoodsReceiptForm() {
                   {form.items.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-slate-300 px-4 py-8 text-center">
                       <Package size={24} className="mx-auto text-slate-300" />
+
                       <p className="mt-2 text-xs font-semibold text-slate-700">No Purchase Order Items</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
                       {form.items.map((item, index) => {
-                        const remaining = Math.max(0, Number(item.orderedQuantity) - Number(item.previouslyReceivedQuantity))
+                        const remaining = Math.max(0, Number(item.orderedQuantity) - Number(item.previouslyReceivedQuantity) - Number(item.otherDraftQuantity || 0))
 
                         const received = Number(item.receivedQuantity) || 0
                         const damaged = Number(item.damagedQuantity) || 0
                         const accepted = Math.max(0, received - damaged)
+
                         const overRemaining = received > remaining
                         const damagedInvalid = damaged > received
 
@@ -689,27 +940,38 @@ export default function GoodsReceiptForm() {
                                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
                                   <Package size={16} />
                                 </div>
+
                                 <div className="min-w-0">
                                   <p className="truncate text-xs font-bold text-slate-800">{item.productName}</p>
+
                                   <p className="mt-0.5 text-[10px] text-slate-500">
                                     SKU: {item.sku || '—'} · Unit: {item.unit} · Cost: {money(item.unitPrice)}
                                   </p>
                                 </div>
                               </div>
 
-                              <div className="grid grid-cols-3 gap-1.5 sm:min-w-[280px]">
+                              <div className="grid grid-cols-2 gap-1.5 sm:min-w-[360px] sm:grid-cols-4">
                                 <div className="rounded-md bg-slate-50 px-2 py-1.5 text-center">
                                   <p className="text-[9px] text-slate-500">Ordered</p>
+
                                   <p className="text-[11px] font-bold text-slate-800">{quantity(item.orderedQuantity)}</p>
                                 </div>
 
                                 <div className="rounded-md bg-slate-50 px-2 py-1.5 text-center">
                                   <p className="text-[9px] text-slate-500">Received</p>
+
                                   <p className="text-[11px] font-bold text-slate-800">{quantity(item.previouslyReceivedQuantity)}</p>
+                                </div>
+
+                                <div className="rounded-md bg-amber-50 px-2 py-1.5 text-center">
+                                  <p className="text-[9px] text-amber-700">Other Drafts</p>
+
+                                  <p className="text-[11px] font-bold text-amber-700">{quantity(item.otherDraftQuantity || 0)}</p>
                                 </div>
 
                                 <div className="rounded-md bg-erp-light px-2 py-1.5 text-center">
                                   <p className="text-[9px] text-erp-primary">Remaining</p>
+
                                   <p className="text-[11px] font-bold text-erp-primary">{quantity(remaining)}</p>
                                 </div>
                               </div>
@@ -718,18 +980,22 @@ export default function GoodsReceiptForm() {
                             <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
                               <div>
                                 <label className={labelBase}>Received Quantity</label>
+
                                 <input type="number" min="0" max={remaining} step="0.001" className={inputBase} value={item.receivedQuantity} onChange={(event) => updateItem(index, 'receivedQuantity', event.target.value)} disabled={readOnly} />
                               </div>
 
                               <div>
                                 <label className={labelBase}>Damaged Quantity</label>
+
                                 <input type="number" min="0" max={received} step="0.001" className={inputBase} value={item.damagedQuantity} onChange={(event) => updateItem(index, 'damagedQuantity', event.target.value)} disabled={readOnly} />
                               </div>
 
                               <div>
                                 <label className={labelBase}>Accepted Quantity</label>
+
                                 <div className="flex h-9 items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-3">
                                   <span className="text-[10px] text-emerald-700">Stock on confirmation</span>
+
                                   <span className="text-xs font-bold text-emerald-700">{quantity(accepted)}</span>
                                 </div>
                               </div>
@@ -738,12 +1004,14 @@ export default function GoodsReceiptForm() {
                             {(overRemaining || damagedInvalid) && (
                               <p className="mt-2 flex items-center gap-1.5 text-[10px] text-red-600">
                                 <AlertCircle size={13} />
+
                                 {overRemaining ? 'Received quantity cannot exceed remaining quantity.' : 'Damaged quantity cannot exceed received quantity.'}
                               </p>
                             )}
 
                             <div className="mt-2">
                               <label className={labelBase}>Item Notes</label>
+
                               <input type="text" maxLength={500} className={inputBase} value={item.notes} placeholder="Optional product notes..." onChange={(event) => updateItem(index, 'notes', event.target.value)} disabled={readOnly} />
                             </div>
                           </div>
@@ -759,8 +1027,10 @@ export default function GoodsReceiptForm() {
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-light text-erp-primary">
                       <WarehouseIcon size={16} />
                     </div>
+
                     <div>
                       <h2 className="text-sm font-bold text-slate-800">Receipt Summary</h2>
+
                       <p className="text-[11px] text-slate-500">Only accepted quantities increase warehouse stock after confirmation.</p>
                     </div>
                   </div>
@@ -790,6 +1060,7 @@ export default function GoodsReceiptForm() {
                     ].map((stat) => (
                       <div key={stat.label} className="rounded-lg border border-slate-200 bg-slate-50 p-2.5">
                         <p className="text-[9px] font-medium uppercase tracking-wide text-slate-500">{stat.label}</p>
+
                         <p className={`mt-1 text-sm font-bold ${stat.color}`}>{stat.value}</p>
                       </div>
                     ))}
@@ -797,6 +1068,7 @@ export default function GoodsReceiptForm() {
 
                   <div className="mt-3">
                     <label className={labelBase}>Receipt Notes</label>
+
                     <textarea
                       rows={2}
                       maxLength={2000}
@@ -806,6 +1078,7 @@ export default function GoodsReceiptForm() {
                       onChange={(event) => updateField('notes', event.target.value)}
                       disabled={readOnly}
                     />
+
                     <p className="mt-1 text-right text-[9px] text-slate-400">{form.notes.length}/2000 characters</p>
                   </div>
                 </section>
@@ -831,6 +1104,7 @@ export default function GoodsReceiptForm() {
                 className="inline-flex h-9 items-center gap-2 rounded-lg bg-erp-primary px-4 text-xs font-semibold text-white transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? <LoaderCircle size={14} className="animate-spin" /> : <Save size={14} />}
+
                 {saving ? 'Saving...' : isEdit ? 'Update Draft' : 'Create Draft'}
               </button>
             </div>

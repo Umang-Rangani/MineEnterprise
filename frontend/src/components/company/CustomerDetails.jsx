@@ -1,326 +1,353 @@
+import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Pencil, UserRound, Building2, Mail, Phone, MapPin, FileText, IndianRupee, CalendarDays } from 'lucide-react'
+import { ArrowLeft, Pencil, UserRound, Mail, Phone, MapPin, Building2, CreditCard, Wallet, FileText, Hash, LoaderCircle, RefreshCw, CalendarDays } from 'lucide-react'
 
-const sampleCustomers = [
-  {
-    id: 'CUS-001',
-    name: 'Rahul Shah',
-    company: 'Shah Enterprises',
-    email: 'rahul@shahenterprises.com',
-    phone: '+91 98765 43210',
-    city: 'Ahmedabad',
-    type: 'Business',
-    status: 'Active',
-    outstanding: 15000,
-    gstin: '24ABCDE1234F1Z5',
-    address: '12, CG Road',
-    state: 'Gujarat',
-    pincode: '380009',
-    notes: 'Regular customer',
-  },
-  {
-    id: 'CUS-002',
-    name: 'Priya Patel',
-    company: 'Patel Retail Store',
-    email: 'priya@patelretail.com',
-    phone: '+91 98765 12345',
-    city: 'Surat',
-    type: 'Business',
-    status: 'Active',
-    outstanding: 8500,
-    gstin: '24FGHIJ5678K1Z2',
-    address: '45, Ring Road',
-    state: 'Gujarat',
-    pincode: '395002',
-    notes: '',
-  },
-  {
-    id: 'CUS-003',
-    name: 'Aarav Mehta',
-    company: 'Individual Customer',
-    email: 'aarav@example.com',
-    phone: '+91 98765 67890',
-    city: 'Vadodara',
-    type: 'Individual',
-    status: 'Active',
-    outstanding: 0,
-    gstin: '',
-    address: '18, Alkapuri',
-    state: 'Gujarat',
-    pincode: '390007',
-    notes: '',
-  },
-  {
-    id: 'CUS-004',
-    name: 'Neha Desai',
-    company: 'Desai Distributors',
-    email: 'neha@desaidesai.com',
-    phone: '+91 98765 24680',
-    city: 'Rajkot',
-    type: 'Business',
-    status: 'Inactive',
-    outstanding: 12000,
-    gstin: '24KLMNO9012P1Z3',
-    address: '22, Industrial Zone',
-    state: 'Gujarat',
-    pincode: '360002',
-    notes: '',
-  },
-  {
-    id: 'CUS-005',
-    name: 'Karan Joshi',
-    company: 'Joshi Traders',
-    email: 'karan@joshitraders.com',
-    phone: '+91 98765 13579',
-    city: 'Gandhinagar',
-    type: 'Business',
-    status: 'Active',
-    outstanding: 4500,
-    gstin: '24PQRST3456U1Z4',
-    address: '7, Sector 21',
-    state: 'Gujarat',
-    pincode: '382021',
-    notes: '',
-  },
-  {
-    id: 'CUS-006',
-    name: 'Ananya Shah',
-    company: 'Individual Customer',
-    email: 'ananya@example.com',
-    phone: '+91 98765 97531',
-    city: 'Ahmedabad',
-    type: 'Individual',
-    status: 'Inactive',
-    outstanding: 0,
-    gstin: '',
-    address: '3, Satellite Road',
-    state: 'Gujarat',
-    pincode: '380015',
-    notes: '',
-  },
-]
+import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import Toast from '../../Toast/Toast'
+import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 export default function CustomerDetails() {
-  const { id } = useParams()
   const navigate = useNavigate()
+  const { id } = useParams()
 
-  const customer = sampleCustomers.find((item) => item.id === id)
+  const { permissions } = useAuth()
+  const canUpdate = hasPermission(permissions, 'customer:update')
+
+  const [customer, setCustomer] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [toast, setToast] = useState(null)
+
+  const showToast = (type, message, duration = 3000) => {
+    setToast({ id: Date.now(), type, message, duration })
+  }
+
+  const closeToast = () => setToast(null)
+
+  useEffect(() => {
+    document.title = 'Customer Details | MineERP'
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchCustomer = async () => {
+      if (hasLoaded) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
+
+      try {
+        const response = await axiosInstance.get(`/erp/customers/${id}`)
+
+        if (cancelled) return
+
+        setCustomer(response.data.customer || response.data)
+        setHasLoaded(true)
+      } catch (error) {
+        if (!cancelled) {
+          showToast('error', error.response?.data?.message || 'Unable to load customer details.', 5000)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    fetchCustomer()
+
+    return () => {
+      cancelled = true
+    }
+  }, [id, refreshKey])
+
+  const isInactive = customer?.status === 'Inactive'
+
+  const theme = {
+    section: isInactive ? 'border-erp-disabled-border bg-erp-disabled-surface' : 'border-erp-border bg-white',
+    sectionHeader: isInactive ? 'border-erp-disabled-border' : 'border-slate-100',
+    heading: isInactive ? 'text-erp-disabled-text' : 'text-slate-900',
+    text: isInactive ? 'text-erp-disabled-text' : 'text-slate-500',
+    icon: isInactive ? 'bg-erp-disabled-light text-erp-disabled' : 'bg-erp-primary/10 text-erp-primary',
+    detailIcon: isInactive ? 'text-erp-disabled' : 'text-slate-400',
+    detailValue: isInactive ? 'text-erp-disabled-text' : 'text-slate-800',
+    card: isInactive ? 'border-erp-disabled-border bg-erp-disabled-surface' : 'border-erp-border bg-white',
+    innerCard: isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/60' : 'border-slate-100 bg-white',
+    accentIcon: isInactive ? 'text-erp-disabled' : 'text-erp-primary',
+    divider: isInactive ? 'border-erp-disabled-border' : 'border-slate-100',
+  }
 
   const formatCurrency = (amount) =>
     new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount)
+      maximumFractionDigits: 2,
+    }).format(Number(amount) || 0)
+
+  const formatDate = (date) => {
+    if (!date) return '—'
+
+    const parsedDate = new Date(date)
+
+    if (Number.isNaN(parsedDate.getTime())) return '—'
+
+    return parsedDate.toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    })
+  }
+
+  const items = [
+    { title: 'Customers', link: '/company/customers' },
+    { title: customer?.customerName || 'Customer Details', link: null },
+  ]
+
+  const DetailItem = ({ label, value, icon: Icon }) => (
+    <div className="min-w-0">
+      <p className={`text-[11px] font-medium ${theme.text}`}>{label}</p>
+      <div className="mt-1 flex min-w-0 items-center gap-2">
+        {Icon && <Icon size={14} className={`shrink-0 ${theme.detailIcon}`} />}
+        <p className={`break-words text-xs font-semibold ${theme.detailValue}`}>{value || '—'}</p>
+      </div>
+    </div>
+  )
+
+  const SectionHeader = ({ icon: Icon, title, description }) => (
+    <div className={`flex items-center gap-2 border-b px-3 py-2.5 ${theme.sectionHeader}`}>
+      <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${theme.icon}`}>
+        <Icon size={16} />
+      </div>
+      <div>
+        <h2 className={`text-sm font-bold ${theme.heading}`}>{title}</h2>
+        <p className={`text-[11px] ${theme.text}`}>{description}</p>
+      </div>
+    </div>
+  )
+
+  const handleRefresh = () => {
+    setRefreshKey((current) => current + 1)
+  }
+
+  if (loading && !hasLoaded) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[400px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[400px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading customer details" description="Fetching customer information..." className="!h-full min-h-[400px]" />
+          </div>
+        </section>
+      </div>
+    )
+  }
 
   if (!customer) {
     return (
-      <section className="space-y-5">
-        <button type="button" onClick={() => navigate('/company/customers')} className="inline-flex items-center gap-2 text-sm font-medium text-erp-primary hover:text-erp-primary-hover">
-          <ArrowLeft size={18} />
-          Back to Customers
-        </button>
+      <div className="min-w-0 space-y-4 text-sm">
+        {toast && <Toast toast={toast} onClose={closeToast} />}
 
-        <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
-          <UserRound size={40} className="mx-auto text-slate-300" />
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={items} />
+          </div>
+        </section>
 
-          <h2 className="mt-3 text-lg font-semibold text-slate-800">Customer Not Found</h2>
+        <section className="rounded-xl border border-slate-200 bg-white px-4 py-12 text-center">
+          <UserRound size={28} className="mx-auto text-slate-300" />
+          <h2 className="mt-3 text-sm font-bold text-slate-800">Customer not found</h2>
+          <p className="mt-1 text-xs text-slate-500">Unable to find this customer or you may not have access.</p>
 
-          <p className="mt-1 text-sm text-slate-500">The requested customer could not be found in the sample data.</p>
-        </div>
-      </section>
+          <div className="mt-4 flex justify-center gap-2">
+            <button type="button" onClick={() => navigate('/company/customers')} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              <ArrowLeft size={14} />
+              Back to Customers
+            </button>
+
+            <button type="button" onClick={handleRefresh} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+              <RefreshCw size={14} />
+              Retry
+            </button>
+          </div>
+        </section>
+      </div>
     )
   }
 
   return (
-    <section className="space-y-6">
+    <div className="min-w-0 space-y-4 text-sm">
+      {toast && <Toast toast={toast} onClose={closeToast} />}
+
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <button type="button" onClick={() => navigate('/company/customers')} className="mb-3 inline-flex items-center gap-2 text-sm font-medium text-slate-500 hover:text-erp-primary">
-            <ArrowLeft size={18} />
-            Back to Customers
-          </button>
+      <section className={`h-17 overflow-hidden rounded-xl border shadow-erp-card ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-surface' : 'border-erp-border bg-erp-surface'}`}>
+        <div className={`h-1 ${isInactive ? 'bg-erp-disabled' : 'bg-erp-primary'}`} />
 
-          <h1 className="text-2xl font-bold text-slate-900">Customer Details</h1>
+        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <BreadCrumb items={items} />
+          </div>
 
-          <p className="mt-1 text-sm text-slate-500">View customer profile and account information.</p>
+          <div className="flex shrink-0 items-center gap-2">
+            {refreshing && <LoaderCircle size={15} className="animate-spin text-erp-disabled" />}
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title="Refresh customer"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-erp-disabled-border text-erp-disabled-text transition hover:bg-erp-disabled-light disabled:opacity-50"
+            >
+              <RefreshCw size={14} />
+            </button>
+
+            {canUpdate && (
+              <button
+                type="button"
+                onClick={() => navigate(`/company/customers/${id}/edit`)}
+                className={`inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition ${
+                  isInactive ? 'border border-erp-disabled-border bg-erp-disabled-light text-erp-disabled-text hover:bg-erp-disabled-surface' : 'bg-erp-primary text-white hover:bg-erp-primary-hover'
+                }`}
+              >
+                <Pencil size={14} />
+                Edit Customer
+              </button>
+            )}
+          </div>
         </div>
+      </section>
 
-        <button
-          type="button"
-          onClick={() => navigate(`/company/customers/${customer.id}/edit`)}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-erp-primary-hover"
-        >
-          <Pencil size={17} />
-          Edit Customer
-        </button>
-      </div>
-
-      {/* Customer Profile */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">{customer.type === 'Business' ? <Building2 size={28} /> : <UserRound size={28} />}</div>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-xl font-bold text-slate-900">{customer.company}</h2>
-
-              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${customer.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{customer.status}</span>
-            </div>
-
-            <p className="mt-1 text-sm text-slate-500">Customer ID: {customer.id}</p>
-          </div>
-
-          <span className="w-fit rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-600">{customer.type} Customer</span>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <IndianRupee size={17} />
-            Outstanding Balance
-          </div>
-
-          <p className="mt-3 text-2xl font-bold text-slate-900">{formatCurrency(customer.outstanding)}</p>
-
-          <p className="mt-1 text-xs text-slate-500">Pending amount in sample data</p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <UserRound size={17} />
-            Contact Person
-          </div>
-
-          <p className="mt-3 text-lg font-semibold text-slate-900">{customer.name}</p>
-
-          <p className="mt-1 text-xs text-slate-500">Primary customer contact</p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <CalendarDays size={17} />
-            Account Status
-          </div>
-
-          <p className="mt-3 text-lg font-semibold text-slate-900">{customer.status}</p>
-
-          <p className="mt-1 text-xs text-slate-500">Current customer status</p>
-        </div>
-      </div>
-
-      {/* Contact Information */}
-      <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-        <h2 className="mb-5 text-lg font-semibold text-slate-900">Contact Information</h2>
-
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-erp-primary-light p-2 text-erp-primary">
-              <UserRound size={18} />
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Contact Person</p>
-              <p className="mt-1 font-medium text-slate-800">{customer.name}</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-erp-primary-light p-2 text-erp-primary">
-              <Building2 size={18} />
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Company Name</p>
-              <p className="mt-1 font-medium text-slate-800">{customer.company}</p>
-            </div>
-          </div>
-
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-erp-primary-light p-2 text-erp-primary">
-              <Mail size={18} />
+      {/* Customer Overview */}
+      <section className={`overflow-hidden rounded-xl border shadow-erp-card ${theme.section}`}>
+        <div className={`flex flex-wrap items-center justify-between gap-3 border-b p-4 ${theme.sectionHeader}`}>
+          <div className="flex min-w-0 items-center gap-3">
+            <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${theme.icon}`}>
+              <UserRound size={23} />
             </div>
 
             <div className="min-w-0">
-              <p className="text-sm text-slate-500">Email Address</p>
-              <p className="mt-1 break-all font-medium text-slate-800">{customer.email || '—'}</p>
+              <h1 className={`truncate text-base font-bold ${theme.heading}`}>{customer.customerName}</h1>
+              <p className={`mt-1 text-xs ${theme.text}`}>Customer Code: {customer.customerCode || '—'}</p>
             </div>
           </div>
 
-          <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-erp-primary-light p-2 text-erp-primary">
-              <Phone size={18} />
-            </div>
+          <span className={`rounded-full border px-3 py-1 text-[11px] font-bold ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light text-erp-disabled-text' : 'border-erp-success-border bg-erp-success-light text-erp-success'}`}>
+            {customer.status || 'Unknown'}
+          </span>
+        </div>
 
-            <div>
-              <p className="text-sm text-slate-500">Phone Number</p>
-              <p className="mt-1 font-medium text-slate-800">{customer.phone || '—'}</p>
+        <div className="grid gap-4 p-4 sm:grid-cols-2 lg:grid-cols-4">
+          <DetailItem label="Contact Person" value={customer.contactPerson} icon={UserRound} />
+          <DetailItem label="Phone Number" value={customer.phone} icon={Phone} />
+          <DetailItem label="Email Address" value={customer.email} icon={Mail} />
+          <DetailItem label="Alternate Phone" value={customer.alternatePhone} icon={Phone} />
+        </div>
+      </section>
+
+      {/* Financial Summary */}
+      <section className="grid gap-3 sm:grid-cols-2">
+        <div className={`rounded-xl border p-4 shadow-erp-card ${theme.card}`}>
+          <div className="flex items-center justify-between">
+            <p className={`text-xs font-medium ${theme.text}`}>Opening Balance</p>
+            <Wallet size={18} className={isInactive ? 'text-erp-disabled' : 'text-erp-success'} />
+          </div>
+          <p className={`mt-2 text-xl font-bold tabular-nums ${theme.heading}`}>{formatCurrency(customer.openingBalance)}</p>
+        </div>
+
+        <div className={`rounded-xl border p-4 shadow-erp-card ${theme.card}`}>
+          <div className="flex items-center justify-between">
+            <p className={`text-xs font-medium ${theme.text}`}>Credit Limit</p>
+            <CreditCard size={18} className={isInactive ? 'text-erp-disabled' : 'text-erp-primary'} />
+          </div>
+          <p className={`mt-2 text-xl font-bold tabular-nums ${theme.heading}`}>{formatCurrency(customer.creditLimit)}</p>
+        </div>
+      </section>
+
+      {/* Tax Information */}
+      <section className={`overflow-hidden rounded-xl border ${theme.section}`}>
+        <SectionHeader icon={FileText} title="Tax Information" description="GST and PAN details" />
+        <div className="grid gap-4 p-3 sm:grid-cols-2 lg:grid-cols-4">
+          <DetailItem label="GST Number" value={customer.gstNumber} icon={Hash} />
+          <DetailItem label="PAN Number" value={customer.panNumber} icon={Hash} />
+        </div>
+      </section>
+
+      {/* Address Information */}
+      <section className={`overflow-hidden rounded-xl border ${theme.section}`}>
+        <SectionHeader icon={MapPin} title="Address Information" description="Billing and shipping addresses" />
+
+        <div className="grid gap-4 p-3 lg:grid-cols-2">
+          <div className={`rounded-lg border p-3 ${theme.innerCard}`}>
+            <div className="mb-2 flex items-center gap-2">
+              <Building2 size={14} className={theme.accentIcon} />
+              <h3 className={`text-xs font-bold ${theme.heading}`}>Billing Address</h3>
             </div>
+            <p className={`whitespace-pre-wrap text-xs leading-5 ${theme.text}`}>{customer.billingAddress || '—'}</p>
+          </div>
+
+          <div className={`rounded-lg border p-3 ${theme.innerCard}`}>
+            <div className="mb-2 flex items-center gap-2">
+              <MapPin size={14} className={theme.accentIcon} />
+              <h3 className={`text-xs font-bold ${theme.heading}`}>Shipping Address</h3>
+            </div>
+            <p className={`whitespace-pre-wrap text-xs leading-5 ${theme.text}`}>{customer.shippingAddress || '—'}</p>
           </div>
         </div>
+
+        <div className={`grid gap-4 border-t p-3 sm:grid-cols-2 lg:grid-cols-4 ${theme.divider}`}>
+          <DetailItem label="City" value={customer.city} icon={MapPin} />
+          <DetailItem label="State" value={customer.state} icon={MapPin} />
+          <DetailItem label="Pincode" value={customer.pincode} icon={Hash} />
+          <DetailItem label="Country" value={customer.country} icon={MapPin} />
+        </div>
+      </section>
+
+      {/* Payment Information */}
+      <section className={`overflow-hidden rounded-xl border ${theme.section}`}>
+        <SectionHeader icon={CreditCard} title="Payment Information" description="Customer payment terms" />
+        <div className="grid gap-4 p-3 sm:grid-cols-2 lg:grid-cols-3">
+          <DetailItem label="Payment Terms" value={customer.paymentTerms} icon={CreditCard} />
+          <DetailItem label="Opening Balance" value={formatCurrency(customer.openingBalance)} icon={Wallet} />
+          <DetailItem label="Credit Limit" value={formatCurrency(customer.creditLimit)} icon={CreditCard} />
+        </div>
+      </section>
+
+      {/* Notes */}
+      <section className={`overflow-hidden rounded-xl border ${theme.section}`}>
+        <SectionHeader icon={FileText} title="Additional Notes" description="Other customer information" />
+        <div className="p-3">
+          <p className={`whitespace-pre-wrap text-xs leading-5 ${theme.text}`}>{customer.notes || 'No additional notes.'}</p>
+        </div>
+      </section>
+
+      {/* Record Information */}
+      <section className={`overflow-hidden rounded-xl border ${theme.section}`}>
+        <SectionHeader icon={CalendarDays} title="Record Information" description="Customer record timestamps" />
+        <div className="grid gap-4 p-3 sm:grid-cols-2">
+          <DetailItem label="Created At" value={formatDate(customer.createdAt)} icon={CalendarDays} />
+          <DetailItem label="Last Updated" value={formatDate(customer.updatedAt)} icon={CalendarDays} />
+        </div>
+      </section>
+
+      <div className="flex justify-end">
+        <button type="button" onClick={() => navigate('/company/customers')} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+          <ArrowLeft size={14} />
+          Back to Customers
+        </button>
       </div>
-
-      {/* Address and Tax Information */}
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-          <h2 className="mb-5 text-lg font-semibold text-slate-900">Address Information</h2>
-
-          <div className="space-y-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-erp-primary-light p-2 text-erp-primary">
-                <MapPin size={18} />
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-500">Address</p>
-                <p className="mt-1 font-medium text-slate-800">{customer.address || '—'}</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <div>
-                <p className="text-sm text-slate-500">City</p>
-                <p className="mt-1 font-medium text-slate-800">{customer.city || '—'}</p>
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-500">State</p>
-                <p className="mt-1 font-medium text-slate-800">{customer.state || '—'}</p>
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-500">Pincode</p>
-                <p className="mt-1 font-medium text-slate-800">{customer.pincode || '—'}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
-          <h2 className="mb-5 text-lg font-semibold text-slate-900">Tax & Additional Information</h2>
-
-          <div className="space-y-5">
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-erp-primary-light p-2 text-erp-primary">
-                <FileText size={18} />
-              </div>
-
-              <div>
-                <p className="text-sm text-slate-500">GSTIN</p>
-                <p className="mt-1 font-medium text-slate-800">{customer.gstin || 'Not provided'}</p>
-              </div>
-            </div>
-
-            <div>
-              <p className="text-sm text-slate-500">Customer Notes</p>
-              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{customer.notes || 'No additional notes.'}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+    </div>
   )
 }

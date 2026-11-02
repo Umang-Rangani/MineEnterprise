@@ -760,11 +760,11 @@ export default function PurchaseForm() {
           </div>
 
           <div className="space-y-2.5 p-3">
-            <div className="relative">
+            {/* <div className="relative">
               <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-erp-text-muted" />
 
               <input type="search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products by name, SKU or barcode..." disabled={saving} className={`${inputBase} border-erp-border pl-8`} />
-            </div>
+            </div> */}
 
             {errorText('items')}
 

@@ -1,375 +1,501 @@
-import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Users, UserCheck, UserX, Eye, Pencil, Trash2, ChevronLeft, ChevronRight, MapPin, Mail, Phone, X, Building2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
+import { Plus, Search, RefreshCw, Eye, Pencil, Users, Phone, Mail, MapPin, Wallet, CreditCard, ChevronLeft, ChevronRight, CircleAlert, UserRound, LoaderCircle } from 'lucide-react'
 
-const initialCustomers = [
-  {
-    id: 'CUS-001',
-    name: 'Rahul Shah',
-    company: 'Shah Enterprises',
-    email: 'rahul@shahenterprises.com',
-    phone: '+91 98765 43210',
-    city: 'Ahmedabad',
-    type: 'Business',
-    status: 'Active',
-    outstanding: 15000,
-  },
-  {
-    id: 'CUS-002',
-    name: 'Priya Patel',
-    company: 'Patel Retail Store',
-    email: 'priya@patelretail.com',
-    phone: '+91 98765 12345',
-    city: 'Surat',
-    type: 'Business',
-    status: 'Active',
-    outstanding: 8500,
-  },
-  {
-    id: 'CUS-003',
-    name: 'Aarav Mehta',
-    company: 'Individual Customer',
-    email: 'aarav@example.com',
-    phone: '+91 98765 67890',
-    city: 'Vadodara',
-    type: 'Individual',
-    status: 'Active',
-    outstanding: 0,
-  },
-  {
-    id: 'CUS-004',
-    name: 'Neha Desai',
-    company: 'Desai Distributors',
-    email: 'neha@desaidesai.com',
-    phone: '+91 98765 24680',
-    city: 'Rajkot',
-    type: 'Business',
-    status: 'Inactive',
-    outstanding: 12000,
-  },
-  {
-    id: 'CUS-005',
-    name: 'Karan Joshi',
-    company: 'Joshi Traders',
-    email: 'karan@joshitraders.com',
-    phone: '+91 98765 13579',
-    city: 'Gandhinagar',
-    type: 'Business',
-    status: 'Active',
-    outstanding: 4500,
-  },
-  {
-    id: 'CUS-006',
-    name: 'Ananya Shah',
-    company: 'Individual Customer',
-    email: 'ananya@example.com',
-    phone: '+91 98765 97531',
-    city: 'Ahmedabad',
-    type: 'Individual',
-    status: 'Inactive',
-    outstanding: 0,
-  },
-]
+import axiosInstance from '../../api/axiosInstance'
+import BreadCrumb from '../../BreadCrumb/BreadCrumb'
+import Toast from '../../Toast/Toast'
+import Loading from '../Loading/Loading'
+import { hasPermission, useAuth } from '../../context/AuthContext'
 
 export default function CompanyCustomers() {
   const navigate = useNavigate()
+  const location = useLocation()
 
-  const [customers, setCustomers] = useState(initialCustomers)
+  const { permissions } = useAuth()
+
+  const canCreate = hasPermission(permissions, 'customer:create')
+  const canView = hasPermission(permissions, 'customer:view')
+  const canUpdate = hasPermission(permissions, 'customer:update')
+  const canUpdateStatus = hasPermission(permissions, 'customer:update-status')
+
+  const [customers, setCustomers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('All')
-  const [currentPage, setCurrentPage] = useState(1)
-  const [deleteCustomer, setDeleteCustomer] = useState(null)
+  const [status, setStatus] = useState('All')
+  const [page, setPage] = useState(1)
 
-  const pageSize = 5
+  const [pagination, setPagination] = useState({
+    total: 0,
+    totalPages: 1,
+    currentPage: 1,
+    limit: 10,
+  })
 
-  const totalCustomers = customers.length
-  const activeCustomers = customers.filter((customer) => customer.status === 'Active').length
-  const inactiveCustomers = customers.filter((customer) => customer.status === 'Inactive').length
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  const filteredCustomers = useMemo(() => {
-    const term = search.trim().toLowerCase()
+  const [toast, setToast] = useState(null)
+  const [updatingId, setUpdatingId] = useState(null)
 
-    return customers.filter((customer) => {
-      const matchesSearch = [customer.id, customer.name, customer.company, customer.email, customer.phone, customer.city].some((value) => value.toLowerCase().includes(term))
-
-      const matchesStatus = statusFilter === 'All' || customer.status === statusFilter
-
-      return matchesSearch && matchesStatus
+  const showToast = (type, message, duration = 3000) => {
+    setToast({
+      id: Date.now(),
+      type,
+      message,
+      duration,
     })
-  }, [customers, search, statusFilter])
+  }
 
-  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / pageSize))
+  const closeToast = () => setToast(null)
 
-  const safePage = Math.min(currentPage, totalPages)
+  useEffect(() => {
+    document.title = 'Customers | MineERP'
+  }, [])
 
-  const paginatedCustomers = filteredCustomers.slice((safePage - 1) * pageSize, safePage * pageSize)
+  useEffect(() => {
+    if (location.state?.message) {
+      showToast('success', location.state.message)
 
-  const formatCurrency = (amount) =>
-    new Intl.NumberFormat('en-IN', {
+      navigate(location.pathname, {
+        replace: true,
+        state: {},
+      })
+    }
+  }, [location.state, location.pathname, navigate])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const fetchCustomers = async () => {
+      if (hasLoaded) {
+        setRefreshing(true)
+      } else {
+        setLoading(true)
+      }
+
+      try {
+        const response = await axiosInstance.get('/erp/customers', {
+          params: {
+            search: search.trim(),
+            status: status === 'All' ? undefined : status,
+            page,
+            limit: 10,
+          },
+        })
+
+        if (cancelled) return
+
+        const data = response.data
+
+        setCustomers(Array.isArray(data.customers) ? data.customers : [])
+
+        setPagination({
+          total: data.pagination?.total ?? data.total ?? 0,
+          totalPages: data.pagination?.totalPages ?? data.totalPages ?? 1,
+          currentPage: data.pagination?.currentPage ?? data.page ?? page,
+          limit: data.pagination?.limit ?? 10,
+        })
+
+        setHasLoaded(true)
+      } catch (error) {
+        if (!cancelled) {
+          showToast('error', error.response?.data?.message || 'Unable to load customers.', 5000)
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+      }
+    }
+
+    fetchCustomers()
+
+    return () => {
+      cancelled = true
+    }
+  }, [search, status, page, refreshKey])
+
+  const handleStatusChange = async (customer) => {
+    if (!canUpdateStatus || updatingId) return
+
+    const nextStatus = customer.status === 'Active' ? 'Inactive' : 'Active'
+
+    setUpdatingId(customer._id)
+
+    try {
+      await axiosInstance.patch(`/erp/customers/${customer._id}/status`, { status: nextStatus })
+
+      setCustomers((current) => current.map((item) => (item._id === customer._id ? { ...item, status: nextStatus } : item)))
+
+      showToast('success', `Customer ${nextStatus.toLowerCase()} successfully.`)
+    } catch (error) {
+      showToast('error', error.response?.data?.message || 'Unable to update customer status.', 5000)
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      maximumFractionDigits: 0,
-    }).format(amount)
+      maximumFractionDigits: 2,
+    }).format(Number(amount) || 0)
+  }
 
-  const handleDelete = () => {
-    if (!deleteCustomer) return
+  const handleRefresh = () => {
+    setPage(1)
+    setRefreshKey((prev) => prev + 1)
+  }
 
-    setCustomers((previous) => previous.filter((customer) => customer.id !== deleteCustomer.id))
+  const formatNumber = (value) => {
+    return new Intl.NumberFormat('en-IN').format(Number(value) || 0)
+  }
 
-    setDeleteCustomer(null)
+  const statCards = [
+    {
+      title: 'Total Customers',
+      value: pagination.total,
+      icon: Users,
+      color: 'text-erp-primary',
+      border: 'border-erp-primary/20',
+    },
+    {
+      title: 'Showing Records',
+      value: customers.length,
+      icon: UserRound,
+      color: 'text-blue-600',
+      border: 'border-blue-200',
+    },
+    {
+      title: 'Current Page',
+      value: `${pagination.currentPage} / ${pagination.totalPages}`,
+      icon: CreditCard,
+      color: 'text-violet-600',
+      border: 'border-violet-200',
+    },
+    {
+      title: 'Page Size',
+      value: pagination.limit,
+      icon: Wallet,
+      color: 'text-emerald-600',
+      border: 'border-emerald-200',
+    },
+  ]
+
+  const startRecord = pagination.total === 0 ? 0 : (pagination.currentPage - 1) * pagination.limit + 1
+
+  const endRecord = Math.min(pagination.currentPage * pagination.limit, pagination.total)
+
+  const breadcrumbItems = [{ title: 'Customers', link: null }]
+
+  if (loading && !hasLoaded) {
+    return (
+      <div className="min-w-0 space-y-4 text-sm">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="h-1 bg-erp-primary" />
+          <div className="flex min-h-16 items-center px-4 sm:px-5">
+            <BreadCrumb items={breadcrumbItems} />
+          </div>
+        </section>
+
+        <section className="relative min-h-[400px] overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+          <div className="flex min-h-[400px] items-center justify-center">
+            <Loading fullScreen={false} label="Loading customers" description="Fetching customer information..." className="!h-full min-h-[400px]" />
+          </div>
+        </section>
+      </div>
+    )
   }
 
   return (
-    <section className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Customers</h1>
+    <div className="min-w-0 space-y-4 text-sm">
+      {toast && <Toast toast={toast} onClose={closeToast} />}
 
-          <p className="mt-1 text-sm text-slate-500">Manage customer information and outstanding balances.</p>
-        </div>
+      {/* Header */}
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <div className="h-1 bg-erp-primary" />
 
-        <button onClick={() => navigate('/company/customers/new')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-erp-primary-hover">
-          <Plus size={18} />
-          Add Customer
-        </button>
-      </div>
+        <div className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
+          <div className="min-w-0">
+            <BreadCrumb items={breadcrumbItems} />
+          </div>
 
-      {/* Statistics */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Total Customers</p>
-              <p className="mt-2 text-2xl font-bold text-slate-900">{totalCustomers}</p>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {statCards.map((card) => {
+              const Icon = card.icon
 
-            <div className="rounded-xl bg-violet-50 p-3 text-violet-600">
-              <Users size={22} />
-            </div>
+              return (
+                <div key={card.title} title={card.title} className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border ${card.border} px-3`}>
+                  <Icon size={15} className={card.color} />
+
+                  <span className={`hidden text-xs font-medium lg:inline ${card.color}`}>{card.title}</span>
+
+                  <span className="text-sm font-bold text-erp-text">{typeof card.value === 'number' ? formatNumber(card.value) : card.value}</span>
+                </div>
+              )
+            })}
+
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing || loading}
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:opacity-60"
+            >
+              <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+
+            {canCreate && (
+              <button
+                type="button"
+                onClick={() => navigate('/company/customers/new')}
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+              >
+                <Plus size={15} />
+                Add Customer
+              </button>
+            )}
           </div>
         </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Active Customers</p>
-              <p className="mt-2 text-2xl font-bold text-slate-900">{activeCustomers}</p>
-            </div>
-
-            <div className="rounded-xl bg-emerald-50 p-3 text-emerald-600">
-              <UserCheck size={22} />
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-medium text-slate-500">Inactive Customers</p>
-              <p className="mt-2 text-2xl font-bold text-slate-900">{inactiveCustomers}</p>
-            </div>
-
-            <div className="rounded-xl bg-rose-50 p-3 text-rose-600">
-              <UserX size={22} />
-            </div>
-          </div>
-        </div>
-      </div>
+      </section>
 
       {/* Customer Table */}
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <div className="flex flex-col gap-3 border-b border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="font-semibold text-slate-900">Customer Directory</h2>
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        {/* Filter Header */}
+        <div className="flex flex-col gap-3 border-b border-erp-border px-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div className="relative min-w-0 flex-1 sm:max-w-md">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
-            <p className="mt-1 text-sm text-slate-500">{filteredCustomers.length} customers found</p>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value)
+                setPage(1)
+              }}
+              placeholder="Search customers..."
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-xs outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
+            />
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <div className="relative">
-              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-
-              <input
-                type="text"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value)
-                  setCurrentPage(1)
-                }}
-                placeholder="Search customers..."
-                className="w-full rounded-lg border border-slate-200 py-2 pl-10 pr-3 text-sm outline-none transition focus:border-erp-primary sm:w-64"
-              />
-            </div>
-
+          <div className="flex items-center gap-2">
             <select
-              value={statusFilter}
+              value={status}
               onChange={(event) => {
-                setStatusFilter(event.target.value)
-                setCurrentPage(1)
+                setStatus(event.target.value)
+                setPage(1)
               }}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-erp-primary"
+              className="h-10 min-w-32 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
             >
-              <option value="All">All Statuses</option>
+              <option value="All">All Status</option>
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
           </div>
         </div>
 
+        {/* Table Header */}
+        <div className="flex min-h-8 items-center justify-end border-b border-erp-border px-3 sm:px-4">
+          {refreshing && (
+            <div className="flex items-center gap-1.5 text-[11px] font-medium text-erp-primary">
+              <LoaderCircle size={13} className="animate-spin" />
+              Updating...
+            </div>
+          )}
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[950px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-5 py-4 font-semibold">Customer</th>
-                <th className="px-5 py-4 font-semibold">Contact</th>
-                <th className="px-5 py-4 font-semibold">City</th>
-                <th className="px-5 py-4 font-semibold">Type</th>
-                <th className="px-5 py-4 font-semibold">Outstanding</th>
-                <th className="px-5 py-4 font-semibold">Status</th>
-                <th className="px-5 py-4 text-right font-semibold">Actions</th>
+          <table className="w-full min-w-[1050px] border-collapse text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500 border-b border-erp-border">
+                <th className="px-4 py-3">Customer</th>
+                <th className="px-4 py-3">Contact Details</th>
+                <th className="px-4 py-3">Location</th>
+                <th className="px-4 py-3 text-center">Opening Balance</th>
+                <th className="px-4 py-3 text-center">Credit Limit</th>
+                <th className="px-4 py-3 text-center">Status</th>
+                <th className="px-4 py-3 text-center">Actions</th>
               </tr>
             </thead>
 
             <tbody className="divide-y divide-slate-100">
-              {paginatedCustomers.map((customer) => (
-                <tr key={customer.id} className="transition hover:bg-slate-50">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
-                        <Building2 size={19} />
-                      </div>
-
-                      <div>
-                        <p className="font-semibold text-slate-800">{customer.company}</p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {customer.id} · {customer.name}
-                        </p>
-                      </div>
-                    </div>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="space-y-1">
-                      <p className="flex items-center gap-2 text-slate-700">
-                        <Mail size={14} className="shrink-0 text-slate-400" />
-                        {customer.email}
-                      </p>
-
-                      <p className="flex items-center gap-2 text-xs text-slate-500">
-                        <Phone size={14} className="shrink-0" />
-                        {customer.phone}
-                      </p>
-                    </div>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <span className="flex items-center gap-1.5 text-slate-600">
-                      <MapPin size={15} className="text-slate-400" />
-                      {customer.city}
-                    </span>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{customer.type}</span>
-                  </td>
-
-                  <td className="px-5 py-4 font-semibold text-slate-800">{formatCurrency(customer.outstanding)}</td>
-
-                  <td className="px-5 py-4">
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${customer.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{customer.status}</span>
-                  </td>
-
-                  <td className="px-5 py-4">
-                    <div className="flex items-center justify-end gap-1">
-                      <button type="button" title="View customer" onClick={() => navigate(`/company/customers/${customer.id}`)} className="rounded-lg p-2 text-slate-500 transition hover:bg-violet-50 hover:text-erp-primary">
-                        <Eye size={17} />
-                      </button>
-
-                      <button type="button" title="Edit customer" onClick={() => navigate(`/company/customers/${customer.id}/edit`)} className="rounded-lg p-2 text-slate-500 transition hover:bg-blue-50 hover:text-blue-600">
-                        <Pencil size={17} />
-                      </button>
-
-                      <button type="button" title="Delete customer" onClick={() => setDeleteCustomer(customer)} className="rounded-lg p-2 text-slate-500 transition hover:bg-rose-50 hover:text-rose-600">
-                        <Trash2 size={17} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-
-              {paginatedCustomers.length === 0 && (
+              {customers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-14 text-center">
-                    <Users size={36} className="mx-auto text-slate-300" />
+                  <td colSpan={7} className="px-4 py-14 text-center">
+                    <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+                      <CircleAlert size={20} />
+                    </div>
 
-                    <p className="mt-3 font-medium text-slate-700">No customers found</p>
+                    <p className="mt-3 text-xs font-bold text-slate-700">No customers found</p>
 
-                    <p className="mt-1 text-sm text-slate-500">Try changing your search or status filter.</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Try changing your search or status filter.</p>
+
+                    {canCreate && (
+                      <button type="button" onClick={() => navigate('/company/customers/new')} className="mt-3 text-xs font-bold text-erp-primary hover:underline">
+                        Add your first customer
+                      </button>
+                    )}
                   </td>
                 </tr>
+              ) : (
+                customers.map((customer) => {
+                  const isActive = customer.status === 'Active'
+                  const isUpdating = updatingId === customer._id
+
+                  return (
+                    <tr key={customer._id} className={`transition ${isActive ? 'hover:bg-slate-50/70' : 'bg-erp-disabled-surface hover:bg-erp-disabled-light/60'}`}>
+                      <td className="px-4 py-3">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isActive ? 'bg-erp-primary/10 text-erp-primary' : 'bg-erp-disabled-light text-erp-disabled'}`}>
+                            <UserRound size={16} />
+                          </div>
+
+                          <div className="min-w-0">
+                            <p className={`truncate text-xs font-bold ${isActive ? 'text-slate-800' : 'text-erp-disabled-text'}`}>{customer.customerName}</p>
+
+                            <p className="mt-0.5 text-[10px] font-medium text-slate-500">{customer.customerCode}</p>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className="space-y-1">
+                          {customer.contactPerson && <p className={`text-xs font-semibold ${isActive ? 'text-slate-700' : 'text-erp-disabled-text'}`}>{customer.contactPerson}</p>}
+
+                          {customer.phone && (
+                            <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                              <Phone size={11} />
+                              {customer.phone}
+                            </p>
+                          )}
+
+                          {customer.email && (
+                            <p className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                              <Mail size={11} />
+                              {customer.email}
+                            </p>
+                          )}
+
+                          {!customer.contactPerson && !customer.phone && !customer.email && <span className="text-[11px] text-slate-400">—</span>}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <div className={`flex items-center gap-1.5 text-xs ${isActive ? 'text-slate-600' : 'text-erp-disabled-text'}`}>
+                          <MapPin size={12} className="shrink-0 text-slate-400" />
+                          <span>{[customer.city, customer.state].filter(Boolean).join(', ') || '—'}</span>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-xs font-semibold tabular-nums  ${isActive ? 'text-slate-700' : 'text-erp-disabled-text'}`}>{formatCurrency(customer.openingBalance)}</span>
+                      </td>
+
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-xs font-semibold tabular-nums ${isActive ? 'text-slate-700' : 'text-erp-disabled-text'}`}>{formatCurrency(customer.creditLimit)}</span>
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-3 text-center">
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold ${
+                            isActive ? 'border-erp-success-border bg-erp-success-light text-erp-success' : 'border-erp-disabled-border bg-erp-disabled-light text-erp-disabled-text'
+                          }`}
+                        >
+                          {customer.status || 'Unknown'}
+                        </span>
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-center gap-1.5">
+                          {canView && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/company/customers/${customer._id}`)}
+                              title="View customer"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                            >
+                              <Eye size={14} />
+                            </button>
+                          )}
+
+                          {canUpdate && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/company/customers/${customer._id}/edit`)}
+                              title="Edit customer"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+                            >
+                              <Pencil size={14} />
+                            </button>
+                          )}
+
+                          {canUpdateStatus && (
+                            <button
+                              type="button"
+                              onClick={() => handleStatusChange(customer)}
+                              disabled={isUpdating || Boolean(updatingId)}
+                              title={isActive ? 'Deactivate customer' : 'Activate customer'}
+                              className={`inline-flex h-8 min-w-20 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                isActive ? 'border-erp-disabled-border bg-erp-disabled-light text-erp-disabled-text hover:bg-erp-disabled-surface' : 'border-erp-success-border bg-erp-success-light text-erp-success hover:bg-erp-success-border'
+                              }`}
+                            >
+                              {isUpdating ? <LoaderCircle size={13} className="animate-spin" /> : isActive ? 'Disable' : 'Enable'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
               )}
             </tbody>
           </table>
         </div>
 
         {/* Pagination */}
-        <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm text-slate-500">
-            Showing {filteredCustomers.length === 0 ? 0 : (safePage - 1) * pageSize + 1} to {Math.min(safePage * pageSize, filteredCustomers.length)} of {filteredCustomers.length} customers
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-erp-border px-3 py-3 sm:px-4">
+          <p className="text-[11px] text-slate-500">
+            Showing{' '}
+            <span className="font-bold text-slate-700">
+              {startRecord}-{endRecord}
+            </span>{' '}
+            of <span className="font-bold text-slate-700">{pagination.total}</span> customers
           </p>
 
           <div className="flex items-center gap-2">
-            <button type="button" disabled={safePage === 1} onClick={() => setCurrentPage(safePage - 1)} className="rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">
-              <ChevronLeft size={18} />
+            <button
+              type="button"
+              disabled={page <= 1 || refreshing}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={14} />
+              Previous
             </button>
 
-            <span className="px-2 text-sm font-medium text-slate-700">
-              Page {safePage} of {totalPages}
+            <span className="min-w-14 text-center text-[11px] font-bold text-slate-700">
+              {pagination.currentPage} / {pagination.totalPages}
             </span>
 
             <button
               type="button"
-              disabled={safePage === totalPages}
-              onClick={() => setCurrentPage(safePage + 1)}
-              className="rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={page >= pagination.totalPages || refreshing}
+              onClick={() => setPage((current) => current + 1)}
+              className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronRight size={18} />
+              Next
+              <ChevronRight size={14} />
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Delete Confirmation */}
-      {deleteCustomer && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Delete Customer</h3>
-
-                <p className="mt-2 text-sm leading-6 text-slate-500">
-                  Are you sure you want to delete <span className="font-semibold text-slate-800">{deleteCustomer.company}</span>? This will remove the customer from this sample list.
-                </p>
-              </div>
-
-              <button type="button" onClick={() => setDeleteCustomer(null)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <button type="button" onClick={() => setDeleteCustomer(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-                Cancel
-              </button>
-
-              <button type="button" onClick={handleDelete} className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700">
-                Delete Customer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </section>
+      </section>
+    </div>
   )
 }

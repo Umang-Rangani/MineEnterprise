@@ -131,6 +131,7 @@ const ACTIONS = {
     VIEW: 'customer:view',
     CREATE: 'customer:create',
     UPDATE: 'customer:update',
+    UPDATE_STATUS: 'customer:update-status',
     DELETE: 'customer:delete',
   },
 

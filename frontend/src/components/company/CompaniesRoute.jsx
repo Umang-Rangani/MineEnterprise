@@ -93,6 +93,18 @@ const navigationItems = [
     icon: Package,
     actions: ['purchase:list'],
   },
+  {
+    label: 'Customers',
+    path: '/company/customers',
+    icon: ContactRound,
+    actions: ['customer:list'],
+  },
+  {
+    label: 'Sales Orders',
+    path: '/company/orders',
+    icon: ShoppingBag,
+    actions: ['sales:list'],
+  },
 ]
 
 const pageTitles = {
@@ -106,6 +118,8 @@ const pageTitles = {
   purchases: 'Purchase Management',
   'goods-receipts': 'Goods Receipts',
   warehouses: 'Warehouses',
+  customers: 'Customers',
+  orders: 'Sales Orders',
 }
 
 const pageDescriptions = {
@@ -119,6 +133,8 @@ const pageDescriptions = {
   purchases: 'Manage supplier purchases',
   'goods-receipts': 'Manage received goods and warehouse stock entries',
   warehouses: 'Manage warehouse locations and stock',
+  customers: 'Manage customer information and credit details',
+  orders: 'Manage customer sales orders and order processing',
 }
 
 const sectionKey = {
@@ -132,9 +148,7 @@ const sectionKey = {
   supplier: 'Supplier',
   purchase: 'Purchase',
   customer: 'Customer',
-
-
-
+  sales: 'Sales',
 }
 
 const hasPermission = (permissions, actions = []) => {
@@ -415,7 +429,7 @@ const routePermissions = [
 ]
 
 export default function CompaniesRoute() {
-  const { user, permissions, permissionsLoading, permissionsError, loading, logout } = useAuth()
+  const { user, permissions, permissionsLoading, permissionsError, loading, logout, loadPermissions } = useAuth()
 
   const location = useLocation()
   const navigate = useNavigate()

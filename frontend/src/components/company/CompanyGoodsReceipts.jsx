@@ -108,12 +108,18 @@ export default function CompanyGoodsReceipts() {
     document.title = 'Goods Receipts | MineERP'
   }, [])
 
+  // ---------------- FETCH GOODS RECEIPTS ----------------
+
   useEffect(() => {
     let cancelled = false
 
     async function fetchReceipts() {
-      if (!hasLoaded) {
+      const isInitialLoad = !hasLoaded
+
+      if (isInitialLoad) {
         setLoading(true)
+      } else {
+        setRefreshing(true)
       }
 
       setApiError('')
@@ -177,11 +183,15 @@ export default function CompanyGoodsReceipts() {
     }
   }, [currentPage, pageSize, statusFilter, refreshKey])
 
+  // ---------------- PAGE VALIDATION ----------------
+
   useEffect(() => {
     if (currentPage > pagination.totalPages) {
       setCurrentPage(Math.max(1, pagination.totalPages))
     }
   }, [currentPage, pagination.totalPages])
+
+  // ---------------- SEARCH ----------------
 
   const filteredReceipts = receipts.filter((receipt) => {
     const query = search.trim().toLowerCase()
@@ -196,6 +206,8 @@ export default function CompanyGoodsReceipts() {
         .includes(query),
     )
   })
+
+  // ---------------- PAGE STATISTICS ----------------
 
   const draftOnPage = receipts.filter((receipt) => receipt.status === 'Draft').length
 
@@ -214,6 +226,8 @@ export default function CompanyGoodsReceipts() {
     setStatusFilter('All')
     setCurrentPage(1)
   }
+
+  // ---------------- REFRESH ----------------
 
   const handleRefresh = () => {
     if (refreshing || loading || processingId || cancelProcessing) return
@@ -395,6 +409,7 @@ export default function CompanyGoodsReceipts() {
   }
 
   // ---------------- INITIAL LOADING ----------------
+
   if (loading && !hasLoaded) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
@@ -427,7 +442,7 @@ export default function CompanyGoodsReceipts() {
         <div className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
           <BreadCrumb items={breadcrumbItems} />
 
-          <div className="flex  items-center gap-2">
+          <div className="flex items-center gap-2">
             {statCards.map((card) => {
               const Icon = card.icon
 
@@ -449,7 +464,7 @@ export default function CompanyGoodsReceipts() {
               className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-60"
             >
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
-              Refresh
+              {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
 
             {canCreate && (
@@ -473,7 +488,7 @@ export default function CompanyGoodsReceipts() {
 
           <p>{apiError}</p>
 
-          <button type="button" onClick={handleRefresh} className="ml-auto shrink-0 font-semibold underline">
+          <button type="button" onClick={handleRefresh} disabled={refreshing} className="ml-auto shrink-0 font-semibold underline disabled:opacity-50">
             Retry
           </button>
         </div>
@@ -528,12 +543,18 @@ export default function CompanyGoodsReceipts() {
           </div>
         </div>
 
-        {loading && hasLoaded && (
+        {/* REFRESH STATUS */}
+
+        {refreshing && hasLoaded && (
           <div className="flex items-center justify-center gap-2 border-b border-erp-border px-4 py-3 text-xs text-erp-muted">
             <LoaderCircle size={15} className="animate-spin text-erp-primary" />
             Updating goods receipt list...
           </div>
         )}
+
+        {/* SEARCH SCOPE NOTE */}
+
+        {search.trim() && <div className="border-b border-erp-border bg-slate-50/70 px-4 py-2 text-xs text-erp-text-secondary">Showing matches from the currently loaded page only.</div>}
 
         {/* DESKTOP TABLE */}
 
@@ -749,11 +770,19 @@ export default function CompanyGoodsReceipts() {
         <div className="flex flex-col gap-3 border-t border-erp-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-xs text-erp-text-secondary sm:text-sm">
-              Showing{' '}
-              <span className="font-semibold text-erp-text">
-                {filteredReceipts.length === 0 ? 0 : startIndex + 1}–{Math.min(startIndex + filteredReceipts.length, pagination.total)}
-              </span>{' '}
-              of <span className="font-semibold text-erp-text">{formatNumber(pagination.total)}</span> receipts
+              {search.trim() ? (
+                <>
+                  <span className="font-semibold text-erp-text">{formatNumber(filteredReceipts.length)}</span> matching on this page
+                  <span className="ml-1 text-erp-muted">
+                    (page {safePage} of {totalPages})
+                  </span>
+                </>
+              ) : (
+                <>
+                  Showing <span className="font-semibold text-erp-text">{pagination.total === 0 ? '0' : `${startIndex + 1}–${Math.min(startIndex + receipts.length, pagination.total)}`}</span> of{' '}
+                  <span className="font-semibold text-erp-text">{formatNumber(pagination.total)}</span> receipts
+                </>
+              )}
             </p>
 
             <div className="flex items-center gap-2">
@@ -768,7 +797,7 @@ export default function CompanyGoodsReceipts() {
                   setPageSize(Number(event.target.value))
                   setCurrentPage(1)
                 }}
-                disabled={loading}
+                disabled={loading || refreshing}
                 className="h-8 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs text-erp-text-secondary outline-none focus:border-erp-primary disabled:opacity-50"
               >
                 <option value={5}>5</option>
@@ -783,7 +812,7 @@ export default function CompanyGoodsReceipts() {
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              disabled={safePage <= 1 || loading}
+              disabled={safePage <= 1 || loading || refreshing}
               onClick={() => setCurrentPage(1)}
               className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -792,7 +821,7 @@ export default function CompanyGoodsReceipts() {
 
             <button
               type="button"
-              disabled={safePage <= 1 || loading}
+              disabled={safePage <= 1 || loading || refreshing}
               onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
               aria-label="Previous page"
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
@@ -806,7 +835,7 @@ export default function CompanyGoodsReceipts() {
 
             <button
               type="button"
-              disabled={safePage >= totalPages || loading}
+              disabled={safePage >= totalPages || loading || refreshing}
               onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
               aria-label="Next page"
               className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
@@ -816,7 +845,7 @@ export default function CompanyGoodsReceipts() {
 
             <button
               type="button"
-              disabled={safePage >= totalPages || loading}
+              disabled={safePage >= totalPages || loading || refreshing}
               onClick={() => setCurrentPage(totalPages)}
               className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -869,7 +898,13 @@ export default function CompanyGoodsReceipts() {
                 </div>
               </div>
 
-              <button type="button" onClick={closeCancelConfirmation} disabled={cancelProcessing} aria-label="Close cancellation dialog" className="rounded-lg p-1.5 text-erp-muted hover:bg-erp-hover hover:text-erp-text disabled:opacity-50">
+              <button
+                type="button"
+                onClick={closeCancelConfirmation}
+                disabled={cancelProcessing || Boolean(processingId)}
+                aria-label="Close cancellation dialog"
+                className="rounded-lg p-1.5 text-erp-muted hover:bg-erp-hover hover:text-erp-text disabled:opacity-50"
+              >
                 <X size={17} />
               </button>
             </div>
@@ -907,7 +942,7 @@ export default function CompanyGoodsReceipts() {
               <button
                 type="button"
                 onClick={closeCancelConfirmation}
-                disabled={cancelProcessing}
+                disabled={cancelProcessing || Boolean(processingId)}
                 className="inline-flex h-9 items-center justify-center rounded-lg border border-erp-border px-3.5 text-xs font-semibold text-erp-text-secondary hover:bg-erp-hover disabled:opacity-50"
               >
                 Keep Draft
@@ -916,7 +951,7 @@ export default function CompanyGoodsReceipts() {
               <button
                 type="button"
                 onClick={cancelGoodsReceipt}
-                disabled={cancelProcessing || cancelReason.trim().length < 3}
+                disabled={cancelProcessing || Boolean(processingId) || cancelReason.trim().length < 3}
                 className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-rose-600 px-3.5 text-xs font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {cancelProcessing ? <LoaderCircle size={14} className="animate-spin" /> : <Ban size={14} />}

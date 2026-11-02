@@ -76,6 +76,36 @@ const parseQuantity = (value, fieldName) => {
   return number
 }
 
+const lockPurchaseForReceipt = async (purchaseId, companyId, session) => {
+  // Update the Purchase document to create a write conflict
+  // when another transaction operates on the same Purchase.
+  const result = await Purchase.updateOne(
+    {
+      _id: purchaseId,
+      companyId,
+    },
+    {
+      $inc: { goodsReceiptRevision: 1 },
+    },
+    { session },
+  )
+
+  if (!result.matchedCount) {
+    throw httpError('Purchase order not found', 404)
+  }
+
+  const purchase = await Purchase.findOne({
+    _id: purchaseId,
+    companyId,
+  }).session(session)
+
+  if (!purchase) {
+    throw httpError('Purchase order not found', 404)
+  }
+
+  return purchase
+}
+
 // GET /erp/goods-receipts
 router.get('/', permissionMiddleware('Purchase', 'LIST'), async (req, res, next) => {
   try {
@@ -205,14 +235,7 @@ router.post('/', permissionMiddleware('Purchase', 'CREATE'), async (req, res, ne
     let createdReceipt
 
     await session.withTransaction(async () => {
-      const purchase = await Purchase.findOne({
-        _id: purchaseId,
-        companyId,
-      }).session(session)
-
-      if (!purchase) {
-        throw httpError('Purchase order not found', 404)
-      }
+      const purchase = await lockPurchaseForReceipt(purchaseId, companyId, session)
 
       if (!['Ordered', 'Partially Received'].includes(purchase.status)) {
         throw httpError('Only ordered or partially received purchases can receive goods')
@@ -274,9 +297,14 @@ router.post('/', permissionMiddleware('Purchase', 'CREATE'), async (req, res, ne
           throw httpError('Damaged quantity cannot exceed received quantity')
         }
 
+        const orderedQuantity = Number(purchaseItem.quantity)
         const previouslyReceivedQuantity = Number(purchaseItem.receivedQuantity || 0)
 
-        const remainingQuantity = Number(purchaseItem.quantity) - previouslyReceivedQuantity
+        if (!Number.isFinite(orderedQuantity) || orderedQuantity <= 0 || !Number.isFinite(previouslyReceivedQuantity) || previouslyReceivedQuantity < 0 || previouslyReceivedQuantity > orderedQuantity) {
+          throw httpError(`Invalid purchase quantity for ${purchaseItem.productName}`, 409)
+        }
+
+        const remainingQuantity = orderedQuantity - previouslyReceivedQuantity
 
         if (receivedQuantity > remainingQuantity) {
           throw httpError(`Received quantity exceeds remaining quantity for ${purchaseItem.productName}`)
@@ -307,7 +335,7 @@ router.post('/', permissionMiddleware('Purchase', 'CREATE'), async (req, res, ne
           productName: purchaseItem.productName,
           sku: purchaseItem.sku || '',
           unit: purchaseItem.unit || 'Piece',
-          orderedQuantity: Number(purchaseItem.quantity),
+          orderedQuantity,
           previouslyReceivedQuantity,
           receivedQuantity,
           damagedQuantity,
@@ -399,14 +427,7 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
         throw httpError(`Only Draft receipts can be confirmed. Current status: ${receipt.status}`, 409)
       }
 
-      const purchase = await Purchase.findOne({
-        _id: receipt.purchaseId,
-        companyId,
-      }).session(session)
-
-      if (!purchase) {
-        throw httpError('Related purchase order not found', 404)
-      }
+      const purchase = await lockPurchaseForReceipt(receipt.purchaseId, companyId, session)
 
       if (!['Ordered', 'Partially Received'].includes(purchase.status)) {
         throw httpError('Purchase order is not eligible for goods receipt', 409)
@@ -435,16 +456,29 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
         }
 
         const currentReceived = Number(purchaseItem.receivedQuantity || 0)
-
         const orderedQuantity = Number(purchaseItem.quantity)
         const remainingQuantity = orderedQuantity - currentReceived
         const receiptQuantity = Number(item.receivedQuantity)
         const damagedQuantity = Number(item.damagedQuantity || 0)
-        const acceptedQuantity = receiptQuantity - damagedQuantity
 
-        if (receiptQuantity <= 0 || damagedQuantity < 0 || damagedQuantity > receiptQuantity || receiptQuantity > remainingQuantity) {
+        if (
+          String(purchaseItem.productId) !== String(item.productId) ||
+          !Number.isFinite(orderedQuantity) ||
+          orderedQuantity <= 0 ||
+          !Number.isFinite(currentReceived) ||
+          currentReceived < 0 ||
+          currentReceived > orderedQuantity ||
+          !Number.isFinite(receiptQuantity) ||
+          receiptQuantity <= 0 ||
+          !Number.isFinite(damagedQuantity) ||
+          damagedQuantity < 0 ||
+          damagedQuantity > receiptQuantity ||
+          receiptQuantity > remainingQuantity
+        ) {
           throw httpError(`Receipt quantity is no longer valid for ${item.productName}`, 409)
         }
+
+        const acceptedQuantity = receiptQuantity - damagedQuantity
 
         item.previouslyReceivedQuantity = currentReceived
         item.orderedQuantity = orderedQuantity
@@ -625,12 +659,9 @@ router.patch('/:id', permissionMiddleware('Purchase', 'CREATE'), async (req, res
         throw httpError(`Only Draft receipts can be edited. Current status: ${receipt.status}`, 409)
       }
 
-      const purchase = await Purchase.findOne({
-        _id: receipt.purchaseId,
-        companyId,
-      }).session(session)
+      const purchase = await lockPurchaseForReceipt(receipt.purchaseId, companyId, session)
 
-      if (!purchase || !['Ordered', 'Partially Received'].includes(purchase.status)) {
+      if (!['Ordered', 'Partially Received'].includes(purchase.status)) {
         throw httpError('Purchase order is no longer eligible for goods receipt', 409)
       }
 
@@ -690,9 +721,14 @@ router.patch('/:id', permissionMiddleware('Purchase', 'CREATE'), async (req, res
           throw httpError('Damaged quantity cannot exceed received quantity')
         }
 
+        const orderedQuantity = Number(purchaseItem.quantity)
         const previouslyReceivedQuantity = Number(purchaseItem.receivedQuantity || 0)
 
-        const remainingQuantity = Number(purchaseItem.quantity) - previouslyReceivedQuantity
+        if (!Number.isFinite(orderedQuantity) || orderedQuantity <= 0 || !Number.isFinite(previouslyReceivedQuantity) || previouslyReceivedQuantity < 0 || previouslyReceivedQuantity > orderedQuantity) {
+          throw httpError(`Invalid purchase quantity for ${purchaseItem.productName}`, 409)
+        }
+
+        const remainingQuantity = orderedQuantity - previouslyReceivedQuantity
 
         if (receivedQuantity > remainingQuantity) {
           throw httpError(`Received quantity exceeds remaining quantity for ${purchaseItem.productName}`, 409)
@@ -725,7 +761,7 @@ router.patch('/:id', permissionMiddleware('Purchase', 'CREATE'), async (req, res
           productName: purchaseItem.productName,
           sku: purchaseItem.sku || '',
           unit: purchaseItem.unit || 'Piece',
-          orderedQuantity: Number(purchaseItem.quantity),
+          orderedQuantity,
           previouslyReceivedQuantity,
           receivedQuantity,
           damagedQuantity,
@@ -771,6 +807,8 @@ router.patch('/:id', permissionMiddleware('Purchase', 'CREATE'), async (req, res
    Cancel a Draft receipt only. No stock changes occur.
 */
 router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CREATE'), async (req, res, next) => {
+  const session = await mongoose.startSession()
+
   try {
     const companyId = getCompanyId(req)
     const userId = req.user?.userId
@@ -799,53 +837,69 @@ router.patch('/:id/cancel', permissionMiddleware('Purchase', 'CREATE'), async (r
       })
     }
 
-    const receipt = await GoodsReceipt.findOneAndUpdate(
-      {
+    let cancelledReceipt
+
+    await session.withTransaction(async () => {
+      const receipt = await GoodsReceipt.findOne({
         _id: id,
         companyId,
-        status: 'Draft',
-      },
-      {
-        $set: {
-          status: 'Cancelled',
-          cancelledAt: new Date(),
-          cancelledBy: userId,
-          cancellationReason: reason,
-          updatedBy: userId,
-        },
-      },
-      {
-        new: true,
-        runValidators: true,
-      },
-    )
+      }).session(session)
 
-    if (!receipt) {
-      const existing = await GoodsReceipt.findOne({
-        _id: id,
-        companyId,
-      }).select('status')
-
-      if (!existing) {
-        return res.status(404).json({
-          success: false,
-          message: 'Goods receipt not found',
-        })
+      if (!receipt) {
+        throw httpError('Goods receipt not found', 404)
       }
 
-      return res.status(409).json({
-        success: false,
-        message: `Only Draft receipts can be cancelled. Current status: ${existing.status}`,
-      })
-    }
+      if (receipt.status !== 'Draft') {
+        throw httpError(`Only Draft receipts can be cancelled. Current status: ${receipt.status}`, 409)
+      }
+
+      await lockPurchaseForReceipt(receipt.purchaseId, companyId, session)
+
+      const updatedReceipt = await GoodsReceipt.findOneAndUpdate(
+        {
+          _id: id,
+          companyId,
+          status: 'Draft',
+        },
+        {
+          $set: {
+            status: 'Cancelled',
+            cancelledAt: new Date(),
+            cancelledBy: userId,
+            cancellationReason: reason,
+            updatedBy: userId,
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+          session,
+        },
+      )
+
+      if (!updatedReceipt) {
+        throw httpError('Goods receipt is no longer available for cancellation', 409)
+      }
+
+      cancelledReceipt = updatedReceipt
+    })
 
     return res.status(200).json({
       success: true,
       message: 'Goods receipt draft cancelled successfully',
-      receipt,
+      receipt: cancelledReceipt,
     })
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+      })
+    }
+
     return handleError(error, res, next)
+  } finally {
+    await session.endSession()
   }
 })
 

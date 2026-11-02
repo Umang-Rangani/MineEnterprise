@@ -50,7 +50,9 @@ import CompanyPurchaseHistory from './components/company/CompanyPurchaseHistory'
 import CompanyGoodsReceipts from './components/company/CompanyGoodsReceipts'
 import GoodsReceiptForm from './components/company/GoodsReceiptForm'
 import GoodsReceiptDetails from './components/company/GoodsReceiptDetails'
-
+import CompanyCustomers from './components/company/CompanyCustomers'
+import CustomerForm from './components/company/CustomerForm'
+import CustomerDetails from './components/company/CustomerDetails'
 
 export default function App() {
   return (
@@ -117,6 +119,7 @@ export default function App() {
           <Route path="suppliers/:id" element={<SupplierDetails />} />
           <Route path="suppliers/:id/edit" element={<SupplierForm />} />
 
+
           {/* Purchases */}
           <Route path="purchases" element={<CompanyPurchases />} />
           <Route path="purchases/new" element={<PurchaseForm />} />
@@ -129,6 +132,12 @@ export default function App() {
           <Route path="goods-receipts/new" element={<GoodsReceiptForm />} />
           <Route path="goods-receipts/:id/edit" element={<GoodsReceiptForm />} />
           <Route path="goods-receipts/:id" element={<GoodsReceiptDetails />} />
+          
+          {/* Customers */}
+          <Route path="customers" element={<CompanyCustomers />} />
+          <Route path="customers/new" element={<CustomerForm />} />
+          <Route path="customers/:id" element={<CustomerDetails />} />
+          <Route path="customers/:id/edit" element={<CustomerForm />} />
         </Route>
       </Route>
 

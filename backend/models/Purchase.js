@@ -433,6 +433,13 @@ const purchaseSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Used to serialize concurrent Goods Receipt operations.
+    goodsReceiptRevision: {
+      type: Number,
+      min: [0, 'Goods receipt revision cannot be negative'],
+      default: 0,
+    },
+
     // Preserves every approval/cancellation event and email result.
     purchaseHistory: {
       type: [purchaseHistorySchema],

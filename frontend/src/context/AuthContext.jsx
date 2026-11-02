@@ -198,6 +198,8 @@ export function AuthProvider({ children }) {
         permissionsLoading,
         permissionsError,
         loading,
+        loadPermissions,
+        permissionsError,
         login,
         logout,
         refreshUser,

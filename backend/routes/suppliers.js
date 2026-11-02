@@ -11,7 +11,7 @@ const router = express.Router()
 
 router.use(authMiddleware)
 
-const ALLOWED_FIELDS = ['supplierName', 'supplierCode', 'contactPerson', 'email', 'phone', 'alternatePhone', 'gstNumber', 'panNumber', 'address', 'city', 'state', 'pincode', 'country', 'paymentTerms', 'openingBalance', 'notes', 'status']
+const ALLOWED_FIELDS = ['supplierName', 'supplierCode', 'contactPerson', 'email', 'phone', 'alternatePhone', 'gstNumber', 'panNumber', 'address', 'city', 'state', 'pincode', 'country', 'paymentTerms', 'openingBalance', 'notes']
 
 const getCompanyId = (req) => {
   if (req.user?.role === 'SuperAdmin') {
