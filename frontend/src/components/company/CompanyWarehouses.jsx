@@ -29,12 +29,31 @@ function getWarehouseArray(response) {
 
 
 
+function getCapacityPercentage(warehouse) {
+  if (warehouse.stockUnits === undefined || warehouse.stockUnits === null) {
+    return null
+  }
+
+  const capacity = Number(warehouse.capacity) || 0
+  const stock = Number(warehouse.stockUnits) || 0
+
+  if (capacity <= 0) return null
+
+  return Math.min(100, Math.round((stock / capacity) * 100))
+}
+
+function getCapacityColor(percentage) {
+  if (percentage >= 90) return 'bg-rose-500'
+  if (percentage >= 70) return 'bg-amber-500'
+  return 'bg-erp-primary'
+}
+
 export default function CompanyWarehouses() {
   const { permissions } = useAuth()
 
   const canCreate = hasPermission(permissions, 'warehouse:create')
   const canView = hasPermission(permissions, 'warehouse:view')
-  const canUpdateStatus = hasPermission(permissions, 'warehouse:update-status')
+  const canUpdate = hasPermission(permissions, 'warehouse:update')
   const canDelete = hasPermission(permissions, 'warehouse:delete')
   const canExport = hasPermission(permissions, 'warehouse:export')
 
@@ -559,7 +578,7 @@ export default function CompanyWarehouses() {
                           </Link>
                         )}
 
-                        {canUpdateStatus  && (
+                        {canUpdate && (
                           <button
                             type="button"
                             onClick={() => setStatusTarget(warehouse)}
@@ -670,7 +689,7 @@ export default function CompanyWarehouses() {
                     </Link>
                   )}
 
-                  {canUpdateStatus  && (
+                  {canUpdate && (
                     <button
                       type="button"
                       onClick={() => setStatusTarget(warehouse)}
