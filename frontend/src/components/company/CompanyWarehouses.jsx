@@ -20,6 +20,7 @@ function getWarehouseArray(response) {
   if (Array.isArray(response?.data)) return response.data
   if (Array.isArray(response?.data?.data)) return response.data.data
   if (Array.isArray(response?.data?.warehouses)) return response.data.warehouses
+
   if (Array.isArray(response?.data?.data?.warehouses)) {
     return response.data.data.warehouses
   }
@@ -27,13 +28,9 @@ function getWarehouseArray(response) {
   return []
 }
 
-
+// Percentage is calculated only when both units are known and compatible.
 
 function getCapacityPercentage(warehouse) {
-  if (warehouse.stockUnits === undefined || warehouse.stockUnits === null) {
-    return null
-  }
-
   const capacity = Number(warehouse.capacity) || 0
   const stock = Number(warehouse.stockUnits) || 0
 
@@ -54,6 +51,7 @@ export default function CompanyWarehouses() {
   const canCreate = hasPermission(permissions, 'warehouse:create')
   const canView = hasPermission(permissions, 'warehouse:view')
   const canUpdate = hasPermission(permissions, 'warehouse:update')
+  const canUpdateStatus = hasPermission(permissions, 'warehouse:update-status')
   const canDelete = hasPermission(permissions, 'warehouse:delete')
   const canExport = hasPermission(permissions, 'warehouse:export')
 
@@ -99,7 +97,7 @@ export default function CompanyWarehouses() {
     document.title = 'Warehouses | MineERP'
   }, [])
 
-  // Debounce search to avoid making an API request on every keystroke.
+  // Debounce search.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setDebouncedSearch(search.trim())
@@ -108,7 +106,7 @@ export default function CompanyWarehouses() {
     return () => window.clearTimeout(timer)
   }, [search])
 
-  // Server-side search, status filtering and pagination.
+  // Fetch warehouses with server-side search, filter and pagination.
   useEffect(() => {
     let cancelled = false
 
@@ -151,7 +149,6 @@ export default function CompanyWarehouses() {
             totalPages: Math.max(1, Number(serverPagination.totalPages) || 1),
           })
         } else {
-          // Fallback for an API response without pagination metadata.
           setPagination({
             page: currentPage,
             limit: pageSize,
@@ -180,8 +177,7 @@ export default function CompanyWarehouses() {
     }
   }, [currentPage, pageSize, debouncedSearch, statusFilter, refreshKey])
 
-  // If the current page no longer exists after deleting a warehouse,
-  // navigate to the last available page.
+  // Correct the page if the current page no longer exists.
   useEffect(() => {
     if (currentPage > pagination.totalPages) {
       setCurrentPage(Math.max(1, pagination.totalPages))
@@ -209,7 +205,6 @@ export default function CompanyWarehouses() {
     if (refreshing || loading) return
 
     setRefreshing(true)
-    setLoading(true)
     setRefreshKey((previous) => previous + 1)
   }
 
@@ -221,7 +216,7 @@ export default function CompanyWarehouses() {
     try {
       const response = await axiosInstance.get('/erp/warehouses/export', {
         params: {
-          search: search.trim() || undefined,
+          search: debouncedSearch || undefined,
           status: statusFilter === 'All' ? undefined : statusFilter,
         },
         responseType: 'blob',
@@ -252,7 +247,7 @@ export default function CompanyWarehouses() {
           const errorData = JSON.parse(await error.response.data.text())
           message = errorData.message || message
         } catch {
-          // Keep the fallback message.
+          // Use fallback message.
         }
       } else {
         message = error.response?.data?.message || error.message || message
@@ -282,7 +277,6 @@ export default function CompanyWarehouses() {
 
       showToast('success', data?.message || `${warehouse.name} deleted successfully.`)
 
-      // Refetch to keep server pagination totals accurate.
       if (warehouses.length === 1 && currentPage > 1) {
         setCurrentPage((previous) => previous - 1)
       } else {
@@ -314,7 +308,6 @@ export default function CompanyWarehouses() {
 
       showToast('success', data?.message || `${warehouse.name} marked ${nextStatus}.`)
 
-      // Refetch because a status change can affect the active filter.
       setRefreshKey((previous) => previous + 1)
     } catch (error) {
       showToast('error', error.response?.data?.message || error.message || 'Unable to update warehouse status.')
@@ -350,7 +343,7 @@ export default function CompanyWarehouses() {
   if (loading) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
-        <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card h-17">
+        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
           <div className="h-1 bg-erp-primary" />
 
           <div className="flex min-h-16 items-center px-4 sm:px-5">
@@ -371,20 +364,23 @@ export default function CompanyWarehouses() {
     <div className="min-w-0 space-y-4 pb-8 text-sm">
       {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
 
-      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card h-17">
+      {/* Header */}
+      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
 
         <div className="flex flex-col justify-between gap-3 px-4 py-3 sm:flex-row sm:items-center sm:px-5">
           <BreadCrumb items={breadcrumbItems} />
 
-          <div className="flex  items-center gap-2">
+          <div className="flex items-center gap-2">
             {statCards.map((card) => {
               const Icon = card.icon
 
               return (
                 <div key={card.title} title={card.title} className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border ${card.border} px-3`}>
                   <Icon size={15} className={card.color} />
+
                   <span className={`hidden text-xs font-medium lg:inline ${card.color}`}>{card.title}</span>
+
                   <span className="text-sm font-bold text-erp-text">{formatNumber(card.value)}</span>
                 </div>
               )
@@ -409,6 +405,7 @@ export default function CompanyWarehouses() {
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isExporting ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
+
                 {isExporting ? 'Exporting...' : 'Export'}
               </button>
             )}
@@ -426,21 +423,27 @@ export default function CompanyWarehouses() {
         </div>
       </section>
 
+      {/* API Error */}
       {apiError && (
         <div role="alert" className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
           <AlertCircle size={15} className="mt-0.5 shrink-0" />
+
           <p>{apiError}</p>
+
           <button type="button" onClick={handleRefresh} className="ml-auto shrink-0 font-semibold underline">
             Retry
           </button>
         </div>
       )}
 
+      {/* Warehouse List */}
       <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        {/* Search and Filters */}
         <div className="flex flex-col gap-3 border-b border-erp-border p-3 sm:p-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 gap-2">
             <div className="relative min-w-0 flex-1 lg:w-md">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+
               <input
                 type="search"
                 value={search}
@@ -476,27 +479,32 @@ export default function CompanyWarehouses() {
               <option value="Active">Active</option>
               <option value="Inactive">Inactive</option>
             </select>
-
-       
           </div>
         </div>
 
-        {loading && hasLoaded && (
+        {/* Inline refresh indicator */}
+        {refreshing && hasLoaded && (
           <div className="flex items-center justify-center gap-2 border-b border-erp-border px-4 py-3 text-xs text-erp-muted">
             <LoaderCircle size={15} className="animate-spin text-erp-primary" />
             Updating warehouse list...
           </div>
         )}
 
+        {/* Desktop Table */}
         <div className="hidden overflow-x-auto md:block">
           <table className="w-full min-w-[950px] text-left">
             <thead className="bg-slate-50">
               <tr className="border-b border-slate-100">
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Warehouse</th>
+
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Location</th>
+
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Manager</th>
+
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Stock / Capacity</th>
+
                 <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
+
                 <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
               </tr>
             </thead>
@@ -512,8 +520,10 @@ export default function CompanyWarehouses() {
                         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-erp-primary-light text-erp-primary">
                           <Warehouse size={17} />
                         </div>
+
                         <div className="min-w-0">
                           <p className="max-w-52 truncate text-xs font-semibold text-erp-text sm:text-sm">{warehouse.name}</p>
+
                           <p className="mt-0.5 text-[10px] text-erp-muted">{warehouse.code}</p>
                         </div>
                       </div>
@@ -522,6 +532,7 @@ export default function CompanyWarehouses() {
                     <td className="px-4 py-3">
                       <div className="flex max-w-48 items-center gap-1.5 text-xs text-slate-600">
                         <MapPin size={14} className="shrink-0 text-slate-400" />
+
                         <span className="truncate">{[warehouse.city, warehouse.state].filter(Boolean).join(', ') || warehouse.address || '—'}</span>
                       </div>
                     </td>
@@ -532,6 +543,7 @@ export default function CompanyWarehouses() {
                           <Users size={14} className="shrink-0 text-slate-400" />
                           <span>{warehouse.manager || 'Unassigned'}</span>
                         </div>
+
                         <div className="flex items-center gap-1.5 text-xs text-slate-500">
                           <Phone size={14} className="shrink-0 text-slate-400" />
                           <span>{warehouse.managerPhone || 'No phone number'}</span>
@@ -539,12 +551,15 @@ export default function CompanyWarehouses() {
                       </div>
                     </td>
 
+                    {/* Stock / Capacity */}
                     <td className="px-4 py-3">
                       <div className="w-40">
                         <div className="mb-1.5 flex items-center justify-between gap-2 text-[10px]">
                           <span className="font-semibold text-slate-700">{warehouse.stockUnits == null ? 'Stock unavailable' : `${formatNumber(warehouse.stockUnits)} units`}</span>
+
                           <span className="text-slate-500">{percentage === null ? '—' : `${percentage}%`}</span>
                         </div>
+
                         <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                           <div
                             className={`h-full rounded-full ${percentage === null ? 'bg-slate-200' : getCapacityColor(percentage)}`}
@@ -553,6 +568,7 @@ export default function CompanyWarehouses() {
                             }}
                           />
                         </div>
+
                         <p className="mt-1 text-[10px] text-slate-400">Capacity: {formatNumber(warehouse.capacity)}</p>
                       </div>
                     </td>
@@ -560,6 +576,7 @@ export default function CompanyWarehouses() {
                     <td className="px-4 py-3">
                       <span className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold ${statusStyles[warehouse.status] || statusStyles.Inactive}`}>
                         <span className={`h-1.5 w-1.5 rounded-full ${warehouse.status === 'Active' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+
                         {warehouse.status || 'Inactive'}
                       </span>
                     </td>
@@ -578,7 +595,7 @@ export default function CompanyWarehouses() {
                           </Link>
                         )}
 
-                        {canUpdate && (
+                        {canUpdateStatus && (
                           <button
                             type="button"
                             onClick={() => setStatusTarget(warehouse)}
@@ -614,7 +631,9 @@ export default function CompanyWarehouses() {
                 <tr>
                   <td colSpan={6} className="px-4 py-14 text-center">
                     <Warehouse size={25} className="mx-auto text-slate-400" />
+
                     <h3 className="mt-3 text-sm font-bold text-erp-text">No warehouses found</h3>
+
                     <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No warehouses have been created yet.'}</p>
                   </td>
                 </tr>
@@ -623,6 +642,7 @@ export default function CompanyWarehouses() {
           </table>
         </div>
 
+        {/* Mobile Cards */}
         <div className="divide-y divide-slate-100 md:hidden">
           {warehouses.map((warehouse) => {
             const percentage = getCapacityPercentage(warehouse)
@@ -636,9 +656,12 @@ export default function CompanyWarehouses() {
 
                   <div className="min-w-0 flex-1">
                     <h3 className="break-words text-sm font-semibold text-erp-text">{warehouse.name}</h3>
+
                     <p className="mt-1 break-words text-xs text-erp-muted">{warehouse.code}</p>
+
                     <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
                       <MapPin size={12} />
+
                       {[warehouse.city, warehouse.state].filter(Boolean).join(', ') || warehouse.address || '—'}
                     </p>
                   </div>
@@ -649,15 +672,18 @@ export default function CompanyWarehouses() {
                 <div className="grid grid-cols-2 gap-3 rounded-lg bg-slate-50 p-3">
                   <div>
                     <p className="text-[10px] text-slate-500">Manager</p>
+
                     <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-slate-700">
                       <Users size={13} />
                       {warehouse.manager || 'Unassigned'}
                     </p>
+
                     <p className="mt-1 text-xs text-slate-500">{warehouse.managerPhone || 'No phone number'}</p>
                   </div>
 
                   <div>
                     <p className="text-[10px] text-slate-500">Stock / Capacity</p>
+
                     <p className="mt-1 text-xs font-semibold text-slate-800">
                       {warehouse.stockUnits == null ? '—' : formatNumber(warehouse.stockUnits)} / {formatNumber(warehouse.capacity)}
                     </p>
@@ -666,10 +692,17 @@ export default function CompanyWarehouses() {
                   <div className="col-span-2">
                     <div className="mb-1 flex justify-between text-[10px] text-slate-500">
                       <span>Capacity used</span>
+
                       <span>{percentage === null ? '—' : `${percentage}%`}</span>
                     </div>
+
                     <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                      <div className={`h-full rounded-full ${percentage === null ? 'bg-slate-200' : getCapacityColor(percentage)}`} style={{ width: `${percentage ?? 0}%` }} />
+                      <div
+                        className={`h-full rounded-full ${percentage === null ? 'bg-slate-200' : getCapacityColor(percentage)}`}
+                        style={{
+                          width: `${percentage ?? 0}%`,
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -689,7 +722,7 @@ export default function CompanyWarehouses() {
                     </Link>
                   )}
 
-                  {canUpdate && (
+                  {canUpdateStatus && (
                     <button
                       type="button"
                       onClick={() => setStatusTarget(warehouse)}
@@ -720,13 +753,15 @@ export default function CompanyWarehouses() {
           {warehouses.length === 0 && (
             <div className="px-4 py-12 text-center">
               <Warehouse size={25} className="mx-auto text-slate-400" />
+
               <h3 className="mt-3 font-semibold text-erp-text">No warehouses found</h3>
+
               <p className="mt-1 text-xs text-erp-muted">{hasActiveFilters ? 'Try changing your search or status filter.' : 'No warehouses have been created yet.'}</p>
             </div>
           )}
         </div>
 
-        {/* paginations */}
+        {/* Pagination */}
         <div className="flex flex-col gap-3 border-t border-erp-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-xs text-erp-text-secondary sm:text-sm">
@@ -808,6 +843,7 @@ export default function CompanyWarehouses() {
         </div>
       </section>
 
+      {/* Delete Confirmation */}
       <TrashBox
         isOpen={Boolean(deleteWarehouse)}
         onClose={() => {
@@ -821,6 +857,7 @@ export default function CompanyWarehouses() {
         isProcessing={Boolean(processingId)}
       />
 
+      {/* Activate / Deactivate Confirmation */}
       <TrashBox
         isOpen={Boolean(statusTarget)}
         onClose={() => {

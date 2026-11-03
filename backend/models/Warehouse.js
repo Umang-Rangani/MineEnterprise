@@ -80,10 +80,18 @@ const warehouseSchema = new mongoose.Schema(
       default: '',
     },
 
+
     capacity: {
       type: Number,
       min: [0, 'Capacity cannot be negative'],
       default: 0,
+    },
+
+    capacityUnit: {
+      type: String,
+      trim: true,
+      enum: ['Piece', 'Kg', 'Gram', 'Liter', 'Milliliter', 'Cubic Meter', 'Square Feet', 'Pallet', 'Other'],
+      default: 'Piece',
     },
 
     description: {

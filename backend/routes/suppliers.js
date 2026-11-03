@@ -66,7 +66,6 @@ router.get('/', permissionMiddleware('Supplier', 'LIST'), async (req, res, next)
     }
 
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
-
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10))
 
     const search = String(req.query.search || '').trim()
@@ -76,7 +75,6 @@ router.get('/', permissionMiddleware('Supplier', 'LIST'), async (req, res, next)
 
     if (search) {
       const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
       const regex = new RegExp(escapedSearch, 'i')
 
       filter.$or = [{ supplierName: regex }, { supplierCode: regex }, { contactPerson: regex }, { email: regex }, { phone: regex }, { gstNumber: regex }]
@@ -243,7 +241,6 @@ router.get('/:id/purchase-history', permissionMiddleware('Purchase', 'LIST'), as
     }
 
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
-
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10))
 
     const purchaseFilter = {
@@ -269,39 +266,53 @@ router.get('/:id/purchase-history', permissionMiddleware('Purchase', 'LIST'), as
 
       Purchase.find(purchaseFilter).select('status totalAmount paidAmount').lean(),
 
-      GoodsReceipt.find(receiptFilter).select('receiptNumber purchaseId receiptDate items status').sort({ receiptDate: -1, _id: -1 }).lean(),
+      GoodsReceipt.find(receiptFilter).select('receiptNumber purchaseId purchaseNumber receiptDate items status').sort({ receiptDate: -1, _id: -1 }).lean(),
     ])
 
-    // Cancelled orders are excluded from financial totals.
-    const validPurchases = allPurchases.filter((purchase) => purchase.status !== 'Cancelled')
 
-    const totalPurchaseValue = validPurchases.reduce((total, purchase) => total + (Number(purchase.totalAmount) || 0), 0)
+    // Only approved/ordered purchases are included in financial totals.
+    const financialPurchases = allPurchases.filter((purchase) => ['Ordered', 'Partially Received', 'Received'].includes(purchase.status))
 
-    const totalPaid = validPurchases.reduce((total, purchase) => total + (Number(purchase.paidAmount) || 0), 0)
+    const totalPurchaseValue = financialPurchases.reduce((total, purchase) => total + (Number(purchase.totalAmount) || 0), 0)
+
+    const totalPaid = financialPurchases.reduce((total, purchase) => total + (Number(purchase.paidAmount) || 0), 0)
 
     const outstanding = Math.max(0, totalPurchaseValue - totalPaid)
 
-    // Only confirmed receipts are included.
+    // Supplier receipt summary: only confirmed goods receipts.
+    let totalReceivedQuantity = 0
     let totalAcceptedQuantity = 0
     let totalDamagedQuantity = 0
+
     let totalReceivedValue = 0
+    let totalAcceptedValue = 0
+    let totalDamagedValue = 0
 
     const productMap = new Map()
 
     for (const receipt of receipts) {
       for (const item of receipt.items || []) {
-        const acceptedQuantity = Number(item.acceptedQuantity) || 0
-
+        const receivedQuantity = Number(item.receivedQuantity) || 0
         const damagedQuantity = Number(item.damagedQuantity) || 0
+
+        // Calculate accepted quantity defensively from physical quantities.
+        const acceptedQuantity = Math.max(0, receivedQuantity - damagedQuantity)
 
         const unitPrice = Number(item.unitPrice) || 0
 
+        const receivedValue = receivedQuantity * unitPrice
+        const acceptedValue = acceptedQuantity * unitPrice
+        const damagedValue = damagedQuantity * unitPrice
+
+        totalReceivedQuantity += receivedQuantity
         totalAcceptedQuantity += acceptedQuantity
         totalDamagedQuantity += damagedQuantity
 
-        totalReceivedValue += acceptedQuantity * unitPrice
+        totalReceivedValue += receivedValue
+        totalAcceptedValue += acceptedValue
+        totalDamagedValue += damagedValue
 
-        const productKey = String(item.productId || item.sku || item.productName)
+        const productKey = item.productId ? String(item.productId) : `${item.sku || ''}-${item.productName || 'Unknown Product'}`
 
         if (!productMap.has(productKey)) {
           productMap.set(productKey, {
@@ -309,17 +320,26 @@ router.get('/:id/purchase-history', permissionMiddleware('Purchase', 'LIST'), as
             productName: item.productName || 'Unknown Product',
             sku: item.sku || '',
             unit: item.unit || '',
-            acceptedQuantity: 0,
+
+            receivedQuantity: 0,
             damagedQuantity: 0,
+            acceptedQuantity: 0,
+
             receivedValue: 0,
+            damagedValue: 0,
+            acceptedValue: 0,
           })
         }
 
         const product = productMap.get(productKey)
 
-        product.acceptedQuantity += acceptedQuantity
+        product.receivedQuantity += receivedQuantity
         product.damagedQuantity += damagedQuantity
-        product.receivedValue += acceptedQuantity * unitPrice
+        product.acceptedQuantity += acceptedQuantity
+
+        product.receivedValue += receivedValue
+        product.damagedValue += damagedValue
+        product.acceptedValue += acceptedValue
       }
     }
 
@@ -328,13 +348,19 @@ router.get('/:id/purchase-history', permissionMiddleware('Purchase', 'LIST'), as
       supplier,
 
       summary: {
-        totalOrders: validPurchases.length,
+        totalOrders: financialPurchases.length,
         totalPurchaseValue,
+
+        totalReceivedQuantity,
+        totalDamagedQuantity,
+        totalAcceptedQuantity,
+
         totalReceivedValue,
+        totalDamagedValue,
+        totalAcceptedValue,
+
         totalPaid,
         outstanding,
-        totalAcceptedQuantity,
-        totalDamagedQuantity,
       },
 
       purchases,

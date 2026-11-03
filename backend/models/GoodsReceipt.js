@@ -57,10 +57,23 @@ const goodsReceiptItemSchema = new mongoose.Schema(
       default: 0,
     },
 
+    damageReason: {
+      type: String,
+      default: '',
+      trim: true,
+      maxlength: 500,
+    },
+
     acceptedQuantity: {
       type: Number,
       required: true,
       min: 0,
+      validate: {
+        validator(value) {
+          return Number(value) === Number(this.receivedQuantity) - Number(this.damagedQuantity)
+        },
+        message: 'Accepted quantity must equal received quantity minus damaged quantity',
+      },
     },
 
     unitPrice: {

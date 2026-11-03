@@ -297,6 +297,10 @@ router.post('/', permissionMiddleware('Purchase', 'CREATE'), async (req, res, ne
           throw httpError('Damaged quantity cannot exceed received quantity')
         }
 
+        if (damagedQuantity > 0 && !String(input.damageReason || '').trim()) {
+          throw httpError('Damage reason is required when damaged quantity is greater than zero')
+        }
+
         const orderedQuantity = Number(purchaseItem.quantity)
         const previouslyReceivedQuantity = Number(purchaseItem.receivedQuantity || 0)
 
@@ -339,6 +343,7 @@ router.post('/', permissionMiddleware('Purchase', 'CREATE'), async (req, res, ne
           previouslyReceivedQuantity,
           receivedQuantity,
           damagedQuantity,
+          damageReason: String(input.damageReason || '').trim(),
           acceptedQuantity: receivedQuantity - damagedQuantity,
           unitPrice: Number(purchaseItem.unitPrice),
           notes: String(input.notes || '').trim(),
@@ -473,6 +478,7 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
           !Number.isFinite(damagedQuantity) ||
           damagedQuantity < 0 ||
           damagedQuantity > receiptQuantity ||
+          (damagedQuantity > 0 && !String(item.damageReason || '').trim()) ||
           receiptQuantity > remainingQuantity
         ) {
           throw httpError(`Receipt quantity is no longer valid for ${item.productName}`, 409)
@@ -489,13 +495,14 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
           purchaseItem,
           currentReceived,
           receiptQuantity,
+          damagedQuantity,
           acceptedQuantity,
         })
       }
 
       // Update stock only for accepted, undamaged quantities.
       for (const line of acceptedLines) {
-        const { item, purchaseItem, acceptedQuantity } = line
+        const { item, purchaseItem, receiptQuantity, damagedQuantity, acceptedQuantity } = line
 
         if (acceptedQuantity > 0) {
           const inventory = await Inventory.findOneAndUpdate(
@@ -549,7 +556,14 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
           )
         }
 
+        // Update total physically received quantity
         purchaseItem.receivedQuantity = Number(purchaseItem.receivedQuantity || 0) + line.receiptQuantity
+
+        // Update total damaged quantity
+        purchaseItem.damagedQuantity = Number(purchaseItem.damagedQuantity || 0) + line.damagedQuantity
+
+        // Update total accepted quantity
+        purchaseItem.acceptedQuantity = Number(purchaseItem.acceptedQuantity || 0) + line.acceptedQuantity
       }
 
       const allItemsReceived = purchase.items.every((item) => Number(item.receivedQuantity || 0) >= Number(item.quantity))
@@ -721,6 +735,10 @@ router.patch('/:id', permissionMiddleware('Purchase', 'CREATE'), async (req, res
           throw httpError('Damaged quantity cannot exceed received quantity')
         }
 
+        if (damagedQuantity > 0 && !String(input.damageReason || '').trim()) {
+          throw httpError('Damage reason is required when damaged quantity is greater than zero')
+        }
+
         const orderedQuantity = Number(purchaseItem.quantity)
         const previouslyReceivedQuantity = Number(purchaseItem.receivedQuantity || 0)
 
@@ -765,6 +783,7 @@ router.patch('/:id', permissionMiddleware('Purchase', 'CREATE'), async (req, res
           previouslyReceivedQuantity,
           receivedQuantity,
           damagedQuantity,
+          damageReason: String(input.damageReason || '').trim(),
           acceptedQuantity: receivedQuantity - damagedQuantity,
           unitPrice: Number(purchaseItem.unitPrice),
           notes: String(input.notes || '').trim(),

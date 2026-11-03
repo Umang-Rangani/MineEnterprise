@@ -85,6 +85,7 @@ function normalizePurchaseItem(item, otherDraftQuantity = 0) {
     otherDraftQuantity: Number(otherDraftQuantity) || 0,
     receivedQuantity: 0,
     damagedQuantity: 0,
+    damageReason: '',
     unitPrice: Number(item.unitPrice) || 0,
     notes: '',
   }
@@ -106,6 +107,7 @@ function normalizeReceiptItem(item, purchaseItem, otherDraftQuantity = 0) {
     otherDraftQuantity: Number(otherDraftQuantity) || 0,
     receivedQuantity: Number(item.receivedQuantity) || 0,
     damagedQuantity: Number(item.damagedQuantity) || 0,
+    damageReason: item.damageReason || '',
     unitPrice: Number(item.unitPrice) || 0,
     notes: item.notes || '',
   }
@@ -488,6 +490,10 @@ export default function GoodsReceiptForm() {
         return `Damaged quantity cannot exceed received quantity for ${item.productName}.`
       }
 
+      if (damaged > 0 && !String(item.damageReason || '').trim()) {
+        return `Damage reason is required for ${item.productName}.`
+      }
+
       if (received > remaining) {
         return `Received quantity exceeds the remaining quantity for ${item.productName}.`
       }
@@ -550,6 +556,7 @@ export default function GoodsReceiptForm() {
           purchaseItemId: item.purchaseItemId,
           receivedQuantity: Number(item.receivedQuantity),
           damagedQuantity: Number(item.damagedQuantity) || 0,
+          damageReason: String(item.damageReason || '').trim(),
           notes: item.notes || '',
         })),
     }
@@ -927,7 +934,9 @@ export default function GoodsReceiptForm() {
                         const remaining = Math.max(0, Number(item.orderedQuantity) - Number(item.previouslyReceivedQuantity) - Number(item.otherDraftQuantity || 0))
 
                         const received = Number(item.receivedQuantity) || 0
+
                         const damaged = Number(item.damagedQuantity) || 0
+
                         const accepted = Math.max(0, received - damaged)
 
                         const overRemaining = received > remaining
@@ -1007,6 +1016,27 @@ export default function GoodsReceiptForm() {
 
                                 {overRemaining ? 'Received quantity cannot exceed remaining quantity.' : 'Damaged quantity cannot exceed received quantity.'}
                               </p>
+                            )}
+
+                            {damaged > 0 && (
+                              <div className="mt-3">
+                                <label className={labelBase}>
+                                  Damage Reason <span className="text-red-500">*</span>
+                                </label>
+
+                                <input
+                                  type="text"
+                                  maxLength={500}
+                                  className={inputBase}
+                                  value={item.damageReason || ''}
+                                  placeholder="Enter reason for damaged goods..."
+                                  onChange={(event) => updateItem(index, 'damageReason', event.target.value)}
+                                  disabled={readOnly}
+                                  required
+                                />
+
+                                <p className="mt-1 text-[10px] text-slate-400">Explain why this quantity is damaged.</p>
+                              </div>
                             )}
 
                             <div className="mt-2">

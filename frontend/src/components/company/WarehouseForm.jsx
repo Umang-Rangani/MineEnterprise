@@ -18,6 +18,7 @@ const initialForm = {
   contactPerson: '',
   phone: '',
   capacity: '',
+  capacityUnit: 'Piece',
   description: '',
   status: 'Active',
 }
@@ -110,6 +111,8 @@ export default function WarehousesForm() {
           contactPerson: warehouse.contactPerson || '',
           phone: warehouse.phone || '',
           capacity: warehouse.capacity === undefined || warehouse.capacity === null ? '' : String(warehouse.capacity),
+          capacity: warehouse.capacity === undefined || warehouse.capacity === null ? '' : String(warehouse.capacity),
+          capacityUnit: warehouse.capacityUnit || 'Piece',
           description: warehouse.description || '',
           status,
         })
@@ -230,6 +233,8 @@ export default function WarehousesForm() {
         contactPerson: form.contactPerson.trim(),
         phone: form.phone.trim(),
         capacity: form.capacity === '' ? 0 : Number(form.capacity),
+        capacity: form.capacity === '' ? 0 : Number(form.capacity),
+        capacityUnit: form.capacityUnit,
         description: form.description.trim(),
       }
 
@@ -382,6 +387,25 @@ export default function WarehousesForm() {
                 />
               </div>
               {errorText('capacity')}
+            </div>
+
+            <div className="min-w-0 space-y-1">
+              <label htmlFor="warehouse-capacity-unit" className={labelClass}>
+                Capacity Unit
+              </label>
+
+              <select id="warehouse-capacity-unit" value={form.capacityUnit} onChange={(event) => updateField('capacityUnit', event.target.value)} disabled={saving} className={inputClass('capacityUnit')}>
+                <option value="Piece">Piece</option>
+                <option value="Kg">Kg</option>
+                <option value="Gram">Gram</option>
+                <option value="Liter">Liter</option>
+                <option value="Milliliter">Milliliter</option>
+                <option value="Cubic Meter">Cubic Meter</option>
+                <option value="Square Feet">Square Feet</option>
+                <option value="Pallet">Pallet</option>
+                <option value="Other">Other</option>
+              </select>
+              {errorText('capacityUnit')}
             </div>
 
             <div className="min-w-0 space-y-1">
@@ -589,7 +613,7 @@ export default function WarehousesForm() {
 
                 <p className="flex min-w-0 items-start gap-2">
                   <Boxes size={14} className="mt-0.5 shrink-0 text-erp-primary" />
-                  <span>Capacity: {form.capacity === '' ? 'Not specified' : form.capacity}</span>
+                  <span>Capacity: {form.capacity === '' ? 'Not specified' : `${form.capacity} ${form.capacityUnit}`}</span>
                 </p>
               </div>
             </div>

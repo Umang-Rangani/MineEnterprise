@@ -97,6 +97,15 @@ const purchaseHistorySchema = new mongoose.Schema(
             type: Number,
             default: 0,
           },
+          damagedQuantity: {
+            type: Number,
+            default: 0,
+          },
+
+          acceptedQuantity: {
+            type: Number,
+            default: 0,
+          },
           unitPrice: {
             type: Number,
             default: 0,
@@ -221,6 +230,18 @@ const purchaseItemSchema = new mongoose.Schema(
     receivedQuantity: {
       type: Number,
       min: [0, 'Received quantity cannot be negative'],
+      default: 0,
+    },
+
+    damagedQuantity: {
+      type: Number,
+      min: [0, 'Damaged quantity cannot be negative'],
+      default: 0,
+    },
+
+    acceptedQuantity: {
+      type: Number,
+      min: [0, 'Accepted quantity cannot be negative'],
       default: 0,
     },
 

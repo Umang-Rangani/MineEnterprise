@@ -309,7 +309,7 @@ router.post('/', permissionMiddleware('Warehouse', 'CREATE'), async (req, res) =
     const company = await getApprovedCompany(req, res)
     if (!company) return
 
-    const { name, address, city, state, pincode, manager, managerPhone, contactPerson, phone, capacity, description } = req.body
+    const { name, address, city, state, pincode, manager, managerPhone, contactPerson, phone, capacity, description, capacityUnit, } = req.body
 
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({
@@ -340,6 +340,7 @@ router.post('/', permissionMiddleware('Warehouse', 'CREATE'), async (req, res) =
       contactPerson,
       phone,
       capacity: capacity === undefined ? 0 : Number(capacity),
+      capacityUnit: capacityUnit || 'Piece',
       description,
       createdBy: req.user._id || req.user.id,
     })
@@ -529,7 +530,7 @@ router.patch('/:id', permissionMiddleware('Warehouse', 'UPDATE'), async (req, re
       })
     }
 
-    const allowedFields = ['name', 'address', 'city', 'state', 'pincode', 'manager', 'managerPhone', 'contactPerson', 'phone', 'capacity', 'description']
+    const allowedFields = ['name', 'address', 'city', 'state', 'pincode', 'manager', 'managerPhone', 'contactPerson', 'phone', 'capacity','capacityUnit', 'description']
 
     const updates = {}
 

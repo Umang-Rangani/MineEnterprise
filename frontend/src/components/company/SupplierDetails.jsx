@@ -28,6 +28,10 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
+  X,
+  Eye,
+  Boxes,
+  Warehouse,
 } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
@@ -155,6 +159,165 @@ function SummaryCard({ title, value, icon: Icon, description }) {
   )
 }
 
+function DamageDetailsModal({ receipt, onClose }) {
+  if (!receipt) return null
+
+  const damagedItems = (receipt.items || []).filter((item) => Number(item.damagedQuantity) > 0)
+
+  const totalDamaged = damagedItems.reduce((total, item) => total + (Number(item.damagedQuantity) || 0), 0)
+
+  const totalReceived = damagedItems.reduce((total, item) => total + (Number(item.receivedQuantity) || 0), 0)
+
+  const totalAccepted = damagedItems.reduce((total, item) => total + (Number(item.acceptedQuantity) || Math.max(0, (Number(item.receivedQuantity) || 0) - (Number(item.damagedQuantity) || 0))), 0)
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-[2px] sm:p-5"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <section role="dialog" aria-modal="true" aria-labelledby="damage-details-title" className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-2xl">
+        <div className="flex items-center justify-between gap-3 border-b border-erp-border px-4 py-4 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600">
+              <AlertCircle size={20} />
+            </div>
+
+            <div className="min-w-0">
+              <h2 id="damage-details-title" className="text-sm font-bold text-erp-text">
+                Damage Details
+              </h2>
+
+              <p className="mt-0.5 text-xs text-erp-text-secondary">Complete damaged goods information</p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close damage details"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover hover:text-erp-text"
+          >
+            <X size={17} />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 sm:p-5">
+          {/* Receipt Information */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <DetailItem label="Receipt Number" value={receipt.receiptNumber || '—'} icon={ReceiptText} />
+
+            <DetailItem label="Purchase Number" value={receipt.purchaseNumber || receipt.purchaseId?.purchaseNumber || '—'} icon={ShoppingCart} />
+
+            <DetailItem label="Receipt Date" value={formatDate(receipt.receiptDate)} icon={CalendarDays} />
+
+            <DetailItem label="Total Damaged Quantity" value={formatNumber(totalDamaged)} icon={Package} />
+          </div>
+
+          {/* Damage Summary */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
+              <p className="text-[11px] font-medium text-blue-700">Received Qty</p>
+              <p className="mt-1 text-lg font-bold text-blue-800">{formatNumber(totalReceived)}</p>
+            </div>
+
+            <div className="rounded-lg border border-rose-100 bg-rose-50 p-3">
+              <p className="text-[11px] font-medium text-rose-700">Damaged Qty</p>
+              <p className="mt-1 text-lg font-bold text-rose-800">{formatNumber(totalDamaged)}</p>
+            </div>
+
+            <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
+              <p className="text-[11px] font-medium text-emerald-700">Accepted Qty</p>
+              <p className="mt-1 text-lg font-bold text-emerald-800">{formatNumber(totalAccepted)}</p>
+            </div>
+          </div>
+
+          {/* Damaged Product Details */}
+          <div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-bold text-erp-text">Damaged Product Details</h3>
+                <p className="mt-0.5 text-[10px] text-erp-muted">Product-wise damage quantity and reason</p>
+              </div>
+
+              <span className="rounded-md bg-rose-50 px-2 py-1 text-[10px] font-semibold text-rose-700">
+                {damagedItems.length} {damagedItems.length === 1 ? 'Product' : 'Products'}
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {damagedItems.map((item, index) => {
+                const received = Number(item.receivedQuantity) || 0
+                const damaged = Number(item.damagedQuantity) || 0
+                const accepted = Number(item.acceptedQuantity) || Math.max(0, received - damaged)
+
+                return (
+                  <div key={`${item.productId || item.sku || item.productName}-${index}`} className="overflow-hidden rounded-lg border border-rose-200">
+                    <div className="flex flex-col gap-2 bg-rose-50/70 p-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="break-words text-sm font-bold text-erp-text">{item.productName || 'Unknown Product'}</p>
+
+                        <p className="mt-1 text-[11px] text-erp-text-secondary">
+                          SKU: {item.sku || '—'}
+                          {item.unit ? ` • Unit: ${item.unit}` : ''}
+                        </p>
+                      </div>
+
+                      <span className="w-fit shrink-0 rounded-md border border-rose-200 bg-white px-2 py-1 text-[10px] font-bold text-rose-700">Damaged: {formatNumber(damaged)}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3">
+                      <div className="rounded-md bg-slate-50 p-2">
+                        <p className="text-[10px] text-erp-muted">Ordered Quantity</p>
+                        <p className="mt-1 text-xs font-semibold text-erp-text">{formatNumber(item.orderedQuantity)}</p>
+                      </div>
+
+                      <div className="rounded-md bg-blue-50 p-2">
+                        <p className="text-[10px] text-blue-700">Received Quantity</p>
+                        <p className="mt-1 text-xs font-semibold text-blue-800">{formatNumber(received)}</p>
+                      </div>
+
+                      <div className="rounded-md bg-emerald-50 p-2">
+                        <p className="text-[10px] text-emerald-700">Accepted Quantity</p>
+                        <p className="mt-1 text-xs font-semibold text-emerald-800">{formatNumber(accepted)}</p>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-rose-100 p-3">
+                      <p className="mb-2 flex items-center gap-2 text-xs font-bold text-rose-700">
+                        <FileText size={14} />
+                        Damage Reason
+                      </p>
+
+                      <div className="rounded-md border border-rose-100 bg-rose-50/60 p-3">
+                        <p className="whitespace-pre-wrap break-words text-xs leading-6 text-erp-text">{item.damageReason?.trim() || 'Reason not recorded'}</p>
+                      </div>
+                    </div>
+
+                    {item.notes && (
+                      <div className="border-t border-erp-border px-3 py-2.5">
+                        <p className="mb-1 text-[10px] font-semibold text-erp-text-secondary">Additional Notes</p>
+                        <p className="whitespace-pre-wrap break-words text-xs leading-5 text-erp-text">{item.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end border-t border-erp-border bg-erp-surface-secondary/40 px-4 py-3 sm:px-5">
+          <button type="button" onClick={onClose} className={`${buttonBase} bg-erp-primary text-white hover:bg-erp-primary-hover`}>
+            Close
+          </button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 export default function SupplierDetails() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -177,6 +340,8 @@ export default function SupplierDetails() {
   const [historyError, setHistoryError] = useState('')
   const [historyPage, setHistoryPage] = useState(1)
   const historyLimit = 10
+
+  const [selectedDamageReceipt, setSelectedDamageReceipt] = useState(null)
 
   const isInactive =
     String(supplier?.status ?? '')
@@ -341,6 +506,8 @@ export default function SupplierDetails() {
     <div className="min-w-0 space-y-4 text-erp-text">
       {toast && <Toast toast={toast} onClose={closeToast} />}
 
+      {selectedDamageReceipt && <DamageDetailsModal receipt={selectedDamageReceipt} onClose={() => setSelectedDamageReceipt(null)} />}
+
       {/* Header */}
       <section className={`h-17 overflow-hidden rounded-xl border shadow-erp-card ${panelClass}`}>
         <div className={`h-1 ${isInactive ? 'bg-erp-disabled' : 'bg-erp-primary'}`} />
@@ -478,50 +645,17 @@ export default function SupplierDetails() {
 
                 <DetailItem label="PAN Number" value={supplier.panNumber} icon={ShieldCheck} inactive={isInactive} />
               </div>
+            </section>
 
-              {/* Supplier Activity */}
-              <section className={`min-w-0 rounded-xl  py-4  sm:py-5 lg:col-span-2 ${panelClass}`}>
-                <SectionHeader icon={CalendarDays} title="Supplier Activity" description="Creation, modification and current status" inactive={isInactive} />
+            {/* Supplier Activity */}
+            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
+              <SectionHeader icon={CalendarDays} title="Supplier Activity" description="Creation, modification and current status" inactive={isInactive} />
 
-                {/* <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-2">
-                  <div className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border'}`}>
-                    <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBoxClass}`}>
-                      <CalendarDays size={16} />
-                    </div>
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <DetailItem label="Created On" value={formatDate(supplier.createdAt)} icon={CalendarDays} inactive={isInactive} />
 
-                    <div className="min-w-0">
-                      <p className={`text-xs font-medium ${secondaryTextClass}`}>Created On</p>
-
-                      <p className={`mt-1 break-words text-sm font-semibold ${headingTextClass}`}>{formatDate(supplier.createdAt)}</p>
-                    </div>
-                  </div>
-
-                  <div className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border'}`}>
-                    <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBoxClass}`}>
-                      <Clock size={16} />
-                    </div>
-
-                    <div className="min-w-0">
-                      <p className={`text-xs font-medium ${secondaryTextClass}`}>Last Updated</p>
-
-                      <p className={`mt-1 break-words text-sm font-semibold ${headingTextClass}`}>{formatDate(supplier.updatedAt)}</p>
-                    </div>
-                  </div>
-                </div> */}
-
-                <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                  <DetailItem label="Created On" value={formatDate(supplier.createdAt)} icon={CalendarDays} inactive={isInactive} />
-
-                  <DetailItem label="Last Updated" value={formatDate(supplier.updatedAt)} icon={Clock} inactive={isInactive} />
-
-                </div>
-              </section>
-
-              {/* <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
-                <AlertCircle size={15} className={`mt-0.5 shrink-0 ${isInactive ? 'text-erp-disabled' : 'text-erp-text-muted'}`} />
-
-                <p className={`text-xs leading-5 ${secondaryTextClass}`}>Tax details are displayed as saved in the supplier record. Verify registration details separately before using them for tax compliance.</p>
-              </div> */}
+                <DetailItem label="Last Updated" value={formatDate(supplier.updatedAt)} icon={Clock} inactive={isInactive} />
+              </div>
             </section>
 
             {/* Address Details */}
@@ -612,21 +746,27 @@ export default function SupplierDetails() {
                 <div className="space-y-5 p-4 sm:p-5">
                   {/* Summary Cards */}
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <SummaryCard title="Total Purchase Orders" value={formatNumber(summary.totalOrders)} icon={ShoppingCart} description="Cancelled orders excluded" />
+                    <SummaryCard title="Total Purchase Orders" value={formatNumber(summary.totalOrders)} icon={ShoppingCart} description="Cancelled orders excluded from totals" />
 
                     <SummaryCard title="Total Purchase Value" value={formatAmount(summary.totalPurchaseValue)} icon={IndianRupee} />
 
-                    <SummaryCard title="Received Value" value={formatAmount(summary.totalReceivedValue)} icon={Package} description="Confirmed accepted goods" />
+                    <SummaryCard title="Total Received Quantity" value={formatNumber(summary.totalReceivedQuantity)} icon={Package} description="Includes damaged goods" />
 
-                    <SummaryCard title="Total Paid" value={formatAmount(summary.totalPaid)} icon={Wallet} />
+                    <SummaryCard title="Total Accepted Quantity" value={formatNumber(summary.totalAcceptedQuantity)} icon={CheckCircle2} description="Usable goods received" />
 
-                    <SummaryCard title="Outstanding Amount" value={formatAmount(summary.outstanding)} icon={TrendingUp} description="Purchase value minus paid amount" />
+                    <SummaryCard title="Total Damaged Quantity" value={formatNumber(summary.totalDamagedQuantity)} icon={AlertCircle} description="Damaged goods reported" />
 
-                    <SummaryCard title="Accepted Quantity" value={formatNumber(summary.totalAcceptedQuantity)} icon={CheckCircle2} description="Confirmed goods receipts" />
+                    <SummaryCard title="Received Value" value={formatAmount(summary.totalReceivedValue)} icon={IndianRupee} description="Includes damaged goods value" />
 
-                    <SummaryCard title="Damaged Quantity" value={formatNumber(summary.totalDamagedQuantity)} icon={AlertCircle} description="Reported damaged goods" />
+                    <SummaryCard title="Accepted Value" value={formatAmount(summary.totalAcceptedValue)} icon={Wallet} description="Value of usable goods" />
 
-                    <SummaryCard title="Goods Receipts" value={formatNumber(receipts.length)} icon={ReceiptText} description="Confirmed receipts returned" />
+                    <SummaryCard title="Damaged Value" value={formatAmount(summary.totalDamagedValue)} icon={TrendingUp} description="Value of damaged goods" />
+
+                    <SummaryCard title="Total Paid" value={formatAmount(summary.totalPaid)} icon={CreditCard} />
+
+                    <SummaryCard title="Outstanding Amount" value={formatAmount(summary.outstanding)} icon={Wallet} description="Purchase value minus paid amount" />
+
+                    <SummaryCard title="Goods Receipts" value={formatNumber(receipts.length)} icon={ReceiptText} description="Confirmed receipts" />
                   </div>
 
                   {/* Purchase Orders */}
@@ -637,14 +777,14 @@ export default function SupplierDetails() {
                         <p className="mt-0.5 text-[10px] text-erp-muted">Orders created for this supplier</p>
                       </div>
 
-                      <span className="rounded-md bg-erp-primary-light px-2 py-1 text-xs font-semibold text-erp-primary">{formatNumber(history.pagination?.total)} Orders</span>
+                      <span className="rounded-md bg-erp-primary-light px-2 py-1 text-xs font-semibold text-erp-primary">{formatNumber(history.pagination?.total)} Records</span>
                     </div>
 
                     <div className="overflow-x-auto">
                       <table className="w-full min-w-[760px] text-left">
                         <thead className="bg-slate-50">
                           <tr>
-                            {['Purchase Order', 'Date', 'Items', 'Order Amount', 'Paid Amount', 'Payment Status', 'Order Status'].map((heading) => (
+                            {['Purchase Number', 'Purchase Date', 'Products', 'Total Amount', 'Paid Amount', 'Payment Status', 'Purchase Status'].map((heading) => (
                               <th key={heading} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 {heading}
                               </th>
@@ -731,7 +871,7 @@ export default function SupplierDetails() {
                       <table className="w-full min-w-[650px] text-left">
                         <thead className="bg-slate-50">
                           <tr>
-                            {['Product', 'SKU', 'Accepted Quantity', 'Damaged Quantity', 'Received Value'].map((heading) => (
+                            {['Product', 'SKU', 'Received Quantity', 'Damaged Quantity', 'Accepted Quantity', 'Received Value', 'Damaged Value', 'Accepted Value'].map((heading) => (
                               <th key={heading} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 {heading}
                               </th>
@@ -749,17 +889,23 @@ export default function SupplierDetails() {
 
                               <td className="px-4 py-3 text-xs text-erp-text-secondary">{product.sku || '—'}</td>
 
-                              <td className="px-4 py-3 text-xs font-semibold text-emerald-700">{formatNumber(product.acceptedQuantity)}</td>
+                              <td className="px-4 py-3 text-xs font-semibold text-erp-text">{formatNumber(product.receivedQuantity)}</td>
 
                               <td className="px-4 py-3 text-xs font-semibold text-rose-700">{formatNumber(product.damagedQuantity)}</td>
 
+                              <td className="px-4 py-3 text-xs font-semibold text-emerald-700">{formatNumber(product.acceptedQuantity)}</td>
+
                               <td className="px-4 py-3 text-xs font-semibold text-erp-text">{formatAmount(product.receivedValue)}</td>
+
+                              <td className="px-4 py-3 text-xs font-semibold text-rose-700">{formatAmount(product.damagedValue)}</td>
+
+                              <td className="px-4 py-3 text-xs font-semibold text-emerald-700">{formatAmount(product.acceptedValue)}</td>
                             </tr>
                           ))}
 
                           {productSummary.length === 0 && (
                             <tr>
-                              <td colSpan={5} className="px-4 py-10 text-center">
+                              <td colSpan={8} className="px-4 py-10 text-center">
                                 <Package size={24} className="mx-auto text-slate-400" />
                                 <p className="mt-2 text-xs font-semibold text-erp-text">No received products found</p>
                                 <p className="mt-1 text-[10px] text-erp-muted">Confirmed goods receipt product details will appear here.</p>
@@ -779,10 +925,10 @@ export default function SupplierDetails() {
                     </div>
 
                     <div className="overflow-x-auto">
-                      <table className="w-full min-w-[600px] text-left">
+                      <table className="w-full min-w-[780px] text-left">
                         <thead className="bg-slate-50">
                           <tr>
-                            {['GRN Number', 'Purchase Order', 'Receipt Date', 'Products', 'Accepted Quantity', 'Damaged Quantity'].map((heading) => (
+                            {['Receipt Number', 'Purchase Number', 'Receipt Date', 'Products', 'Received Qty', 'Damaged Qty', 'Accepted Qty', 'Damage Details'].map((heading) => (
                               <th key={heading} className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 {heading}
                               </th>
@@ -792,12 +938,14 @@ export default function SupplierDetails() {
 
                         <tbody className="divide-y divide-slate-100">
                           {receipts.map((receipt) => {
-                            const accepted = (receipt.items || []).reduce((total, item) => total + (Number(item.acceptedQuantity) || 0), 0)
+                            const received = (receipt.items || []).reduce((total, item) => total + (Number(item.receivedQuantity) || 0), 0)
 
                             const damaged = (receipt.items || []).reduce((total, item) => total + (Number(item.damagedQuantity) || 0), 0)
 
+                            const accepted = Math.max(0, received - damaged)
+
                             return (
-                              <tr key={receipt._id} className="hover:bg-slate-50/70">
+                              <tr key={receipt._id} className="transition hover:bg-slate-50/70">
                                 <td className="px-4 py-3 text-xs font-semibold text-erp-text">{receipt.receiptNumber || '—'}</td>
 
                                 <td className="px-4 py-3 text-xs text-erp-text-secondary">{receipt.purchaseNumber || receipt.purchaseId?.purchaseNumber || '—'}</td>
@@ -806,16 +954,36 @@ export default function SupplierDetails() {
 
                                 <td className="px-4 py-3 text-xs text-erp-text">{formatNumber(receipt.items?.length)}</td>
 
-                                <td className="px-4 py-3 text-xs font-semibold text-emerald-700">{formatNumber(accepted)}</td>
+                                <td className="px-4 py-3 text-xs font-semibold text-erp-text">{formatNumber(received)}</td>
 
                                 <td className="px-4 py-3 text-xs font-semibold text-rose-700">{formatNumber(damaged)}</td>
+
+                                <td className="px-4 py-3 text-xs font-semibold text-emerald-700">{formatNumber(accepted)}</td>
+
+                                <td className="px-4 py-3">
+                                  {damaged > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedDamageReceipt(receipt)}
+                                      className="inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-3 text-[11px] font-semibold text-rose-700 transition hover:border-rose-300 hover:bg-rose-100"
+                                    >
+                                      <Eye size={13} />
+                                      View Details
+                                    </button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">
+                                      <CheckCircle2 size={12} />
+                                      No Damage
+                                    </span>
+                                  )}
+                                </td>
                               </tr>
                             )
                           })}
 
                           {receipts.length === 0 && (
                             <tr>
-                              <td colSpan={6} className="px-4 py-10 text-center">
+                              <td colSpan={8} className="px-4 py-10 text-center">
                                 <ReceiptText size={24} className="mx-auto text-slate-400" />
                                 <p className="mt-2 text-xs font-semibold text-erp-text">No confirmed goods receipts</p>
                               </td>

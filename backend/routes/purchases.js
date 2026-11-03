@@ -411,12 +411,6 @@ function buildPurchaseChanges(existingPurchase, newData) {
 }
 
 const buildPurchaseSnapshot = (purchase) => {
-  console.log('========== BUILD SNAPSHOT START ==========')
-  console.log('Purchase exists:', Boolean(purchase))
-  console.log('Purchase number:', purchase?.purchaseNumber)
-  console.log('Items count:', purchase?.items?.length)
-  console.log('Purchase items:', JSON.stringify(purchase?.items, null, 2))
-
   if (!purchase) {
     console.log('ERROR: Purchase is null or undefined')
     return null
@@ -436,6 +430,8 @@ const buildPurchaseSnapshot = (purchase) => {
       unit: item.unit || 'Piece',
       quantity: Number(item.quantity || 0),
       receivedQuantity: Number(item.receivedQuantity || 0),
+      damagedQuantity: Number(item.damagedQuantity || 0),
+      acceptedQuantity: Number(item.acceptedQuantity || 0),
       unitPrice: Number(item.unitPrice || 0),
       taxRate: Number(item.taxRate || 0),
       discountAmount: Number(item.discountAmount || 0),
@@ -454,9 +450,6 @@ const buildPurchaseSnapshot = (purchase) => {
     paymentStatus: purchase.paymentStatus || '',
     notes: purchase.notes || '',
   }
-
-  console.log('Generated snapshot:', JSON.stringify(snapshot, null, 2))
-  console.log('========== BUILD SNAPSHOT END ==========')
 
   return snapshot
 }
@@ -680,6 +673,8 @@ async function buildPurchaseData(body, companyId, res) {
       unit: product.unit || 'Piece',
       quantity,
       receivedQuantity: 0,
+      damagedQuantity: 0,
+      acceptedQuantity: 0,
       unitPrice,
       taxRate,
       discountAmount: lineDiscount,
@@ -867,6 +862,21 @@ router.get('/:id', permissionMiddleware('Purchase', 'VIEW'), async (req, res, ne
         message: 'Purchase not found.',
       })
     }
+
+    purchase.items = (purchase.items || []).map((item) => {
+      const orderedQuantity = Number(item.quantity || 0)
+      const receivedQuantity = Number(item.receivedQuantity || 0)
+      const damagedQuantity = Number(item.damagedQuantity || 0)
+
+      return {
+        ...item,
+        quantity: orderedQuantity,
+        receivedQuantity,
+        damagedQuantity,
+        acceptedQuantity: receivedQuantity - damagedQuantity,
+        pendingQuantity: orderedQuantity - receivedQuantity,
+      }
+    })
 
     return res.status(200).json({
       success: true,
