@@ -43,7 +43,7 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-    const user = await User.findById(decoded.userId).select('_id companyId name email role roles status permissionOverrides')
+    const user = await User.findById(decoded.userId).select('_id companyId name email role roles status permissionOverrides defaultWarehouseId assignedWarehouses')
 
     if (!user || user.status !== 'Active') {
       clearAuthCookie(res)
@@ -125,6 +125,10 @@ const authMiddleware = async (req, res, next) => {
       role: user.role,
       roles: safeRoles,
       permissionOverrides: user.permissionOverrides,
+
+      defaultWarehouseId: user.defaultWarehouseId ? user.defaultWarehouseId.toString() : null,
+
+      assignedWarehouses: (user.assignedWarehouses || []).map((id) => id.toString()),
     }
 
     return next()

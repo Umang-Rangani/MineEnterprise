@@ -101,7 +101,7 @@ const navigationItems = [
   },
   {
     label: 'Sales Orders',
-    path: '/company/orders',
+    path: '/company/sales',
     icon: ShoppingBag,
     actions: ['sales:list'],
   },
@@ -321,21 +321,25 @@ const routePermissions = [
     actions: ['purchase:list'],
   },
 
-  // Sales and orders
+  // Sales Orders
   {
-    pattern: /^\/company\/orders\/new\/?$/,
+    pattern: /^\/company\/sales\/new\/?$/,
     actions: ['sales:create'],
   },
   {
-    pattern: /^\/company\/orders\/[^/]+\/edit\/?$/,
+    pattern: /^\/company\/sales\/[^/]+\/edit\/?$/,
     actions: ['sales:update'],
   },
   {
-    pattern: /^\/company\/orders\/[^/]+\/?$/,
+    pattern: /^\/company\/sales\/[^/]+\/dispatch\/?$/,
+    actions: ['sales:dispatch'],
+  },
+  {
+    pattern: /^\/company\/sales\/[^/]+\/?$/,
     actions: ['sales:view'],
   },
   {
-    pattern: /^\/company\/orders\/?$/,
+    pattern: /^\/company\/sales\/?$/,
     actions: ['sales:list'],
   },
 

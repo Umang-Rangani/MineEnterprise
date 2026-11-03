@@ -134,7 +134,7 @@ const ACTIONS = {
     UPDATE_STATUS: 'customer:update-status',
     DELETE: 'customer:delete',
   },
-
+  
   Sales: {
     LIST: 'sales:list',
     VIEW: 'sales:view',
@@ -143,6 +143,7 @@ const ACTIONS = {
     DELETE: 'sales:delete',
     APPROVE: 'sales:approve',
     CANCEL: 'sales:cancel',
+    DISPATCH: 'sales:dispatch',
   },
 
   Invoice: {

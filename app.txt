@@ -1,178 +1,123 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Trash2, Power } from 'lucide-react'
 
-import ProtectedRoute from './components/ProtectedRoute'
-import Login from './pages/Login'
-import HeroPage from './pages/HeroPage'
-import CompanyRegistration from './pages/CompanyRegistration'
+export default function TrashBox({
+  isOpen,
+  onClose,
+  title = 'Delete Product',
+  message = 'Are you sure you want to delete this product?',
+  actionButtonText = 'Delete Product',
+  cancelButtonText = 'Cancel',
+  onAction,
+  isProcessing = false,
+  variant = 'delete',
+}) {
+  const [isAnimating, setIsAnimating] = useState(false)
 
-import SuperAdminDashboard from './components/superadmin/SuperAdminDashboard'
-import SuperAdminRoute from './components/SuperAdminRoute'
-import SuperAdminCompanies from './components/superadmin/SuperAdminCompanies'
+  const isActivate = variant === 'activate'
+  const isDeactivate = variant === 'deactivate'
+  const isDelete = variant === 'delete'
 
-import CompaniesRoute from './components/company/CompaniesRoute'
-import CompanyDashboard from './components/company/CompanyDashboard'
+  const theme = isActivate
+    ? {
+        border: 'border-t-emerald-500',
+        iconBg: 'bg-emerald-500',
+        title: 'text-emerald-700',
+        warning: 'text-emerald-600',
+        button: 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-300',
+      }
+    : isDeactivate
+      ? {
+          border: 'border-t-orange-500',
+          iconBg: 'bg-orange-500',
+          title: 'text-orange-700',
+          warning: 'text-orange-600',
+          button: 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-300',
+        }
+      : {
+          border: 'border-t-red-500',
+          iconBg: 'bg-red-500',
+          title: 'text-red-600',
+          warning: 'text-red-500',
+          button: 'bg-red-500 hover:bg-red-600 focus:ring-red-300',
+        }
 
-import CompanyEmployees from './components/company/CompanyEmployees'
-import CompanyEmployeeDetails from './components/company/CompanyEmployeeDetails'
-import EmployeeForm from './components/company/EmployeeForm'
+  useEffect(() => {
+    if (!isOpen) {
+      setIsAnimating(false)
+      return
+    }
 
-import CompanyRoles from './components/company/CompanyRoles'
-import RoleForm from './components/company/RoleForm'
+    const handleEscapeKey = (event) => {
+      if (event.key === 'Escape' && !isProcessing) {
+        onClose()
+      }
+    }
 
-import CompanyProducts from './components/company/CompanyProducts'
-import CompanyCategories from './components/company/CompanyCategories'
-import CompanyInventory from './components/company/CompanyInventory'
+    document.addEventListener('keydown', handleEscapeKey)
+    setIsAnimating(true)
 
-import CompanySuppliers from './components/company/CompanySuppliers'
-import CompanyCustomers from './components/company/CompanyCustomers'
-import CompanyPurchases from './components/company/CompanyPurchases'
-import CompanyOrders from './components/company/CompanyOrders'
-import CompanyInvoices from './components/company/CompanyInvoices'
-import CompanyPayments from './components/company/CompanyPayments'
-import CompanyExpenses from './components/company/CompanyExpenses'
-import CompanyWarehouses from './components/company/CompanyWarehouses'
-import CompanyReports from './components/company/CompanyReports'
-import CompanySettings from './components/company/CompanySettings'
-import SupplierForm from './components/company/SupplierForm'
-import SupplierDetails from './components/company/SupplierDetails'
-import CustomerForm from './components/company/CustomerForm'
-import CustomerDetails from './components/company/CustomerDetails'
-import PurchaseForm from './components/company/PurchaseForm'
-import PurchaseDetails from './components/company/PurchaseDetails'
-import OrderForm from './components/company/OrderForm'
-import OrderDetails from './components/company/OrderDetails'
-import InvoiceForm from './components/company/InvoiceForm'
-import InvoiceDetails from './components/company/InvoiceDetails'
-import PaymentForm from './components/company/PaymentForm'
-import PaymentDetails from './components/company/PaymentDetails'
-import ExpenseForm from './components/company/ExpenseForm'
-import ExpenseDetails from './components/company/ExpenseDetails'
-import WarehouseForm from './components/company/WarehouseForm'
-import WarehouseDetails from './components/company/WarehouseDetails'
-import RoleDetails from './components/company/RoleDetails'
-import Forbidden from './components/company/Forbidden'
-import CategoryForm from './components/company/CategoryForm'
-import CategoryDetails from './components/company/CategoryDetails'
-import ProductsForm from './components/company/ProductsForm'
-import ProductsDetails from './components/company/ProductsDetails'
-import InventoryStockForm from './components/company/InventoryStockForm'
-import InventoryHistory from './components/company/InventoryHistory'
-import StockTransfer from './components/company/StockTransfer'
+    return () => {
+      document.removeEventListener('keydown', handleEscapeKey)
+    }
+  }, [isOpen, isProcessing, onClose])
 
-export default function App() {
+  if (!isOpen) return null
+
   return (
-    <Routes>
-      {/* Public Routes */}
-      <Route path="/" element={<HeroPage />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/register-company" element={<CompanyRegistration />} />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px]" onClick={!isProcessing ? onClose : undefined} aria-hidden="true" />
 
-      {/* SuperAdmin Routes */}
-      <Route element={<ProtectedRoute allowedRoles={['SuperAdmin']} />}>
-        <Route path="/superadmin" element={<SuperAdminRoute />}>
-          <Route index element={<SuperAdminDashboard />} />
-          <Route path="companies" element={<SuperAdminCompanies />} />
-        </Route>
-      </Route>
+      {/* Modal */}
+      <div
+        className={`relative z-10 w-full max-w-sm overflow-visible rounded-2xl border border-slate-200 border-t-[6px] ${theme.border} bg-white shadow-2xl ${isAnimating ? 'animate-in zoom-in-75 duration-300 ease-out' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirmation-modal-title"
+      >
+        <div className="flex flex-col items-center px-6 pb-6 pt-3">
+          {/* Action Icon */}
+          <div className="-mt-9 mb-3">
+            <div className={`flex size-16 items-center justify-center rounded-full border-4 border-white ${theme.iconBg} shadow-lg`}>
+              {isDelete ? <Trash2 size={30} strokeWidth={2.2} className="text-white" /> : <Power size={30} strokeWidth={2.2} className="text-white" />}
+            </div>
+          </div>
 
-      {/* Company Workspace Routes */}
-      <Route element={<ProtectedRoute allowedRoles={['CompanyAdmin', 'Employee']} />}>
-        <Route path="/company" element={<CompaniesRoute />}>
-          {/* Dashboard */}
-          <Route index element={<CompanyDashboard />} />
+          {/* Title */}
+          <h3 id="confirmation-modal-title" className={`mt-1 text-center text-xl font-semibold leading-tight ${theme.title}`}>
+            {title}
+          </h3>
 
-          {/* Employees */}
-          <Route path="employees" element={<CompanyEmployees />} />
-          <Route path="employees/new" element={<EmployeeForm />} />
-          <Route path="employees/:id" element={<CompanyEmployeeDetails />} />
-          <Route path="employees/:id/edit" element={<EmployeeForm />} />
+          {/* Message */}
+          <div className="mt-4 w-full text-center">
+            <p className="text-sm leading-relaxed text-slate-600">{message}</p>
 
-          {/* Roles & Permissions */}
-          <Route path="roles" element={<CompanyRoles />} />
-          <Route path="roles/new" element={<RoleForm />} />
-          <Route path="roles/:id" element={<RoleDetails />} />
-          <Route path="roles/:id/edit" element={<RoleForm />} />
+            <p className={`mt-2 text-xs font-medium ${theme.warning}`}>{isDelete ? 'This action cannot be undone.' : 'This change will affect the permissions assigned to this role.'}</p>
+          </div>
 
-          {/* categories */}
-          <Route path="categories" element={<CompanyCategories />} />
-          <Route path="categories/new" element={<CategoryForm />} />
-          <Route path="categories/:id" element={<CategoryDetails />} />
-          <Route path="categories/:id/edit" element={<CategoryForm />} />
+          {/* Buttons */}
+          <div className="mt-6 flex w-full justify-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isProcessing}
+              className="h-10 min-w-28 rounded-lg border border-slate-200 bg-white px-5 text-sm font-semibold text-slate-600 shadow-sm transition duration-200 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {cancelButtonText}
+            </button>
 
-          {/* Products  */}
-          <Route path="products" element={<CompanyProducts />} />
-          <Route path="products/new" element={<ProductsForm />} />
-          <Route path="products/:id" element={<ProductsDetails />} />
-          <Route path="products/:id/edit" element={<ProductsForm />} />
-
-          {/* Inventory */}
-          <Route path="inventory" element={<CompanyInventory />} />
-          <Route path="inventory/:id/stock-in" element={<InventoryStockForm />} />
-          <Route path="inventory/:id/stock-out" element={<InventoryStockForm />} />
-          <Route path="inventory/:id/history" element={<InventoryHistory />} />
-          
-          <Route path="inventory/stock-transfer" element={<StockTransfer />} />
-
-          {/* Warehouses */}
-          <Route path="warehouses" element={<CompanyWarehouses />} />
-          <Route path="warehouses/new" element={<WarehouseForm />} />
-          <Route path="warehouses/:id" element={<WarehouseDetails />} />
-          <Route path="warehouses/:id/edit" element={<WarehouseForm />} />
-
-          {/* Suppliers */}
-          <Route path="suppliers" element={<CompanySuppliers />} />
-          <Route path="suppliers/new" element={<SupplierForm />} />
-          <Route path="suppliers/:id" element={<SupplierDetails />} />
-          <Route path="suppliers/:id/edit" element={<SupplierForm />} />
-
-          {/* Customers */}
-          <Route path="customers" element={<CompanyCustomers />} />
-          <Route path="customers/new" element={<CustomerForm />} />
-          <Route path="customers/:id" element={<CustomerDetails />} />
-          <Route path="customers/:id/edit" element={<CustomerForm />} />
-
-          {/* Purchase Management */}
-          <Route path="purchases" element={<CompanyPurchases />} />
-          <Route path="purchases/new" element={<PurchaseForm />} />
-          <Route path="purchases/:id" element={<PurchaseDetails />} />
-          <Route path="purchases/:id/edit" element={<PurchaseForm />} />
-
-          {/* Sales & Orders */}
-          <Route path="orders" element={<CompanyOrders />} />
-          <Route path="orders/new" element={<OrderForm />} />
-          <Route path="orders/:id" element={<OrderDetails />} />
-          <Route path="orders/:id/edit" element={<OrderForm />} />
-
-          {/* Invoices */}
-          <Route path="invoices" element={<CompanyInvoices />} />
-          <Route path="invoices/new" element={<InvoiceForm />} />
-          <Route path="invoices/:id" element={<InvoiceDetails />} />
-          <Route path="invoices/:id/edit" element={<InvoiceForm />} />
-
-          {/* Payments */}
-          <Route path="payments" element={<CompanyPayments />} />
-          <Route path="payments/new" element={<PaymentForm />} />
-          <Route path="payments/:id" element={<PaymentDetails />} />
-          <Route path="payments/:id/edit" element={<PaymentForm />} />
-
-          {/* Expenses */}
-          <Route path="expenses" element={<CompanyExpenses />} />
-          <Route path="expenses/new" element={<ExpenseForm />} />
-          <Route path="expenses/:id" element={<ExpenseDetails />} />
-          <Route path="expenses/:id/edit" element={<ExpenseForm />} />
-
-          {/* Reports */}
-          {/* <Route path="reports" element={<CompanyReports />} /> */}
-
-          {/* Company Settings */}
-          {/* <Route path="settings" element={<CompanySettings />} /> */}
-        </Route>
-      </Route>
-
-      {/* Fallback */}
-      <Route path="/forbidden" element={<Forbidden />} />
-
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+            <button
+              type="button"
+              onClick={onAction}
+              disabled={isProcessing}
+              className={`h-10 min-w-32 rounded-lg px-5 text-sm font-semibold text-white shadow-sm transition duration-200 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${theme.button}`}
+            >
+              {isProcessing ? 'Please wait...' : actionButtonText}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }

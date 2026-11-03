@@ -171,20 +171,7 @@ export default function CompanyCustomers() {
       color: 'text-blue-600',
       border: 'border-blue-200',
     },
-    {
-      title: 'Current Page',
-      value: `${pagination.currentPage} / ${pagination.totalPages}`,
-      icon: CreditCard,
-      color: 'text-violet-600',
-      border: 'border-violet-200',
-    },
-    {
-      title: 'Page Size',
-      value: pagination.limit,
-      icon: Wallet,
-      color: 'text-emerald-600',
-      border: 'border-emerald-200',
-    },
+
   ]
 
   const startRecord = pagination.total === 0 ? 0 : (pagination.currentPage - 1) * pagination.limit + 1
@@ -267,7 +254,7 @@ export default function CompanyCustomers() {
       {/* Customer Table */}
       <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         {/* Filter Header */}
-        <div className="flex flex-col gap-3 border-b border-erp-border px-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <div className="flex flex-col gap-3 border-b border-erp-border p-3 sm:flex-row sm:items-center sm:justify-between ">
           <div className="relative min-w-0 flex-1 sm:max-w-md">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
@@ -299,15 +286,7 @@ export default function CompanyCustomers() {
           </div>
         </div>
 
-        {/* Table Header */}
-        <div className="flex min-h-8 items-center justify-end border-b border-erp-border px-3 sm:px-4">
-          {refreshing && (
-            <div className="flex items-center gap-1.5 text-[11px] font-medium text-erp-primary">
-              <LoaderCircle size={13} className="animate-spin" />
-              Updating...
-            </div>
-          )}
-        </div>
+     
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1050px] border-collapse text-left">

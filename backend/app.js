@@ -27,6 +27,7 @@ const purchasesRouter = require('./routes/purchases')
 
 const goodsReceiptsRouter = require('./routes/goodsReceipts')
 const customersRouter = require('./routes/customers')
+const salesRouter = require('./routes/sales')
 
 
 
@@ -70,6 +71,7 @@ app.use('/erp/purchases', purchasesRouter)
 
 app.use('/erp/goods-receipts', goodsReceiptsRouter)
 app.use('/erp/customers', customersRouter)
+app.use('/erp/sales', salesRouter)
 
 
 // Roles and My Permissions remain in erp.js

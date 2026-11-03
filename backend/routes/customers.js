@@ -2,6 +2,7 @@ const express = require('express')
 const mongoose = require('mongoose')
 
 const Customer = require('../models/Customer')
+const CustomerCounter = require('../models/CustomerCounter')
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
 
@@ -11,7 +12,6 @@ router.use(authMiddleware)
 
 const ALLOWED_FIELDS = [
   'customerName',
-  'customerCode',
   'contactPerson',
   'email',
   'phone',
@@ -55,6 +55,46 @@ const getCustomerPayload = (body = {}, fields = ALLOWED_FIELDS) => {
 
 const validateNonNegativeNumber = (value) => {
   return value !== null && value !== '' && Number.isFinite(Number(value)) && Number(value) >= 0
+}
+
+const generateCustomerCode = async (companyId) => {
+  // Existing counter હોય તો atomic increment કરો.
+  let counter = await CustomerCounter.findOneAndUpdate({ companyId }, { $inc: { lastNumber: 1 } }, { new: true })
+
+  if (!counter) {
+    // જૂના Customer Codes માંથી છેલ્લો numeric code શોધો.
+    const existingCustomers = await Customer.find({
+      companyId,
+      customerCode: /^CUS-\d+$/i,
+    })
+      .select('customerCode')
+      .lean()
+
+    const highestNumber = existingCustomers.reduce((max, customer) => {
+      const match = customer.customerCode.match(/^CUS-(\d+)$/i)
+      return match ? Math.max(max, Number(match[1])) : max
+    }, 0)
+
+    try {
+      counter = await CustomerCounter.create({
+        companyId,
+        lastNumber: highestNumber + 1,
+      })
+    } catch (error) {
+      // Concurrent first-time requests માં duplicate counter બનતો અટકાવો.
+      if (error.code !== 11000) {
+        throw error
+      }
+
+      counter = await CustomerCounter.findOneAndUpdate({ companyId }, { $inc: { lastNumber: 1 } }, { new: true })
+    }
+  }
+
+  if (!counter) {
+    throw new Error('Unable to generate customer code')
+  }
+
+  return `CUS-${String(counter.lastNumber).padStart(4, '0')}`
 }
 
 const handleError = (error, res, next) => {
@@ -153,10 +193,10 @@ router.post('/', permissionMiddleware('Customer', 'CREATE'), async (req, res, ne
 
     const payload = getCustomerPayload(req.body)
 
-    if (!String(payload.customerName || '').trim() || !String(payload.customerCode || '').trim()) {
+    if (!String(payload.customerName || '').trim()) {
       return res.status(400).json({
         success: false,
-        message: 'Customer name and customer code are required',
+        message: 'Customer name is required',
       })
     }
 
@@ -189,8 +229,11 @@ router.post('/', permissionMiddleware('Customer', 'CREATE'), async (req, res, ne
       payload.creditLimit = Number(payload.creditLimit)
     }
 
+    const customerCode = await generateCustomerCode(companyId)
+
     const customer = await Customer.create({
       ...payload,
+      customerCode,
       companyId,
       createdBy: req.user.userId,
     })
@@ -284,12 +327,6 @@ router.patch('/:id', permissionMiddleware('Customer', 'UPDATE'), async (req, res
       })
     }
 
-    if (Object.prototype.hasOwnProperty.call(payload, 'customerCode') && !String(payload.customerCode || '').trim()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Customer code cannot be empty',
-      })
-    }
 
     if (payload.status !== undefined && !['Active', 'Inactive'].includes(payload.status)) {
       return res.status(400).json({

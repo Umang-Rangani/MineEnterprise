@@ -10,7 +10,6 @@ import { hasPermission, useAuth } from '../../context/AuthContext'
 
 const initialForm = {
   customerName: '',
-  customerCode: '',
   contactPerson: '',
   email: '',
   phone: '',
@@ -85,6 +84,7 @@ export default function CustomerForm() {
         setForm({
           ...initialForm,
           ...Object.fromEntries(Object.keys(initialForm).map((key) => [key, customer[key] ?? initialForm[key]])),
+          customerCode: customer.customerCode || '',
           creditLimit: String(customer.creditLimit ?? 0),
           openingBalance: String(customer.openingBalance ?? 0),
         })
@@ -122,10 +122,6 @@ export default function CustomerForm() {
 
     if (!form.customerName.trim()) {
       errors.customerName = 'Customer name is required.'
-    }
-
-    if (!form.customerCode.trim()) {
-      errors.customerCode = 'Customer code is required.'
     }
 
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
@@ -166,7 +162,6 @@ export default function CustomerForm() {
 
     const payload = {
       customerName: form.customerName.trim(),
-      customerCode: form.customerCode.trim().toUpperCase(),
       contactPerson: form.contactPerson.trim(),
       email: form.email.trim(),
       phone: form.phone.trim(),
@@ -353,7 +348,27 @@ export default function CustomerForm() {
 
           <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
             {renderInput('customerName', 'Customer Name', 'Enter customer name', 'text', true)}
-            {renderInput('customerCode', 'Customer Code', 'e.g. CUS-001', 'text', true)}
+
+            {isEdit && (
+              <div className="min-w-0">
+                <label className={labelClass}>Customer Code</label>
+                <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3">
+                  <span className="text-xs font-semibold tracking-wide text-slate-700">{form.customerCode || 'Not available'}</span>
+                  <span className="ml-auto text-[10px] font-medium text-emerald-600">Auto Generated</span>
+                </div>
+              </div>
+            )}
+
+            {!isEdit && (
+              <div className="min-w-0">
+                <label className={labelClass}>Customer Code</label>
+                <div className="flex h-10 items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3">
+                  <Info size={14} className="shrink-0 text-blue-600" />
+                  <span className="text-[11px] text-blue-700">Automatically generated after saving</span>
+                </div>
+              </div>
+            )}
+
             {renderInput('contactPerson', 'Contact Person', 'Contact person name')}
             {renderInput('email', 'Email Address', 'customer@example.com', 'email')}
             {renderInput('phone', 'Phone Number', 'Primary phone', 'tel')}

@@ -11,6 +11,15 @@ export default function TrashBox({
   onAction,
   isProcessing = false,
   variant = 'delete',
+
+  // Optional warning message
+  warningText,
+
+  // Optional reason input
+  showReasonInput = false,
+  reason = '',
+  onReasonChange,
+  reasonPlaceholder = 'Enter reason...',
 }) {
   const [isAnimating, setIsAnimating] = useState(false)
 
@@ -41,6 +50,12 @@ export default function TrashBox({
           warning: 'text-red-500',
           button: 'bg-red-500 hover:bg-red-600 focus:ring-red-300',
         }
+
+  const defaultWarning = isDelete ? 'This action cannot be undone.' : 'This change will affect the permissions assigned to this role.'
+
+  const finalWarning = warningText || defaultWarning
+
+  const isReasonInvalid = showReasonInput && !reason.trim()
 
   useEffect(() => {
     if (!isOpen) {
@@ -93,8 +108,34 @@ export default function TrashBox({
           <div className="mt-4 w-full text-center">
             <p className="text-sm leading-relaxed text-slate-600">{message}</p>
 
-            <p className={`mt-2 text-xs font-medium ${theme.warning}`}>{isDelete ? 'This action cannot be undone.' : 'This change will affect the permissions assigned to this role.'}</p>
+            {finalWarning && <p className={`mt-2 text-xs font-medium ${theme.warning}`}>{finalWarning}</p>}
           </div>
+
+          {/* Optional Reason Input */}
+          {showReasonInput && (
+            <div className="mt-5 w-full text-left">
+              <label htmlFor="trashbox-reason" className="mb-1.5 block text-xs font-semibold text-slate-700">
+                Reason <span className="text-red-500">*</span>
+              </label>
+
+              <textarea
+                id="trashbox-reason"
+                value={reason}
+                onChange={(event) => onReasonChange?.(event.target.value)}
+                placeholder={reasonPlaceholder}
+                rows={3}
+                disabled={isProcessing}
+                maxLength={500}
+                className="w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 disabled:cursor-not-allowed disabled:bg-slate-50"
+              />
+
+              <div className="mt-1 flex items-center justify-between">
+                <p className="text-[10px] text-slate-400">Please provide a reason to continue.</p>
+
+                <span className="text-[10px] text-slate-400">{reason.length}/500</span>
+              </div>
+            </div>
+          )}
 
           {/* Buttons */}
           <div className="mt-6 flex w-full justify-center gap-3">
@@ -110,7 +151,7 @@ export default function TrashBox({
             <button
               type="button"
               onClick={onAction}
-              disabled={isProcessing}
+              disabled={isProcessing || isReasonInvalid}
               className={`h-10 min-w-32 rounded-lg px-5 text-sm font-semibold text-white shadow-sm transition duration-200 focus:outline-none focus:ring-2 disabled:cursor-not-allowed disabled:opacity-60 ${theme.button}`}
             >
               {isProcessing ? 'Please wait...' : actionButtonText}

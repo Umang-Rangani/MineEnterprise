@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
     try {
       const response = await axiosInstance.get('/erp/my-permissions')
 
-      if (!response.data?.success || !response.data?.permissions) {
+      if (!response.data?.success || !response.data?.permissions == null) {
         throw new Error(response.data?.message || 'Unable to load permissions.')
       }
 
@@ -199,11 +199,9 @@ export function AuthProvider({ children }) {
         permissionsError,
         loading,
         loadPermissions,
-        permissionsError,
         login,
         logout,
         refreshUser,
-        loadPermissions,
       }}
     >
       {children}

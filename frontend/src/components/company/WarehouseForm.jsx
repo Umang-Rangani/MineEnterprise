@@ -9,7 +9,6 @@ import { hasPermission, useAuth } from '../../context/AuthContext'
 
 const initialForm = {
   name: '',
-  code: '',
   address: '',
   city: '',
   state: '',
@@ -144,7 +143,7 @@ export default function WarehousesForm() {
   function updateField(field, value) {
     setForm((current) => ({
       ...current,
-      [field]: field === 'code' ? value.toUpperCase() : value,
+      [field]: value,
     }))
 
     setErrors((current) => ({
@@ -159,7 +158,6 @@ export default function WarehousesForm() {
     const nextErrors = {}
 
     const name = form.name.trim()
-    const code = form.code.trim().toUpperCase()
     const pincode = form.pincode.trim()
     const managerPhone = form.managerPhone.trim()
     const phone = form.phone.trim()
@@ -171,12 +169,6 @@ export default function WarehousesForm() {
       nextErrors.name = 'Warehouse name is required.'
     } else if (name.length > 100) {
       nextErrors.name = 'Warehouse name cannot exceed 100 characters.'
-    }
-
-    if (!code) {
-      nextErrors.code = 'Warehouse code is required.'
-    } else if (code.length > 30) {
-      nextErrors.code = 'Warehouse code cannot exceed 30 characters.'
     }
 
     if (pincode && !/^[0-9]{6}$/.test(pincode)) {
@@ -229,7 +221,6 @@ export default function WarehousesForm() {
     try {
       const payload = {
         name: form.name.trim(),
-        code: form.code.trim().toUpperCase(),
         address: form.address.trim(),
         city: form.city.trim(),
         state: form.state.trim(),
@@ -361,15 +352,15 @@ export default function WarehousesForm() {
             </div>
 
             <div className="min-w-0 space-y-1">
-              <label htmlFor="warehouse-code" className={labelClass}>
-                Warehouse Code <span className="text-erp-danger">*</span>
-              </label>
-              <div className="relative">
-                <Hash size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-muted" />
-                <input id="warehouse-code" required maxLength={30} value={form.code} onChange={(event) => updateField('code', event.target.value)} placeholder="e.g. WH-001" disabled={saving} className={`${inputClass('code')} pl-9 uppercase`} />
+              <label className={labelClass}>Warehouse Code</label>
+
+              <div className="flex h-10 items-center gap-2 rounded-lg border border-erp-border bg-erp-hover/40 px-3">
+                <Hash size={14} className="text-erp-text-muted" />
+
+                <span className="text-xs font-semibold text-erp-text">{isEdit ? form.code || 'Not available' : 'Auto-generated after saving'}</span>
               </div>
-              {errorText('code')}
-              <p className="text-[10px] text-erp-text-muted">Unique warehouse identification code.</p>
+
+              <p className="text-[10px] text-erp-text-muted">{isEdit ? 'Warehouse code is system-generated and cannot be changed.' : 'A unique warehouse code will be generated automatically.'}</p>
             </div>
 
             <div className="min-w-0 space-y-1">
@@ -578,7 +569,7 @@ export default function WarehousesForm() {
                 <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${form.status === 'Active' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{form.status}</span>
               </div>
 
-              <p className="mt-1 text-xs text-erp-text-secondary">Code: {form.code.trim().toUpperCase() || 'WH-XXX'}</p>
+              <p className="mt-1 text-xs text-erp-text-secondary">Code: {isEdit ? form.code || 'Not available' : 'Auto-generated after saving'}</p>
 
               <div className="mt-3 grid gap-2 text-xs text-erp-text-secondary sm:grid-cols-2">
                 <p className="flex min-w-0 items-start gap-2">

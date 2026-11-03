@@ -195,6 +195,11 @@ const salesOrderSchema = new mongoose.Schema(
       index: true,
     },
 
+    salesRevision: {
+      type: Number,
+      default: 0,
+    },
+
     notes: {
       type: String,
       trim: true,

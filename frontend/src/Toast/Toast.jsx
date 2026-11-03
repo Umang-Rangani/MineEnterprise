@@ -119,7 +119,7 @@ export default function Toast({ toast, onClose }) {
 
   return (
     <div
-      className="pointer-events-none fixed right-3 top-3 z-[100] flex w-[calc(100%-1.5rem)] max-w-[300px] flex-col sm:right-4 sm:top-4"
+      className="pointer-events-none fixed right-3 top-3 z-[1000000] flex w-[calc(100%-1.5rem)] max-w-[300px] flex-col sm:right-4 sm:top-4"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       aria-live={type === 'error' ? 'assertive' : 'polite'}
