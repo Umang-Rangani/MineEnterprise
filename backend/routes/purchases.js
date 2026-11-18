@@ -23,7 +23,6 @@ const MAX_ITEMS = 500
 const MAX_EXPORT_RECORDS = 10000
 
 // Common helpers
-
 function getCompanyId(req, res) {
   const companyId = req.user?.companyId
 

@@ -57,6 +57,24 @@ import CompanySales from './components/company/CompanySales'
 import SalesOrderForm from './components/company/SalesOrderForm'
 import SalesOrderDetails from './components/company/SalesOrderDetails'
 import SalesDispatchForm from './components/company/SalesDispatchForm'
+import CompanyInvoices from './components/company/CompanyInvoices'
+import InvoiceForm from './components/company/InvoiceForm'
+import InvoiceDetails from './components/company/InvoiceDetails'
+import CompanyPayments from './components/company/CompanyPayments'
+import PaymentForm from './components/company/PaymentForm'
+import PaymentDetails from './components/company/PaymentDetails'
+import ExpenseForm from './components/company/ExpenseForm'
+import ExpenseDetails from './components/company/ExpenseDetails'
+import CompanyExpenses from './components/company/CompanyExpenses'
+import CompanyChartOfAccounts from './components/company/CompanyChartOfAccounts'
+import ChartOfAccountForm from './components/company/ChartOfAccountForm'
+import CompanyJournalEntries from './components/company/CompanyJournalEntries'
+import JournalEntryForm from './components/company/JournalEntryForm'
+import JournalEntryDetails from './components/company/JournalEntryDetails'
+import CompanyGeneralLedger from './components/company/CompanyGeneralLedger'
+import CompanyTrialBalance from './components/company/CompanyTrialBalance'
+import CompanyProfitLoss from './components/company/CompanyProfitLoss'
+import CompanyBalanceSheet from './components/company/CompanyBalanceSheet'
 
 export default function App() {
   return (
@@ -148,6 +166,47 @@ export default function App() {
           <Route path="sales/:id" element={<SalesOrderDetails />} />
           <Route path="sales/:id/edit" element={<SalesOrderForm />} />
           <Route path="sales/:id/dispatch" element={<SalesDispatchForm />} />
+
+          {/* Invoices */}
+          <Route path="invoices" element={<CompanyInvoices />} />
+          <Route path="invoices/new" element={<InvoiceForm />} />
+          <Route path="invoices/:id" element={<InvoiceDetails />} />
+          <Route path="invoices/:id/edit" element={<InvoiceForm />} />
+
+          {/* Payments */}
+          <Route path="payments" element={<CompanyPayments />} />
+          <Route path="payments/new" element={<PaymentForm />} />
+          <Route path="payments/:id" element={<PaymentDetails />} />
+          <Route path="payments/:id/edit" element={<PaymentForm />} />
+
+          {/* Expenses */}
+          <Route path="expenses" element={<CompanyExpenses />} />
+          <Route path="expenses/new" element={<ExpenseForm />} />
+          <Route path="expenses/:id" element={<ExpenseDetails />} />
+          <Route path="expenses/:id/edit" element={<ExpenseForm />} />
+
+          {/* Accounts */}
+          <Route path="chart-of-accounts" element={<CompanyChartOfAccounts />} />
+          <Route path="chart-of-accounts/new" element={<ChartOfAccountForm />} />
+          <Route path="chart-of-accounts/:id/edit" element={<ChartOfAccountForm />} />
+
+          {/* Journal Entries */}
+          <Route path="journal-entries" element={<CompanyJournalEntries />} />
+          <Route path="journal-entries/new" element={<JournalEntryForm />} />
+          <Route path="journal-entries/:id" element={<JournalEntryDetails />} />
+          <Route path="journal-entries/:id/edit" element={<JournalEntryForm />} />
+
+          {/* General Ledger */}
+          <Route path="general-ledger" element={<CompanyGeneralLedger />} />
+
+          <Route path="trial-balance" element={<CompanyTrialBalance />} />
+
+          {/* Financial Statements */}
+          <Route path="financial-statements/profit-loss" element={<CompanyProfitLoss />} />
+          <Route path="financial-statements/balance-sheet" element={<CompanyBalanceSheet />} />
+
+
+          {/* શું Reports Module શરૂ કરીએ? */}
         </Route>
       </Route>
 

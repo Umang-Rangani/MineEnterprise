@@ -35,6 +35,8 @@ export default function InventoryStockForm() {
   const [apiError, setApiError] = useState('')
   const [toast, setToast] = useState(null)
 
+  const [unitCost, setUnitCost] = useState('')
+
   const pageTitle = isStockIn ? 'Stock In' : 'Stock Out'
 
   const breadcrumbItems = [
@@ -122,12 +124,13 @@ export default function InventoryStockForm() {
   }
 
   function updateField(field, value) {
-    if (field === 'quantity' && value !== '') {
+    if ((field === 'quantity' || field === 'unitCost') && value !== '') {
       if (!/^\d*\.?\d*$/.test(value)) return
     }
 
     if (field === 'reason' && value.length > 250) return
     if (field === 'reference' && value.length > 100) return
+    if (field === 'unitCost') setUnitCost(value)
 
     if (field === 'quantity') setQuantity(value)
     if (field === 'reason') setReason(value)
@@ -177,6 +180,14 @@ export default function InventoryStockForm() {
       nextErrors.quantity = `Only ${availableStock.toLocaleString('en-IN')} ${unit} ` + 'is available in this warehouse.'
     }
 
+    if (isStockIn) {
+      if (!unitCost.trim()) {
+        nextErrors.unitCost = 'Unit cost is required.'
+      } else if (!Number.isFinite(Number(unitCost)) || Number(unitCost) <= 0) {
+        nextErrors.unitCost = 'Enter a unit cost greater than zero.'
+      }
+    }
+
     if (!reason.trim()) {
       nextErrors.reason = 'Reason is required.'
     }
@@ -214,6 +225,9 @@ export default function InventoryStockForm() {
         productId: id,
         warehouseId,
         quantity: Number(quantity),
+        ...(isStockIn && {
+          unitCost: Number(unitCost),
+        }),
         reason: reason.trim(),
         reference: reference.trim(),
       }
@@ -396,6 +410,35 @@ export default function InventoryStockForm() {
                 </p>
               )}
             </div>
+
+            {/* Unit Cost - Only for Stock In */}
+            {isStockIn && (
+              <div className="space-y-1.5">
+                <label htmlFor="stock-unit-cost" className={labelClass}>
+                  Unit Cost <span className="text-red-500">*</span>
+                </label>
+
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-erp-text-muted">₹</span>
+
+                  <input
+                    id="stock-unit-cost"
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={unitCost}
+                    onChange={(event) => updateField('unitCost', event.target.value)}
+                    placeholder="Enter cost per unit"
+                    disabled={saving}
+                    className={`${inputClass('unitCost')} pl-8`}
+                  />
+                </div>
+
+                {errorText('unitCost')}
+
+                <p className="text-[11px] text-erp-text-secondary">Enter the actual cost per {unit}.</p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <label htmlFor="stock-reason" className={labelClass}>

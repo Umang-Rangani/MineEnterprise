@@ -134,7 +134,7 @@ const ACTIONS = {
     UPDATE_STATUS: 'customer:update-status',
     DELETE: 'customer:delete',
   },
-  
+
   Sales: {
     LIST: 'sales:list',
     VIEW: 'sales:view',
@@ -151,8 +151,11 @@ const ACTIONS = {
     VIEW: 'invoice:view',
     CREATE: 'invoice:create',
     UPDATE: 'invoice:update',
+    APPROVE: 'invoice:approve',
+    CANCEL: 'invoice:cancel',
     DELETE: 'invoice:delete',
     DOWNLOAD: 'invoice:download',
+    EMAIL: 'invoice:email',
   },
 
   Payment: {
@@ -194,6 +197,7 @@ const ACTIONS = {
     UPDATE_COMPANY: 'settings:update-company',
     UPDATE_PREFERENCES: 'settings:update-preferences',
   },
+  
 }
 
 const ALL_SECTION_ACTIONS = Object.fromEntries(Object.entries(ACTIONS).map(([section, actions]) => [SECTION_KEYS[section], Object.values(actions)]))

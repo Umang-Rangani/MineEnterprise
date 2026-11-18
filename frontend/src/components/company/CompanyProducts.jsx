@@ -17,6 +17,20 @@ function getErrorMessage(error, fallback) {
   return error.response?.data?.message || error.message || fallback
 }
 
+function getProductImageUrl(imageUrl) {
+  if (!imageUrl) return ''
+
+  // Already an absolute URL
+  if (/^https?:\/\//i.test(imageUrl)) {
+    return imageUrl
+  }
+
+  const baseURL = axiosInstance.defaults.baseURL || 'http://localhost:3000'
+  const backendOrigin = new URL(baseURL, window.location.origin).origin
+
+  return new URL(imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`, backendOrigin).href
+}
+
 function formatPrice(value) {
   return Number(value || 0).toLocaleString('en-IN', {
     minimumFractionDigits: 2,
@@ -531,7 +545,7 @@ export default function CompanyProducts() {
 
         {/* Table and loading */}
         <div className="relative min-h-[220px]">
-          { products.length === 0 ? (
+          {products.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                 <Package size={24} />
@@ -584,7 +598,14 @@ export default function CompanyProducts() {
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2.5">
                               {product.imageUrl ? (
-                                <img src={product.imageUrl} alt={product.name || 'Product'} className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                                <img
+                                  src={getProductImageUrl(product.imageUrl)}
+                                  alt={product.name || 'Product'}
+                                  onError={(event) => {
+                                    event.currentTarget.style.display = 'none'
+                                  }}
+                                  className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 object-cover"
+                                />
                               ) : (
                                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
                                   <Package size={17} />
@@ -702,7 +723,14 @@ export default function CompanyProducts() {
                     <div key={getProductKey(product)} className="space-y-3 p-3">
                       <div className="flex items-start gap-2.5">
                         {product.imageUrl ? (
-                          <img src={product.imageUrl} alt={product.name || 'Product'} className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                          <img
+                            src={getProductImageUrl(product.imageUrl)}
+                            alt={product.name || 'Product'}
+                            onError={(event) => {
+                              event.currentTarget.style.display = 'none'
+                            }}
+                            className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover"
+                          /> 
                         ) : (
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
                             <Package size={18} />
@@ -808,8 +836,6 @@ export default function CompanyProducts() {
               <Loading fullScreen={false} label="Updating products" description="Refreshing product records..." className="!h-full min-h-[220px]" />
             </div>
           )}
-
-          
         </div>
 
         {/* Pagination */}

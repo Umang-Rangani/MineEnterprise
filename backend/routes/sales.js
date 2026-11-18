@@ -12,6 +12,10 @@ const Warehouse = require('../models/Warehouse')
 const Inventory = require('../models/Inventory')
 const InventoryMovement = require('../models/InventoryMovement')
 
+const ChartOfAccount = require('../models/ChartOfAccount')
+const JournalEntry = require('../models/JournalEntry')
+const JournalEntryCounter = require('../models/JournalEntryCounter')
+
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
 
@@ -26,10 +30,8 @@ const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id)
 const getUserId = (req) => req.user?._id || req.user?.id
 
 const getCompanyId = (req) => {
-  // Company users must always use their own company.
   if (req.user?.companyId) return req.user.companyId
 
-  // SuperAdmin must explicitly select a company.
   if (req.user?.role === 'SuperAdmin') {
     return req.body?.companyId || req.query?.companyId
   }
@@ -153,6 +155,121 @@ const generateDispatchNumber = async (companyId, session) => {
   return `SD-${year}-${String(counter.lastNumber).padStart(6, '0')}`
 }
 
+// JOURNAL ENTRY NUMBER
+
+const generateJournalNumber = async (companyId, entryDate, session) => {
+  const year = entryDate.getFullYear()
+
+  const counter = await JournalEntryCounter.findOneAndUpdate(
+    { companyId },
+    {
+      $inc: { lastNumber: 1 },
+      $setOnInsert: { companyId },
+    },
+    {
+      returnDocument: 'after',
+      upsert: true,
+      setDefaultsOnInsert: true,
+      session,
+    },
+  )
+
+  return `JE-${year}-${String(counter.lastNumber).padStart(6, '0')}`
+}
+
+// GET ACTIVE ACCOUNTING ACCOUNTS
+
+const getActiveAccountingAccounts = async (companyId, session) => {
+  const [inventoryAccount, cogsAccount] = await Promise.all([
+    ChartOfAccount.findOne({
+      companyId,
+      accountCode: '1200',
+      isActive: true,
+    }).session(session),
+
+    ChartOfAccount.findOne({
+      companyId,
+      accountCode: '5000',
+      isActive: true,
+    }).session(session),
+  ])
+
+  if (!inventoryAccount) {
+    throw httpError(400, 'Inventory account (1200) not found or inactive. Please check Chart of Accounts.')
+  }
+
+  if (!cogsAccount) {
+    throw httpError(400, 'Cost of Goods Sold account (5000) not found or inactive. Please check Chart of Accounts.')
+  }
+
+  return {
+    inventoryAccount,
+    cogsAccount,
+  }
+}
+
+// CREATE POSTED COGS JOURNAL ENTRY
+
+const createDispatchJournalEntry = async ({ companyId, userId, dispatch, totalCOGS, inventoryAccount, cogsAccount, session }) => {
+  const amount = roundMoney(totalCOGS)
+
+  if (amount <= 0) {
+    throw httpError(400, 'Dispatch COGS must be greater than zero. Please verify inventory valuation.')
+  }
+
+  const existingEntry = await JournalEntry.findOne({
+    companyId,
+    sourceType: 'SalesDispatch',
+    sourceId: dispatch._id,
+  }).session(session)
+
+  if (existingEntry) {
+    throw httpError(409, 'A COGS journal entry already exists for this dispatch.')
+  }
+
+  const journalNumber = await generateJournalNumber(companyId, dispatch.dispatchDate, session)
+
+  const now = new Date()
+
+  const [journalEntry] = await JournalEntry.create(
+    [
+      {
+        companyId,
+        journalNumber,
+        entryDate: dispatch.dispatchDate,
+        referenceNumber: dispatch.dispatchNumber,
+        narration: `Cost of Goods Sold for Sales Dispatch ${dispatch.dispatchNumber}`,
+        lines: [
+          {
+            accountId: cogsAccount._id,
+            description: `Cost of Goods Sold - ${dispatch.dispatchNumber}`,
+            debit: amount,
+            credit: 0,
+          },
+          {
+            accountId: inventoryAccount._id,
+            description: `Inventory reduction - ${dispatch.dispatchNumber}`,
+            debit: 0,
+            credit: amount,
+          },
+        ],
+        totalDebit: amount,
+        totalCredit: amount,
+        status: 'Posted',
+        sourceType: 'SalesDispatch',
+        sourceId: dispatch._id,
+        createdBy: userId,
+        updatedBy: userId,
+        postedBy: userId,
+        postedAt: now,
+      },
+    ],
+    { session },
+  )
+
+  return journalEntry
+}
+
 const getActiveCustomer = async (companyId, customerId, session) => {
   if (!isValidObjectId(customerId)) {
     throw httpError(400, 'Valid customer is required.')
@@ -246,11 +363,15 @@ const buildOrderItems = async ({ companyId, warehouseId, inputItems, session, ex
       throw httpError(404, 'One or more active products were not found.')
     }
 
-    const quantity = parseNumber(input.quantity, 'Quantity', { min: 0.01 })
+    const quantity = parseNumber(input.quantity, 'Quantity', {
+      min: 0.01,
+    })
 
     const rate = parseNumber(input.rate ?? product.sellingPrice, 'Rate', { min: 0 })
 
-    const discount = parseNumber(input.discount ?? 0, 'Discount', { min: 0 })
+    const discount = parseNumber(input.discount ?? 0, 'Discount', {
+      min: 0,
+    })
 
     const taxRate = parseNumber(input.taxRate ?? product.taxRate ?? 0, 'Tax rate', { min: 0, max: 100 })
 
@@ -309,7 +430,6 @@ const buildOrderItems = async ({ companyId, warehouseId, inputItems, session, ex
     })
   }
 
-  // Do not allow removal of an item that has already been dispatched.
   if (amendment) {
     for (const oldItem of existingItems) {
       const stillExists = result.some((item) => String(item._id) === String(oldItem._id))
@@ -674,7 +794,6 @@ router.patch('/:id', permissionMiddleware('Sales', 'sales:update'), async (req, 
     }
 
     let updatedOrder
-    let amendmentCreated = false
 
     await session.withTransaction(async () => {
       const currentOrder = await SalesOrder.findOne({
@@ -722,8 +841,6 @@ router.patch('/:id', permissionMiddleware('Sales', 'sales:update'), async (req, 
 
       const oldItems = order.items.map((item) => item.toObject())
 
-      // Approved, partially dispatched and cancelled orders must preserve
-      // their existing item IDs and dispatched quantities.
       const preserveExistingItems = !isDraft
 
       const newItems = await buildOrderItems({
@@ -735,8 +852,6 @@ router.patch('/:id', permissionMiddleware('Sales', 'sales:update'), async (req, 
         amendment: preserveExistingItems,
       })
 
-      // Approved / partially dispatched orders require amendment reason
-      // and inventory reservation adjustments.
       if (isApprovedOrder) {
         const amendmentReason = String(req.body.amendmentReason || '').trim()
 
@@ -776,7 +891,6 @@ router.patch('/:id', permissionMiddleware('Sales', 'sales:update'), async (req, 
           newItem.reservedQuantity = newRemaining
         }
 
-        // Release reservations for removed undispatched items.
         for (const oldItem of oldItems) {
           const stillExists = newItems.some((item) => String(item._id) === String(oldItem._id))
 
@@ -818,12 +932,8 @@ router.patch('/:id', permissionMiddleware('Sales', 'sales:update'), async (req, 
           amendedBy: userId,
           amendedAt: new Date(),
         })
-
-        amendmentCreated = true
       }
 
-      // Cancelled orders have no active reservations.
-      // Preserve dispatched quantities, but keep remaining reservation at zero.
       if (isCancelled) {
         for (const item of newItems) {
           item.reservedQuantity = 0
@@ -834,7 +944,6 @@ router.patch('/:id', permissionMiddleware('Sales', 'sales:update'), async (req, 
 
       order.customerId = customer._id
 
-      // Warehouse can be changed only for Draft or Cancelled orders.
       if (isDraft || isCancelled) {
         order.warehouseId = warehouse._id
       }
@@ -850,8 +959,6 @@ router.patch('/:id', permissionMiddleware('Sales', 'sales:update'), async (req, 
       order.taxAmount = totals.taxAmount
       order.grandTotal = totals.grandTotal
 
-      // Re-activate cancelled order as Draft.
-      // Cancellation history remains unchanged.
       if (isCancelled) {
         order.status = 'Draft'
         order.approvedBy = null
@@ -909,9 +1016,6 @@ router.patch('/:id/approve', permissionMiddleware('Sales', 'sales:approve'), asy
       let totalRemainingQuantity = 0
 
       for (const item of order.items) {
-        // A cancelled partially-dispatched order can be edited back to Draft.
-        // Its already-dispatched quantity must remain dispatched and must
-        // never be reserved or dispatched a second time.
         const dispatchedQuantity = Number(item.dispatchedQuantity || 0)
         const remainingQuantity = Number(item.quantity) - dispatchedQuantity
 
@@ -935,7 +1039,6 @@ router.patch('/:id/approve', permissionMiddleware('Sales', 'sales:approve'), asy
         totalRemainingQuantity += remainingQuantity
       }
 
-      // If no quantity remains, the order is already complete.
       order.status = totalRemainingQuantity > 0 ? 'Approved' : 'Dispatched'
 
       order.approvedBy = userId
@@ -1032,7 +1135,7 @@ router.patch('/:id/cancel', permissionMiddleware('Sales', 'sales:cancel'), async
   }
 })
 
-// DISPATCH SALES ORDER - PARTIAL / FULL
+// DISPATCH SALES ORDER - WAC INVENTORY VALUATION + COGS JOURNAL ENTRY
 
 router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), async (req, res) => {
   const session = await mongoose.startSession()
@@ -1051,6 +1154,7 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
 
     let createdDispatch
     let updatedOrder
+    let createdJournalEntry
 
     await session.withTransaction(async () => {
       const order = await lockSalesOrder({
@@ -1064,8 +1168,16 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
 
       validateWarehouseAccess(req, order.warehouseId)
 
+      // Validate dispatch date before processing inventory.
+      const dispatchDate = validateDate(req.body.dispatchDate || new Date(), 'Dispatch date')
+
+      // Fetch required accounts inside the same transaction.
+      const { inventoryAccount, cogsAccount } = await getActiveAccountingAccounts(companyId, session)
+
       const seenItems = new Set()
       const dispatchItems = []
+
+      let totalCOGS = 0
 
       for (const input of req.body.items) {
         if (!isValidObjectId(input.salesOrderItemId)) {
@@ -1096,20 +1208,78 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
           throw httpError(400, `Dispatch quantity exceeds the remaining reserved quantity for ${orderItem.productName}.`)
         }
 
-        const inventory = await Inventory.findOneAndUpdate(
+        // Read current inventory valuation.
+        const existingInventory = await Inventory.findOne({
+          companyId,
+          warehouseId: order.warehouseId,
+          productId: orderItem.productId,
+        }).session(session)
+
+        if (!existingInventory) {
+          throw httpError(409, `Inventory record not found for ${orderItem.productName}.`)
+        }
+
+        const currentStock = Number(existingInventory.currentStock || 0)
+        const reservedStock = Number(existingInventory.reservedStock || 0)
+        const averageCost = Number(existingInventory.averageCost || 0)
+        const stockValue = Number(existingInventory.stockValue || 0)
+
+        if (!Number.isFinite(currentStock) || !Number.isFinite(reservedStock) || !Number.isFinite(averageCost) || !Number.isFinite(stockValue)) {
+          throw httpError(409, `Invalid inventory valuation for ${orderItem.productName}.`)
+        }
+
+        if (currentStock < quantity || reservedStock < quantity) {
+          throw httpError(409, `Insufficient stock or reserved stock for ${orderItem.productName}.`)
+        }
+
+        if (reservedStock > currentStock) {
+          throw httpError(409, `Reserved stock exceeds current stock for ${orderItem.productName}. Please verify inventory.`)
+        }
+
+        // Positive stock must have a valid valuation.
+        if (currentStock > 0 && (averageCost <= 0 || stockValue <= 0)) {
+          throw httpError(409, `Inventory valuation is missing for ${orderItem.productName}. Complete inventory valuation before dispatch.`)
+        }
+
+        // WAC cost at the time of dispatch.
+        const unitCost = averageCost
+
+        // When the entire remaining stock is dispatched, use the exact
+        // remaining stock value to avoid leaving rounding residuals.
+        const totalCost = quantity === currentStock ? roundMoney(stockValue) : roundMoney(quantity * unitCost)
+
+        if (totalCost > stockValue) {
+          throw httpError(409, `Inventory valuation is inconsistent for ${orderItem.productName}. Please verify stock value and average cost.`)
+        }
+
+        const newStock = roundMoney(currentStock - quantity)
+        const newReservedStock = roundMoney(reservedStock - quantity)
+        const newStockValue = Math.max(0, roundMoney(stockValue - totalCost))
+
+        const averageCostAfter = newStock > 0 ? roundMoney(newStockValue / newStock) : 0
+
+        // Update inventory using the original snapshot.
+        // Transaction conflicts prevent concurrent valuation updates
+        // from silently overwriting one another.
+        const updatedInventory = await Inventory.findOneAndUpdate(
           {
+            _id: existingInventory._id,
             companyId,
             warehouseId: order.warehouseId,
             productId: orderItem.productId,
-            currentStock: { $gte: quantity },
-            reservedStock: { $gte: quantity },
+            currentStock,
+            reservedStock,
+            averageCost,
+            stockValue,
           },
           {
-            $inc: {
-              currentStock: -quantity,
-              reservedStock: -quantity,
+            $set: {
+              currentStock: newStock,
+              reservedStock: newReservedStock,
+              stockValue: newStockValue,
+              averageCost: averageCostAfter,
+              updatedBy: userId,
             },
-            $set: { updatedBy: userId },
           },
           {
             returnDocument: 'after',
@@ -1117,13 +1287,11 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
           },
         )
 
-        if (!inventory) {
-          throw httpError(409, `Stock update failed for ${orderItem.productName}. Refresh and try again.`)
+        if (!updatedInventory) {
+          throw httpError(409, `Inventory valuation changed for ${orderItem.productName}. Refresh and try again.`)
         }
 
-        const previousStock = roundMoney(inventory.currentStock + quantity)
-        const newStock = roundMoney(inventory.currentStock)
-
+        // Record stock-out movement with valuation snapshots.
         await InventoryMovement.create(
           [
             {
@@ -1132,7 +1300,10 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
               warehouseId: order.warehouseId,
               type: 'STOCK_OUT',
               quantity,
-              previousStock,
+              unitCost,
+              totalCost,
+              averageCostAfter,
+              previousStock: currentStock,
               newStock,
               reason: 'Sales Order Dispatch',
               reference: order.orderNumber,
@@ -1153,7 +1324,12 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
           sku: orderItem.sku,
           unit: orderItem.unit,
           quantity,
+          unitCost,
+          totalCost,
+          averageCostAfter,
         })
+
+        totalCOGS = roundMoney(totalCOGS + totalCost)
       }
 
       const fullyDispatched = order.items.every((item) => Number(item.dispatchedQuantity || 0) >= Number(item.quantity))
@@ -1174,7 +1350,7 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
             salesOrderId: order._id,
             warehouseId: order.warehouseId,
             items: dispatchItems,
-            dispatchDate: validateDate(req.body.dispatchDate || new Date(), 'Dispatch date'),
+            dispatchDate,
             deliveryReference: String(req.body.deliveryReference || '').trim(),
             transportName: String(req.body.transportName || '').trim(),
             vehicleNumber: String(req.body.vehicleNumber || '').trim(),
@@ -1187,16 +1363,29 @@ router.post('/:id/dispatch', permissionMiddleware('Sales', 'sales:dispatch'), as
         { session },
       )
 
+      // Create the Posted COGS journal entry.
+      // This is part of the same transaction as stock deduction.
+      createdJournalEntry = await createDispatchJournalEntry({
+        companyId,
+        userId,
+        dispatch,
+        totalCOGS,
+        inventoryAccount,
+        cogsAccount,
+        session,
+      })
+
       createdDispatch = dispatch
       updatedOrder = order
     })
 
     return res.status(201).json({
       success: true,
-      message: 'Sales order dispatched successfully.',
+      message: 'Sales order dispatched successfully. Inventory valuation and COGS journal entry posted.',
       data: {
         dispatch: createdDispatch,
         salesOrder: updatedOrder,
+        journalEntry: createdJournalEntry,
       },
     })
   } catch (error) {

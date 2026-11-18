@@ -28,8 +28,20 @@ const purchasesRouter = require('./routes/purchases')
 const goodsReceiptsRouter = require('./routes/goodsReceipts')
 const customersRouter = require('./routes/customers')
 const salesRouter = require('./routes/sales')
+const invoicesRouter = require('./routes/invoices')
+const paymentsRouter = require('./routes/payments')
+const expensesRouter = require('./routes/expenses')
 
+const chartOfAccountsRouter = require('./routes/chartOfAccounts')
+const journalEntriesRouter = require('./routes/journalEntries')
+const generalLedgerRouter = require('./routes/generalLedger')
+const trialBalanceRouter = require('./routes/trialBalance')
+const financialStatementsRouter = require('./routes/financialStatements')
 
+const initializeChartOfAccounts = require('./routes/initializeChartOfAccounts')
+
+// Upload Route
+const uploadRouter = require('./routes/upload')
 
 var app = express()
 
@@ -72,7 +84,19 @@ app.use('/erp/purchases', purchasesRouter)
 app.use('/erp/goods-receipts', goodsReceiptsRouter)
 app.use('/erp/customers', customersRouter)
 app.use('/erp/sales', salesRouter)
+app.use('/erp/invoices', invoicesRouter)
+app.use('/erp/payments', paymentsRouter)
+app.use('/erp/expenses', expensesRouter)
 
+app.use('/erp/chart-of-accounts', chartOfAccountsRouter)
+app.use('/erp/journal-entries', journalEntriesRouter)
+app.use('/erp/general-ledger', generalLedgerRouter)
+app.use('/erp/trial-balance', trialBalanceRouter)
+app.use('/erp/financial-statements', financialStatementsRouter)
+app.use('/erp/chart-of-accounts', initializeChartOfAccounts)
+
+// File Upload
+app.use('/upload', uploadRouter)
 
 // Roles and My Permissions remain in erp.js
 app.use('/erp', erpRouter)

@@ -42,6 +42,27 @@ const inventoryMovementSchema = new mongoose.Schema(
       min: [0.01, 'Quantity must be greater than zero.'],
     },
 
+    // Cost per unit at the time of movement
+    unitCost: {
+      type: Number,
+      min: [0, 'Unit cost cannot be negative.'],
+      default: null,
+    },
+
+    // Total inventory value of this movement
+    totalCost: {
+      type: Number,
+      min: [0, 'Total cost cannot be negative.'],
+      default: null,
+    },
+
+    // Average cost after this movement
+    averageCostAfter: {
+      type: Number,
+      min: [0, 'Average cost cannot be negative.'],
+      default: null,
+    },
+
     previousStock: {
       type: Number,
       required: true,

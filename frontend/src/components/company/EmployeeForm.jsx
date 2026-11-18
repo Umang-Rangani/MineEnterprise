@@ -342,55 +342,81 @@ export default function EmployeeForm() {
   const handleSubmit = async (event) => {
     event.preventDefault()
 
-    if (!canSubmitForm) {
-      showToast('error', `You do not have permission to ${isEdit ? 'edit' : 'create'} employees.`)
+    if (!canSubmit) {
+      showToast('error', `You do not have permission to ${isEdit ? 'update' : 'create'} expenses.`)
       return
     }
 
+    if (isLocked) {
+      showToast('error', 'Only Draft expenses can be edited.')
+      return
+    }
+
+    if (saving) return
     if (!validateForm()) return
 
     setSaving(true)
 
-    const payload = {
-      name: form.name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-    }
-
-    if (canAssignRoles) {
-      payload.roles = selectedRoles
-    }
-
-    if (canManagePermissions) {
-      payload.permissionOverrides = [...new Set(selectedPermissions)]
-    }
-
-    if (isEdit) {
-      payload.status = form.status
-    }
-
-    if (!isEdit || form.password) {
-      payload.password = form.password
-    }
-
-    if (!isEdit || form.password) {
-      payload.password = form.password
-    }
-
     try {
-      if (isEdit) {
-        await axiosInstance.patch(`/erp/employees/${id}`, payload)
-      } else {
-        await axiosInstance.post('/erp/employees', payload)
+      let uploadedReceipt = null
+
+      // STEP 1: Upload receipt first
+      if (receiptFile) {
+        const uploadPayload = new FormData()
+
+        uploadPayload.append('file', receiptFile)
+        uploadPayload.append('uploadFolder', 'expenses')
+        uploadPayload.append('filename', 'expense-receipt')
+
+        const uploadResponse = await axiosInstance.post('/upload', uploadPayload)
+
+        const uploadData = uploadResponse?.data
+
+        if (!uploadData?.success || !uploadData?.filePath) {
+          throw new Error(uploadData?.message || 'Receipt upload failed.')
+        }
+
+        uploadedReceipt = {
+          filename: uploadData.file?.filename || '',
+          originalName: uploadData.file?.originalName || receiptFile.name,
+          path: uploadData.filePath,
+          mimeType: uploadData.file?.mimeType || receiptFile.type,
+          size: uploadData.file?.size || receiptFile.size,
+        }
       }
 
-      navigate('/company/employees', {
+      // STEP 2: Prepare expense data
+      const payload = {
+        expenseCategory: form.expenseCategory.trim(),
+        title: form.title.trim(),
+        description: form.description.trim(),
+        expenseDate: form.expenseDate,
+        amount: Number(form.amount),
+        taxRate: Number(form.taxRate),
+        paymentMode: form.paymentMode,
+        transactionReference: form.transactionReference.trim(),
+        receiptNumber: form.receiptNumber.trim(),
+      }
+
+      // Attach newly uploaded receipt metadata
+      if (uploadedReceipt) {
+        payload.receiptFile = uploadedReceipt
+      }
+
+      // STEP 3: Save expense
+      if (isEdit) {
+        await axiosInstance.patch(`/erp/expenses/${id}`, payload)
+      } else {
+        await axiosInstance.post('/erp/expenses', payload)
+      }
+
+      navigate('/company/expenses', {
         state: {
-          message: isEdit ? 'Employee updated successfully.' : 'Employee created successfully.',
+          message: isEdit ? 'Expense updated successfully.' : 'Expense created successfully as Draft.',
         },
       })
-    } catch (requestError) {
-      showToast('error', requestError.response?.data?.message || `Unable to ${isEdit ? 'update' : 'create'} employee. Please try again.`, 5000)
+    } catch (error) {
+      showToast('error', error.response?.data?.message || error.message || `Unable to ${isEdit ? 'update' : 'create'} expense.`, 5000)
     } finally {
       setSaving(false)
     }
@@ -433,8 +459,6 @@ export default function EmployeeForm() {
       { title: 'Add Employee', link: null },
     ]
   }
-
-
 
   if (loading) {
     return (

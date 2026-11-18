@@ -470,23 +470,7 @@ export default function SalesDispatchForm() {
         </div>
       </section>
 
-      {/* Dispatch Summary */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-[11px] font-medium text-slate-500">Total Products</p>
-          <p className="mt-1 text-lg font-bold text-slate-800">{items.length}</p>
-        </div>
-
-        <div className="rounded-xl border border-slate-200 bg-white p-3">
-          <p className="text-[11px] font-medium text-slate-500">Remaining Quantity</p>
-          <p className="mt-1 text-lg font-bold text-amber-700">{remainingTotal}</p>
-        </div>
-
-        <div className="rounded-xl border border-erp-primary/20 bg-erp-primary/5 p-3">
-          <p className="text-[11px] font-semibold text-erp-primary">Dispatch Quantity</p>
-          <p className="mt-1 text-lg font-extrabold text-erp-primary">{totalDispatchQuantity}</p>
-        </div>
-      </section>
+   
 
       {/* Products */}
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">

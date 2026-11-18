@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Package, Tag, RefreshCw, Pencil, Trash2, CheckCircle2, FileText, CalendarDays, Clock, AlertCircle, X, Ban, Barcode, IndianRupee, Boxes, Image as ImageIcon, Percent, Warehouse } from 'lucide-react'
+import { Package, Tag, RefreshCw, Pencil, CheckCircle2, FileText, CalendarDays, Clock, AlertCircle, Ban, Barcode, IndianRupee, Boxes, Image as ImageIcon, Percent, Warehouse, TrendingUp, Wallet, History } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
@@ -30,7 +30,7 @@ function formatDate(date) {
 function formatCurrency(value) {
   const amount = Number(value)
 
-  if (!Number.isFinite(amount)) return 'Not provided'
+  if (!Number.isFinite(amount)) return '₹0.00'
 
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
@@ -43,7 +43,7 @@ function formatCurrency(value) {
 function formatQuantity(value, unit = '') {
   const quantity = Number(value)
 
-  if (!Number.isFinite(quantity)) return 'Not provided'
+  if (!Number.isFinite(quantity)) return '0'
 
   const formatted = new Intl.NumberFormat('en-IN', {
     maximumFractionDigits: 3,
@@ -128,9 +128,7 @@ export default function ProductsDetails() {
     setError('')
 
     try {
-      if (!id) {
-        throw new Error('Product ID is missing.')
-      }
+      if (!id) throw new Error('Product ID is missing.')
 
       const { data } = await axiosInstance.get(`/erp/products/${encodeURIComponent(id)}`)
 
@@ -140,7 +138,7 @@ export default function ProductsDetails() {
 
       const fetchedProduct = data?.product || data?.data?.product || data?.data
 
-      if (!fetchedProduct || !fetchedProduct._id) {
+      if (!fetchedProduct?._id) {
         throw new Error(data?.message || 'Product not found.')
       }
 
@@ -151,7 +149,6 @@ export default function ProductsDetails() {
       }
     } catch (err) {
       setProduct(null)
-
       setError(err.response?.data?.message || err.message || 'Unable to load product details.')
     } finally {
       setLoading(false)
@@ -169,9 +166,7 @@ export default function ProductsDetails() {
       setError('')
 
       try {
-        if (!id) {
-          throw new Error('Product ID is missing.')
-        }
+        if (!id) throw new Error('Product ID is missing.')
 
         const { data } = await axiosInstance.get(`/erp/products/${encodeURIComponent(id)}`)
 
@@ -181,7 +176,7 @@ export default function ProductsDetails() {
 
         const fetchedProduct = data?.product || data?.data?.product || data?.data
 
-        if (!fetchedProduct || !fetchedProduct._id) {
+        if (!fetchedProduct?._id) {
           throw new Error(data?.message || 'Product not found.')
         }
 
@@ -238,6 +233,22 @@ export default function ProductsDetails() {
 
   const categoryName = typeof product?.categoryId === 'object' ? product.categoryId?.name : product?.categoryName || ''
 
+  const warehouseStock = Array.isArray(product?.warehouseStock) ? product.warehouseStock : []
+
+  const stockInHistory = Array.isArray(product?.stockInHistory) ? product.stockInHistory : []
+
+  // Total quantity received through Stock IN transactions.
+  const totalStockIn = stockInHistory.reduce((total, movement) => total + Number(movement.quantity || 0), 0)
+
+  // Weighted average inventory cost across warehouses.
+  const calculatedStockValue = warehouseStock.reduce((total, warehouse) => total + Number(warehouse.stockValue || 0), 0)
+
+  const totalStock = Number(product?.totalStock || 0)
+
+  const averageInventoryCost = totalStock > 0 ? calculatedStockValue / totalStock : 0
+
+  const totalStockValue = calculatedStockValue || Number(product?.stockValue || 0)
+
   const breadcrumbItems = [
     { title: 'Products', link: '/company/products' },
     { title: product?.name || '...', link: null },
@@ -257,7 +268,6 @@ export default function ProductsDetails() {
     )
   }
 
-  //  INITIAL LOADING
   if (loading) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
@@ -278,13 +288,12 @@ export default function ProductsDetails() {
     )
   }
 
-
   return (
     <div className="min-w-0 space-y-4 text-erp-text">
       {toast && <Toast toast={toast} onClose={closeToast} />}
 
       {/* Header */}
-      <section className={`h-17 overflow-hidden rounded-xl border shadow-erp-card ${panelClass}`}>
+      <section className={`overflow-hidden rounded-xl border shadow-erp-card ${panelClass}`}>
         <div className={`h-1 ${isInactive ? 'bg-erp-disabled' : 'bg-erp-primary'}`} />
 
         <div className="flex min-w-0 flex-col gap-3 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
@@ -301,38 +310,25 @@ export default function ProductsDetails() {
             <button
               type="button"
               onClick={() => fetchProduct(true)}
-              disabled={loading || refreshing || deleting}
-              className={`${buttonBase} border ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light text-erp-disabled-text hover:bg-erp-disabled-border/40' : 'border-erp-border bg-erp-surface hover:bg-erp-hover'}`}
+              disabled={refreshing || deleting}
+              className={`${buttonBase} border ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light text-erp-disabled-text' : 'border-erp-border bg-erp-surface hover:bg-erp-hover'}`}
             >
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
               {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
 
             {canEdit && (
-              <button
-                type="button"
-                onClick={handleEdit}
-                disabled={loading || refreshing || deleting || !product}
-                title={isInactive ? 'Activate the product before editing.' : 'Edit product'}
-                className={`${buttonBase} bg-erp-primary text-white hover:bg-erp-primary-hover`}
-              >
+              <button type="button" onClick={handleEdit} disabled={refreshing || deleting || !product} className={`${buttonBase} bg-erp-primary text-white hover:bg-erp-primary-hover`}>
                 <Pencil size={14} />
                 Edit
               </button>
             )}
-
-            {/* {canDelete && (
-              <button type="button" onClick={() => setShowDeleteModal(true)} disabled={loading || refreshing || deleting || !product} className={`${buttonBase} border border-red-200 bg-red-50 text-red-600 hover:bg-red-100`}>
-                <Trash2 size={14} />
-                Delete
-              </button>
-            )} */}
           </div>
         </div>
       </section>
 
       {/* Error */}
-      {!loading && error && (
+      {error && (
         <section className="rounded-xl border border-erp-danger-border bg-erp-danger-light p-4">
           <div className="flex items-start gap-3">
             <AlertCircle size={18} className="mt-0.5 shrink-0 text-erp-danger" />
@@ -351,10 +347,8 @@ export default function ProductsDetails() {
         </section>
       )}
 
-      {/* Product Details */}
-      {!loading && !error && product && (
+      {!error && product && (
         <>
-          {/* Inactive Notice */}
           {isInactive && (
             <div className="flex items-start gap-3 rounded-xl border border-erp-disabled-border bg-erp-disabled-light p-4">
               <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-erp-disabled-border/50 text-erp-disabled-text">
@@ -376,11 +370,8 @@ export default function ProductsDetails() {
 
               <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                 <DetailItem label="Product Name" value={product.name} icon={Tag} inactive={isInactive} />
-
                 <DetailItem label="SKU" value={product.sku} icon={FileText} inactive={isInactive} />
-
                 <DetailItem label="Barcode" value={product.barcode} icon={Barcode} inactive={isInactive} />
-
                 <DetailItem label="Category" value={categoryName || 'Uncategorized'} icon={Boxes} inactive={isInactive} />
 
                 <div className="sm:col-span-2">
@@ -389,52 +380,59 @@ export default function ProductsDetails() {
               </div>
 
               <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
-                {isInactive ? <Ban size={15} className="mt-0.5 shrink-0 text-erp-disabled" /> : <Package size={15} className="mt-0.5 shrink-0 text-erp-text-muted" />}
+                <Package size={15} className={`mt-0.5 shrink-0 ${isInactive ? 'text-erp-disabled' : 'text-erp-text-muted'}`} />
 
-                <p className={`text-xs leading-5 ${secondaryTextClass}`}>
-                  Product information is scoped to your company.
-                  {isInactive ? ' This product is inactive.' : ' Keep its SKU and category information accurate.'}
-                </p>
+                <p className={`text-xs leading-5 ${secondaryTextClass}`}>Product information is scoped to your company.</p>
               </div>
             </section>
 
             {/* Pricing and Tax */}
             <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={IndianRupee} title="Pricing & Tax" description="Product purchase and selling prices" inactive={isInactive} />
+              <SectionHeader icon={IndianRupee} title="Pricing & Tax" description="Product master pricing and tax details" inactive={isInactive} />
 
               <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <DetailItem label="Cost Price" value={formatCurrency(product.costPrice)} icon={IndianRupee} inactive={isInactive} />
+                <DetailItem label="Product Cost Price" value={formatCurrency(product.costPrice)} icon={IndianRupee} inactive={isInactive} />
 
                 <DetailItem label="Selling Price" value={formatCurrency(product.sellingPrice)} icon={IndianRupee} inactive={isInactive} />
 
                 <DetailItem label="Tax Rate" value={`${Number(product.taxRate ?? 0)}%`} icon={Percent} inactive={isInactive} />
 
-                <DetailItem label="Potential Margin" value={formatCurrency(Number(product.sellingPrice ?? 0) - Number(product.costPrice ?? 0))} icon={IndianRupee} inactive={isInactive} />
+                <DetailItem label="Potential Margin" value={formatCurrency(Number(product.sellingPrice ?? 0) - Number(product.costPrice ?? 0))} icon={TrendingUp} inactive={isInactive} />
               </div>
 
               <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
                 <AlertCircle size={15} className={`mt-0.5 shrink-0 ${isInactive ? 'text-erp-disabled' : 'text-erp-text-muted'}`} />
 
-                <p className={`text-xs leading-5 ${secondaryTextClass}`}>Potential margin is the difference between the selling price and cost price, before tax and other expenses.</p>
+                <p className={`text-xs leading-5 ${secondaryTextClass}`}>Product Cost Price is the original master price. Stock IN transactions do not change it. Each Stock IN has its own unit cost.</p>
               </div>
             </section>
 
             {/* Inventory Information */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
-              <SectionHeader icon={Warehouse} title="Inventory Information" description="Live stock summary and warehouse-wise quantities" inactive={isInactive} />
+            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 lg:col-span-2 ${panelClass}`}>
+              <SectionHeader icon={Warehouse} title="Inventory Information" description="Current stock quantities and inventory valuation" inactive={isInactive} />
 
+              {/* Stock Summary */}
               <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <DetailItem label="Total Stock" value={formatQuantity(product.totalStock ?? 0, product.unit)} icon={Package} inactive={isInactive} />
+                <DetailItem label="Total Stock IN" value={formatQuantity(totalStockIn, product.unit)} icon={TrendingUp} inactive={isInactive} />
+
+                <DetailItem label="Current Stock" value={formatQuantity(product.totalStock ?? 0, product.unit)} icon={Package} inactive={isInactive} />
 
                 <DetailItem label="Reserved Stock" value={formatQuantity(product.reservedStock ?? 0, product.unit)} icon={Boxes} inactive={isInactive} />
 
                 <DetailItem label="Available Stock" value={formatQuantity(product.availableStock ?? 0, product.unit)} icon={CheckCircle2} inactive={isInactive} />
+              </div>
+
+              {/* Inventory Valuation - shown only once */}
+              <div className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <DetailItem label="Average Inventory Cost" value={formatCurrency(averageInventoryCost)} icon={IndianRupee} inactive={isInactive} />
+
+                <DetailItem label="Total Stock Value" value={formatCurrency(totalStockValue)} icon={Wallet} inactive={isInactive} />
 
                 <DetailItem label="Minimum Stock Level" value={formatQuantity(product.minStockLevel ?? 0, product.unit)} icon={AlertCircle} inactive={isInactive} />
               </div>
 
+              {/* Stock Status */}
               {(() => {
-                const totalStock = Number(product.totalStock ?? 0)
                 const minimumStock = Number(product.minStockLevel ?? 0)
                 const isLowStock = totalStock <= minimumStock
 
@@ -451,26 +449,116 @@ export default function ProductsDetails() {
                 )
               })()}
 
-              <div className="mt-5">
-                <h3 className="mb-3 text-xs font-bold text-erp-text">Warehouse-wise Stock</h3>
+              {/* Stock IN History */}
+              <div className="mt-6">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="flex items-center gap-2 text-sm font-bold text-erp-text">
+                      <History size={16} className="text-erp-primary" />
+                      Stock IN History
+                    </h3>
 
-                {Array.isArray(product.warehouseStock) && product.warehouseStock.length > 0 ? (
+                    <p className="mt-1 text-xs text-erp-text-secondary">Individual Stock IN transactions with their actual quantity and unit cost</p>
+                  </div>
+
+                  <span className="rounded-md bg-erp-primary-light px-2.5 py-1 text-xs font-semibold text-erp-primary">{stockInHistory.length} Entries</span>
+                </div>
+
+                {stockInHistory.length > 0 ? (
                   <div className="overflow-x-auto rounded-lg border border-erp-border">
-                    <table className="w-full min-w-[560px] text-left text-xs">
+                    <table className="w-full min-w-[850px] text-left text-xs">
                       <thead className="bg-erp-hover/30 text-erp-text-secondary">
                         <tr>
+                          <th className="px-3 py-3 font-semibold">Date</th>
                           <th className="px-3 py-3 font-semibold">Warehouse</th>
-                          <th className="px-3 py-3 font-semibold">Code</th>
-                          <th className="px-3 py-3 text-right font-semibold">Current Stock</th>
+                          <th className="px-3 py-3 text-right font-semibold">Stock IN Qty</th>
+                          <th className="px-3 py-3 text-right font-semibold">Unit Cost</th>
+                          <th className="px-3 py-3 text-right font-semibold">Total Cost</th>
+                          <th className="px-3 py-3 font-semibold">Reference</th>
+                        </tr>
+                      </thead>
+
+                      <tbody className="divide-y divide-erp-border">
+                        {stockInHistory.map((movement, index) => {
+                          const quantity = Number(movement.quantity || 0)
+                          const unitCost = Number(movement.unitCost || 0)
+                          const totalCost = movement.totalCost !== undefined && movement.totalCost !== null ? Number(movement.totalCost) : quantity * unitCost
+
+                          const warehouseName = typeof movement.warehouseId === 'object' ? movement.warehouseId?.name : movement.warehouseName
+
+                          const reference = movement.reference || movement.reason || '—'
+
+                          return (
+                            <tr key={movement._id || index} className="bg-erp-surface transition-colors hover:bg-erp-hover/30">
+                              <td className="whitespace-nowrap px-3 py-3 text-erp-text-secondary">{formatDate(movement.createdAt)}</td>
+
+                              <td className="px-3 py-3 font-semibold text-erp-text">
+                                <div className="flex items-center gap-2">
+                                  <Warehouse size={14} className="shrink-0 text-erp-primary" />
+                                  {warehouseName || 'Unknown Warehouse'}
+                                </div>
+                              </td>
+
+                              <td className="px-3 py-3 text-right font-semibold text-erp-text">{formatQuantity(quantity, product.unit)}</td>
+
+                              <td className="px-3 py-3 text-right font-semibold text-erp-text">{formatCurrency(unitCost)}</td>
+
+                              <td className="px-3 py-3 text-right font-bold text-erp-text">{formatCurrency(totalCost)}</td>
+
+                              <td className="max-w-[220px] truncate px-3 py-3 text-erp-text-secondary" title={reference}>
+                                {reference}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-erp-border bg-erp-hover/20 p-5 text-center">
+                    <History size={24} className="mx-auto text-erp-text-muted" />
+
+                    <p className="mt-2 text-xs font-semibold text-erp-text">No Stock IN history found</p>
+
+                    <p className="mt-1 text-xs text-erp-text-secondary">Individual Stock IN entries will appear here after stock is added.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Warehouse-wise Quantity */}
+              <div className="mt-6">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-erp-text">Warehouse-wise Stock</h3>
+
+                    <p className="mt-1 text-xs text-erp-text-secondary">Current quantity available in each warehouse</p>
+                  </div>
+
+                  <span className="rounded-md bg-erp-primary-light px-2.5 py-1 text-xs font-semibold text-erp-primary">{warehouseStock.length} Warehouses</span>
+                </div>
+
+                {warehouseStock.length > 0 ? (
+                  <div className="overflow-x-auto rounded-lg border border-erp-border">
+                    <table className="w-full min-w-[650px] text-left text-xs">
+                      <thead className="bg-erp-hover/30 text-erp-text-secondary">
+                        <tr>
+                          <th className="px-3 py-3 font-semibold">Warehouse Name</th>
+                          <th className="px-3 py-3 font-semibold">Warehouse Code</th>
+                          <th className="px-3 py-3 text-right font-semibold">Current Quantity</th>
                           <th className="px-3 py-3 text-right font-semibold">Reserved</th>
                           <th className="px-3 py-3 text-right font-semibold">Available</th>
                         </tr>
                       </thead>
 
                       <tbody className="divide-y divide-erp-border">
-                        {product.warehouseStock.map((warehouse, index) => (
-                          <tr key={`${warehouse.warehouseId || warehouse.warehouseCode || index}`} className="bg-erp-surface">
-                            <td className="px-3 py-3 font-semibold text-erp-text">{warehouse.warehouseName || 'Unknown Warehouse'}</td>
+                        {warehouseStock.map((warehouse, index) => (
+                          <tr key={warehouse.warehouseId || warehouse.warehouseCode || index} className="bg-erp-surface transition-colors hover:bg-erp-hover/30">
+                            <td className="px-3 py-3 font-semibold text-erp-text">
+                              <div className="flex items-center gap-2">
+                                <Warehouse size={14} className="shrink-0 text-erp-primary" />
+                                {warehouse.warehouseName || 'Unknown Warehouse'}
+                              </div>
+                            </td>
 
                             <td className="px-3 py-3 text-erp-text-secondary">{warehouse.warehouseCode || '—'}</td>
 
@@ -482,6 +570,20 @@ export default function ProductsDetails() {
                           </tr>
                         ))}
                       </tbody>
+
+                      <tfoot className="border-t border-erp-border bg-erp-hover/30">
+                        <tr>
+                          <td colSpan={2} className="px-3 py-3 font-bold text-erp-text">
+                            Total
+                          </td>
+
+                          <td className="px-3 py-3 text-right font-bold text-erp-text">{formatQuantity(product.totalStock ?? 0, product.unit)}</td>
+
+                          <td className="px-3 py-3 text-right font-bold text-erp-text">{formatQuantity(product.reservedStock ?? 0, product.unit)}</td>
+
+                          <td className="px-3 py-3 text-right font-bold text-erp-primary">{formatQuantity(product.availableStock ?? 0, product.unit)}</td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 ) : (
@@ -493,6 +595,14 @@ export default function ProductsDetails() {
                     <p className="mt-1 text-xs text-erp-text-secondary">Stock will appear here after opening stock is recorded or stock is added.</p>
                   </div>
                 )}
+              </div>
+
+              <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
+                <AlertCircle size={15} className={`mt-0.5 shrink-0 ${isInactive ? 'text-erp-disabled' : 'text-erp-text-muted'}`} />
+
+                <p className={`text-xs leading-5 ${secondaryTextClass}`}>
+                  Each Stock IN entry shows its own unit cost. Average Inventory Cost is calculated separately using the current inventory valuation. Product Master Cost Price remains unchanged.
+                </p>
               </div>
             </section>
 
@@ -529,11 +639,10 @@ export default function ProductsDetails() {
             </section>
 
             {/* Product Activity */}
-            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 lg:col-span-2 ${panelClass}`}>
+            <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
               <SectionHeader icon={CalendarDays} title="Product Activity" description="Creation, modification and current status" inactive={isInactive} />
 
-              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {/* Created On */}
+              <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border'}`}>
                   <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBoxClass}`}>
                     <CalendarDays size={16} />
@@ -546,7 +655,6 @@ export default function ProductsDetails() {
                   </div>
                 </div>
 
-                {/* Last Updated */}
                 <div className={`flex min-w-0 items-start gap-3 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border'}`}>
                   <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${iconBoxClass}`}>
                     <Clock size={16} />
@@ -559,8 +667,7 @@ export default function ProductsDetails() {
                   </div>
                 </div>
 
-                {/* Status */}
-                <div className={`flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border bg-erp-surface'}`}>
+                <div className={`flex min-w-0 items-center justify-between gap-3 rounded-lg border p-3 sm:col-span-2 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border bg-erp-surface'}`}>
                   <p className={`flex items-center gap-2 text-xs ${secondaryTextClass}`}>
                     <CheckCircle2 size={14} />
                     Current Status
@@ -584,9 +691,6 @@ export default function ProductsDetails() {
         </>
       )}
 
-      {/* Delete Confirmation Modal */}
-
-      {/* Delete Confirmation */}
       <TrashBox
         isOpen={showDeleteModal}
         onClose={() => {

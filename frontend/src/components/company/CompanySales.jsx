@@ -451,7 +451,9 @@ export default function CompanySales() {
                 orders.map((order) => {
                   const canEditOrder = canUpdate && ['Draft', 'Partially Dispatched', 'Cancelled'].includes(order.status)
 
-                  const canApproveOrder = canApprove && order.status === 'Draft'
+                  const isCustomerActive = order.customerId?.status === 'Active'
+
+                  const canApproveOrder = canApprove && order.status === 'Draft' && isCustomerActive
 
                   const canDispatchOrder = canDispatch && ['Approved', 'Partially Dispatched'].includes(order.status)
 

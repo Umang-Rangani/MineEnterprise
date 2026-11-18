@@ -11,6 +11,12 @@ const InventoryMovement = require('../models/InventoryMovement')
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
 
+const ChartOfAccount = require('../models/ChartOfAccount')
+const JournalEntry = require('../models/JournalEntry')
+const JournalEntryCounter = require('../models/JournalEntryCounter')
+
+const initializeDefaultChartOfAccounts = require('../services/defaultChartOfAccounts')
+
 const router = express.Router()
 
 router.use(authMiddleware)
@@ -104,6 +110,224 @@ const lockPurchaseForReceipt = async (purchaseId, companyId, session) => {
   }
 
   return purchase
+}
+
+const roundMoney = (value) => {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100
+}
+
+const allocateAmount = (amount, items, weights) => {
+  const totalAmount = roundMoney(amount)
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0)
+
+  if (items.length === 0 || totalWeight <= 0) {
+    return items.map(() => 0)
+  }
+
+  let allocated = 0
+
+  return items.map((item, index) => {
+    if (index === items.length - 1) {
+      return roundMoney(totalAmount - allocated)
+    }
+
+    const value = roundMoney((totalAmount * weights[index]) / totalWeight)
+
+    allocated = roundMoney(allocated + value)
+
+    return value
+  })
+}
+
+const generateJournalNumber = async (companyId, entryDate, session) => {
+  const counter = await JournalEntryCounter.findOneAndUpdate(
+    { companyId },
+    {
+      $inc: { lastNumber: 1 },
+      $setOnInsert: { companyId },
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+      session,
+    },
+  )
+
+  const year = new Date(entryDate).getFullYear()
+
+  return `JE-${year}-${String(counter.lastNumber).padStart(6, '0')}`
+}
+
+const createGoodsReceiptJournalEntry = async ({ receipt, purchase, acceptedLines, companyId, userId, session }) => {
+  const eligibleLines = acceptedLines.filter((line) => line.acceptedQuantity > 0)
+
+  if (eligibleLines.length === 0) {
+    return {
+      journalEntry: null,
+      lineValuations: [],
+    }
+  }
+
+  const purchaseItems = purchase.items
+
+  const itemDiscountTotal = roundMoney(purchaseItems.reduce((sum, item) => sum + Number(item.discountAmount || 0), 0))
+
+  const purchaseLevelDiscount = roundMoney(Number(purchase.discountAmount || 0) - itemDiscountTotal)
+
+  const shippingCharges = roundMoney(Number(purchase.shippingCharges || 0))
+  const adjustmentAmount = roundMoney(Number(purchase.adjustmentAmount || 0))
+
+  const weights = purchaseItems.map((item) => Math.max(0, Number(item.taxableAmount || 0)))
+
+  const totalWeight = roundMoney(weights.reduce((sum, weight) => sum + weight, 0))
+
+  if (totalWeight <= 0) {
+    throw httpError('Purchase item taxable values are invalid for accounting', 409)
+  }
+
+  if (purchaseLevelDiscount < 0 || purchaseLevelDiscount > totalWeight) {
+    throw httpError('Purchase-level discount allocation is invalid', 409)
+  }
+
+  const discountAllocations = allocateAmount(purchaseLevelDiscount, purchaseItems, weights)
+  const shippingAllocations = allocateAmount(shippingCharges, purchaseItems, weights)
+  const adjustmentAllocations = allocateAmount(adjustmentAmount, purchaseItems, weights)
+
+  const itemCostMap = new Map()
+
+  purchaseItems.forEach((item, index) => {
+    const taxableValue = Number(item.taxableAmount || 0)
+
+    const fullItemCost = roundMoney(taxableValue - discountAllocations[index] + shippingAllocations[index] + adjustmentAllocations[index])
+
+    if (!Number.isFinite(fullItemCost) || fullItemCost < 0) {
+      throw httpError(`Invalid inventory cost for ${item.productName}`, 409)
+    }
+
+    itemCostMap.set(String(item._id), fullItemCost)
+  })
+
+  let totalInventoryValue = 0
+  const lineValuations = []
+
+  for (const line of eligibleLines) {
+    const { item, purchaseItem, acceptedQuantity } = line
+
+    const orderedQuantity = Number(purchaseItem.quantity)
+    const previousAcceptedQuantity = Number(purchaseItem.acceptedQuantity || 0)
+
+    const fullItemCost = itemCostMap.get(String(purchaseItem._id))
+
+    if (!Number.isFinite(orderedQuantity) || orderedQuantity <= 0 || !Number.isFinite(previousAcceptedQuantity) || previousAcceptedQuantity < 0 || previousAcceptedQuantity + acceptedQuantity > orderedQuantity) {
+      throw httpError(`Invalid accepted quantity for ${item.productName}`, 409)
+    }
+
+    const previousPostedValue = roundMoney((fullItemCost * previousAcceptedQuantity) / orderedQuantity)
+
+    const newCumulativeValue = roundMoney((fullItemCost * (previousAcceptedQuantity + acceptedQuantity)) / orderedQuantity)
+
+    const lineInventoryValue = roundMoney(newCumulativeValue - previousPostedValue)
+
+    if (lineInventoryValue < 0) {
+      throw httpError(`Invalid inventory value for ${item.productName}`, 409)
+    }
+
+    const unitCost = roundMoney(lineInventoryValue / acceptedQuantity)
+
+    lineValuations.push({
+      purchaseItemId: purchaseItem._id,
+      productId: item.productId,
+      acceptedQuantity,
+      totalCost: lineInventoryValue,
+      unitCost,
+    })
+
+    totalInventoryValue = roundMoney(totalInventoryValue + lineInventoryValue)
+  }
+
+  if (totalInventoryValue <= 0) {
+    throw httpError('Accepted stock has zero inventory value. Please verify purchase costs before confirming.', 409)
+  }
+
+  const [inventoryAccount, grniAccount] = await Promise.all([
+    ChartOfAccount.findOne({
+      companyId,
+      accountCode: '1200',
+      accountType: 'Asset',
+      isActive: true,
+    }).session(session),
+
+    ChartOfAccount.findOne({
+      companyId,
+      accountCode: '2010',
+      accountType: 'Liability',
+      isActive: true,
+    }).session(session),
+  ])
+
+  if (!inventoryAccount) {
+    throw httpError('Inventory account (1200) not found or inactive. Please check Chart of Accounts.', 409)
+  }
+
+  if (!grniAccount) {
+    throw httpError('GRNI account (2010) not found or inactive. Please check Chart of Accounts.', 409)
+  }
+
+  const existingEntry = await JournalEntry.findOne({
+    companyId,
+    sourceType: 'GoodsReceipt',
+    sourceId: receipt._id,
+  }).session(session)
+
+  if (existingEntry) {
+    throw httpError('Accounting entry already exists for this goods receipt', 409)
+  }
+
+  const journalNumber = await generateJournalNumber(companyId, receipt.receiptDate, session)
+
+  const [journalEntry] = await JournalEntry.create(
+    [
+      {
+        companyId,
+        journalNumber,
+        entryDate: receipt.receiptDate,
+        referenceNumber: receipt.receiptNumber,
+        narration: `Inventory received against Purchase Order ${purchase.purchaseNumber} - Goods Receipt ${receipt.receiptNumber}`,
+
+        lines: [
+          {
+            accountId: inventoryAccount._id,
+            description: `Inventory received - ${receipt.receiptNumber}`,
+            debit: totalInventoryValue,
+            credit: 0,
+          },
+          {
+            accountId: grniAccount._id,
+            description: `Goods received not invoiced - ${receipt.receiptNumber}`,
+            debit: 0,
+            credit: totalInventoryValue,
+          },
+        ],
+
+        totalDebit: totalInventoryValue,
+        totalCredit: totalInventoryValue,
+        status: 'Posted',
+        sourceType: 'GoodsReceipt',
+        sourceId: receipt._id,
+        createdBy: userId,
+        updatedBy: userId,
+        postedBy: userId,
+        postedAt: new Date(),
+      },
+    ],
+    { session },
+  )
+
+  return {
+    journalEntry,
+    lineValuations,
+  }
 }
 
 // GET /erp/goods-receipts
@@ -417,6 +641,7 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
     }
 
     let confirmedReceipt
+    let createdJournalEntry = null
 
     await session.withTransaction(async () => {
       const receipt = await GoodsReceipt.findOne({
@@ -500,22 +725,81 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
         })
       }
 
+      // Ensure default Chart of Accounts exist for this company.
+      await initializeDefaultChartOfAccounts(companyId, session)
+
+      // Create automatic accounting entry before updating accepted quantities.
+      const receiptAccounting = await createGoodsReceiptJournalEntry({
+        receipt,
+        purchase,
+        acceptedLines,
+        companyId,
+        userId: req.user.userId,
+        session,
+      })
+
+      createdJournalEntry = receiptAccounting.journalEntry
+
+      const valuationMap = new Map(receiptAccounting.lineValuations.map((line) => [String(line.purchaseItemId), line]))
+
       // Update stock only for accepted, undamaged quantities.
       for (const line of acceptedLines) {
         const { item, purchaseItem, receiptQuantity, damagedQuantity, acceptedQuantity } = line
 
         if (acceptedQuantity > 0) {
-          const inventory = await Inventory.findOneAndUpdate(
+          const valuation = valuationMap.get(String(purchaseItem._id))
+
+          if (!valuation) {
+            throw httpError(`Inventory valuation missing for ${item.productName}`, 409)
+          }
+
+          const existingInventory = await Inventory.findOne({
+            companyId,
+            warehouseId: receipt.warehouseId,
+            productId: item.productId,
+          }).session(session)
+
+          const previousStock = Number(existingInventory?.currentStock || 0)
+          const previousStockValue = roundMoney(Number(existingInventory?.stockValue || 0))
+
+          if (!Number.isFinite(previousStock) || previousStock < 0 || !Number.isFinite(previousStockValue) || previousStockValue < 0) {
+            throw httpError(`Invalid existing inventory valuation for ${item.productName}`, 409)
+          }
+
+          // Existing stock must have a valid valuation before adding new stock.
+          if (previousStock > 0 && previousStockValue <= 0) {
+            throw httpError(`Existing stock valuation is missing for ${item.productName}. Please complete inventory valuation first.`, 409)
+          }
+
+          if (previousStock === 0 && previousStockValue !== 0) {
+            throw httpError(`Inventory quantity and stock value are inconsistent for ${item.productName}`, 409)
+          }
+
+          const newStock = previousStock + acceptedQuantity
+
+          const newStockValue = roundMoney(previousStockValue + valuation.totalCost)
+
+          const newAverageCost = roundMoney(newStockValue / newStock)
+
+          if (!Number.isFinite(newAverageCost) || newAverageCost < 0 || !Number.isFinite(newStockValue)) {
+            throw httpError(`Unable to calculate weighted average cost for ${item.productName}`, 409)
+          }
+
+          const inventoryFilter = existingInventory
+            ? { _id: existingInventory._id, companyId }
+            : {
+                companyId,
+                warehouseId: receipt.warehouseId,
+                productId: item.productId,
+              }
+
+          const inventoryUpdate = await Inventory.findOneAndUpdate(
+            inventoryFilter,
             {
-              companyId,
-              warehouseId: receipt.warehouseId,
-              productId: item.productId,
-            },
-            {
-              $inc: {
-                currentStock: acceptedQuantity,
-              },
               $set: {
+                currentStock: newStock,
+                averageCost: newAverageCost,
+                stockValue: newStockValue,
                 updatedBy: req.user.userId,
               },
               $setOnInsert: {
@@ -528,14 +812,12 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
             },
             {
               new: true,
-              upsert: true,
+              upsert: !existingInventory,
               setDefaultsOnInsert: true,
               runValidators: true,
               session,
             },
           )
-
-          const previousStock = Number(inventory.currentStock) - acceptedQuantity
 
           await InventoryMovement.create(
             [
@@ -545,8 +827,13 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
                 warehouseId: receipt.warehouseId,
                 type: 'STOCK_IN',
                 quantity: acceptedQuantity,
+
+                unitCost: valuation.unitCost,
+                totalCost: valuation.totalCost,
+                averageCostAfter: newAverageCost,
+
                 previousStock,
-                newStock: Number(inventory.currentStock),
+                newStock: Number(inventoryUpdate.currentStock),
                 reason: `Goods Receipt ${receipt.receiptNumber}`,
                 reference: receipt.receiptNumber,
                 createdBy: req.user.userId,
@@ -557,13 +844,13 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
         }
 
         // Update total physically received quantity
-        purchaseItem.receivedQuantity = Number(purchaseItem.receivedQuantity || 0) + line.receiptQuantity
+        purchaseItem.receivedQuantity = Number(purchaseItem.receivedQuantity || 0) + receiptQuantity
 
         // Update total damaged quantity
-        purchaseItem.damagedQuantity = Number(purchaseItem.damagedQuantity || 0) + line.damagedQuantity
+        purchaseItem.damagedQuantity = Number(purchaseItem.damagedQuantity || 0) + damagedQuantity
 
         // Update total accepted quantity
-        purchaseItem.acceptedQuantity = Number(purchaseItem.acceptedQuantity || 0) + line.acceptedQuantity
+        purchaseItem.acceptedQuantity = Number(purchaseItem.acceptedQuantity || 0) + acceptedQuantity
       }
 
       const allItemsReceived = purchase.items.every((item) => Number(item.receivedQuantity || 0) >= Number(item.quantity))
@@ -590,8 +877,9 @@ router.post('/:id/confirm', permissionMiddleware('Purchase', 'APPROVE'), async (
 
     return res.status(200).json({
       success: true,
-      message: 'Goods receipt confirmed and inventory updated successfully',
+      message: 'Goods receipt confirmed, inventory updated and accounting entry posted successfully',
       receipt: confirmedReceipt,
+      journalEntry: createdJournalEntry,
     })
   } catch (error) {
     if (error.status) {

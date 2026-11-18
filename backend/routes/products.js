@@ -6,6 +6,12 @@ const Warehouse = require('../models/Warehouse')
 const Inventory = require('../models/Inventory')
 const InventoryMovement = require('../models/InventoryMovement')
 
+const ChartOfAccount = require('../models/ChartOfAccount')
+const JournalEntry = require('../models/JournalEntry')
+const JournalEntryCounter = require('../models/JournalEntryCounter')
+
+const initializeDefaultChartOfAccounts = require('../services/defaultChartOfAccounts')
+
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
 
@@ -102,6 +108,26 @@ function addStockToProduct(product, stock = {}) {
 
 function validNonNegativeNumber(value) {
   return value !== '' && typeof value !== 'boolean' && value !== null && value !== undefined && Number.isFinite(Number(value)) && Number(value) >= 0
+}
+
+const generateJournalNumber = async (companyId, entryDate, session) => {
+  const counter = await JournalEntryCounter.findOneAndUpdate(
+    { companyId },
+    {
+      $inc: { lastNumber: 1 },
+      $setOnInsert: { companyId },
+    },
+    {
+      new: true,
+      upsert: true,
+      setDefaultsOnInsert: true,
+      session,
+    },
+  )
+
+  const year = new Date(entryDate).getFullYear()
+
+  return `JE-${year}-${String(counter.lastNumber).padStart(6, '0')}`
 }
 
 function sendKnownError(res, error) {
@@ -264,13 +290,23 @@ router.get('/:id', permissionMiddleware('Product', 'VIEW'), async (req, res, nex
       })
     }
 
-    const [stockMap, warehouseRows] = await Promise.all([
+    const [stockMap, warehouseRows, stockInRows] = await Promise.all([
       getStockMap(companyId, [product._id]),
+
       Inventory.find({
         companyId,
         productId: product._id,
       })
         .populate({ path: 'warehouseId', select: 'name code status' })
+        .lean(),
+
+      InventoryMovement.find({
+        companyId,
+        productId: product._id,
+        type: 'STOCK_IN',
+      })
+        .populate({ path: 'warehouseId', select: 'name code' })
+        .sort({ createdAt: -1, _id: -1 })
         .lean(),
     ])
 
@@ -279,22 +315,66 @@ router.get('/:id', permissionMiddleware('Product', 'VIEW'), async (req, res, nex
       reservedStock: 0,
     }
 
+    // Total quantity received through all Stock IN transactions
+    const totalStockIn = stockInRows.reduce((total, row) => total + Number(row.quantity || 0), 0)
+
+    // Total inventory value across all warehouses
+    const totalStockValue = warehouseRows.reduce((total, row) => total + Number(row.stockValue || 0), 0)
+
+    const totalCurrentStock = warehouseRows.reduce((total, row) => total + Number(row.currentStock || 0), 0)
+
+    // Weighted average inventory cost
+    const averageCost = totalCurrentStock > 0 ? Math.round((totalStockValue / totalCurrentStock + Number.EPSILON) * 100) / 100 : 0
+
+    const stockValue = Math.round((totalStockValue + Number.EPSILON) * 100) / 100
+
+    // Warehouse-wise current stock
     const warehouseStock = warehouseRows
       .filter((row) => row.warehouseId)
       .map((row) => ({
         warehouseId: row.warehouseId._id,
         warehouseName: row.warehouseId.name,
         warehouseCode: row.warehouseId.code,
-        currentStock: row.currentStock,
-        reservedStock: row.reservedStock,
-        availableStock: Math.max(0, row.currentStock - row.reservedStock),
+        currentStock: Number(row.currentStock || 0),
+        reservedStock: Number(row.reservedStock || 0),
+        availableStock: Math.max(0, Number(row.currentStock || 0) - Number(row.reservedStock || 0)),
       }))
+
+    // Individual Stock IN transaction history
+    const stockInHistory = stockInRows.map((row) => {
+      const quantity = Number(row.quantity || 0)
+      const unitCost = Number(row.unitCost || 0)
+
+      const totalCost = row.totalCost !== undefined && row.totalCost !== null ? Number(row.totalCost) : quantity * unitCost
+
+      return {
+        _id: row._id,
+        createdAt: row.createdAt,
+
+        warehouseId: row.warehouseId?._id || null,
+        warehouseName: row.warehouseId?.name || 'Unknown Warehouse',
+        warehouseCode: row.warehouseId?.code || '',
+
+        quantity,
+        unitCost,
+        totalCost,
+
+        reason: row.reason || '',
+        reference: row.reference || '',
+      }
+    })
 
     return res.status(200).json({
       success: true,
       product: {
         ...addStockToProduct(product, stock),
+
+        totalStockIn,
+        averageCost,
+        stockValue,
+
         warehouseStock,
+        stockInHistory,
       },
     })
   } catch (error) {
@@ -467,8 +547,11 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
 
     let createdProduct
     let totalOpeningStock = 0
+    let totalOpeningStockValue = 0
+    let createdJournalEntry = null
 
     await session.withTransaction(async () => {
+      await initializeDefaultChartOfAccounts(companyId, session)
       const product = new Product({
         companyId,
         name: name.trim(),
@@ -510,12 +593,19 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
 
         if (quantity === 0) continue
 
+        const unitCost = Number(product.costPrice)
+        const lineStockValue = Math.round((quantity * unitCost + Number.EPSILON) * 100) / 100
+
+        totalOpeningStockValue = Math.round((totalOpeningStockValue + lineStockValue + Number.EPSILON) * 100) / 100
+
         inventoryRows.push({
           companyId,
           productId: product._id,
           warehouseId: warehouse._id,
           currentStock: quantity,
           reservedStock: 0,
+          averageCost: unitCost,
+          stockValue: lineStockValue,
           createdBy: userId,
         })
 
@@ -533,6 +623,9 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
         })
       }
 
+      product.openingStock = totalOpeningStock
+      await product.save({ session })
+
       if (inventoryRows.length) {
         await Inventory.insertMany(inventoryRows, {
           session,
@@ -543,6 +636,76 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
           session,
           ordered: true,
         })
+      }
+
+      if (totalOpeningStock > 0 && totalOpeningStockValue > 0) {
+        const [inventoryAccount, openingBalanceAccount] = await Promise.all([
+          ChartOfAccount.findOne({
+            companyId,
+            accountCode: '1200',
+            accountType: 'Asset',
+            isActive: true,
+          }).session(session),
+
+          ChartOfAccount.findOne({
+            companyId,
+            accountCode: '3200',
+            accountType: 'Equity',
+            isActive: true,
+          }).session(session),
+        ])
+
+        if (!inventoryAccount) {
+          throw Object.assign(new Error('Inventory account (1200) not found or inactive.'), { status: 409 })
+        }
+
+        if (!openingBalanceAccount) {
+          throw Object.assign(new Error('Opening Balance Equity account (3200) not found or inactive.'), { status: 409 })
+        }
+
+        const journalNumber = await generateJournalNumber(companyId, new Date(), session)
+
+        const [journalEntry] = await JournalEntry.create(
+          [
+            {
+              companyId,
+              journalNumber,
+              entryDate: new Date(),
+              referenceNumber: `OPENING-${product.sku}`,
+              narration: `Opening stock recorded for product ${product.name} (${product.sku})`,
+
+              lines: [
+                {
+                  accountId: inventoryAccount._id,
+                  description: `Opening inventory - ${product.name}`,
+                  debit: totalOpeningStockValue,
+                  credit: 0,
+                },
+                {
+                  accountId: openingBalanceAccount._id,
+                  description: `Opening balance equity - ${product.name}`,
+                  debit: 0,
+                  credit: totalOpeningStockValue,
+                },
+              ],
+
+              totalDebit: totalOpeningStockValue,
+              totalCredit: totalOpeningStockValue,
+
+              status: 'Posted',
+              sourceType: 'OpeningStock',
+              sourceId: product._id,
+
+              createdBy: userId,
+              updatedBy: userId,
+              postedBy: userId,
+              postedAt: new Date(),
+            },
+          ],
+          { session },
+        )
+
+        createdJournalEntry = journalEntry
       }
 
       createdProduct = product
@@ -559,6 +722,8 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
         availableStock: totalOpeningStock,
       },
       totalOpeningStock,
+      openingStockValue: totalOpeningStockValue,
+      journalEntry: createdJournalEntry,
     })
   } catch (error) {
     const response = sendKnownError(res, error)

@@ -26,6 +26,9 @@ import {
   ChartNoAxesCombined,
   Settings,
   Warehouse,
+  ReceiptText,
+  Calculator,
+  ChevronDown,
 } from 'lucide-react'
 
 import { useAuth } from '../../context/AuthContext'
@@ -105,6 +108,64 @@ const navigationItems = [
     icon: ShoppingBag,
     actions: ['sales:list'],
   },
+
+  {
+    label: 'Invoices',
+    path: '/company/invoices',
+    icon: ReceiptText,
+    actions: ['invoice:list'],
+  },
+  {
+    label: 'Payments',
+    path: '/company/payments',
+    icon: CreditCard,
+    actions: ['payment:list'],
+  },
+  {
+    label: 'Expenses',
+    path: '/company/expenses',
+    icon: Receipt,
+    actions: ['expense:list'],
+  },
+
+  {
+    label: 'Accounting',
+    path: '/company/chart-of-accounts',
+    icon: Calculator,
+    actions: ['accounting:view', 'accounting:journal-entry', 'accounting:view-ledger'],
+    children: [
+      {
+        label: 'Chart of Accounts',
+        path: '/company/chart-of-accounts',
+        actions: ['accounting:view'],
+      },
+      {
+        label: 'Journal Entries',
+        path: '/company/journal-entries',
+        actions: ['accounting:view'],
+      },
+      {
+        label: 'General Ledger',
+        path: '/company/general-ledger',
+        actions: ['accounting:view-ledger'],
+      },
+      {
+        label: 'Trial Balance',
+        path: '/company/trial-balance',
+        actions: ['accounting:view-ledger'],
+      },
+      {
+        label: 'Profit & Loss',
+        path: '/company/financial-statements/profit-loss',
+        actions: ['accounting:view-ledger'],
+      },
+      {
+        label: 'Balance Sheet',
+        path: '/company/financial-statements/balance-sheet',
+        actions: ['accounting:view-ledger'],
+      },
+    ],
+  },
 ]
 
 const pageTitles = {
@@ -120,6 +181,15 @@ const pageTitles = {
   warehouses: 'Warehouses',
   customers: 'Customers',
   orders: 'Sales Orders',
+  invoices: 'Invoice Management',
+  payments: 'Payment Management',
+  expenses: 'Expense Management',
+  'chart-of-accounts': 'Chart of Accounts',
+
+  'journal-entries': 'Journal Entries',
+  'general-ledger': 'General Ledger',
+  'trial-balance': 'Trial Balance',
+  'financial-statements': 'Financial Statements',
 }
 
 const pageDescriptions = {
@@ -135,6 +205,15 @@ const pageDescriptions = {
   warehouses: 'Manage warehouse locations and stock',
   customers: 'Manage customer information and credit details',
   orders: 'Manage customer sales orders and order processing',
+  invoices: 'Manage customer invoices, approvals and billing',
+  payments: 'Manage customer payments, receipts and refunds',
+  expenses: 'Manage company expenses, receipts and approvals',
+  'chart-of-accounts': 'Manage your company financial accounts',
+
+  'journal-entries': 'Manage manual and automatic accounting entries',
+  'general-ledger': 'View account-wise debit and credit transactions',
+  'trial-balance': 'Review debit and credit balances of all accounts',
+  'financial-statements': 'View profit and loss and balance sheet reports',
 }
 
 const sectionKey = {
@@ -149,6 +228,10 @@ const sectionKey = {
   purchase: 'Purchase',
   customer: 'Customer',
   sales: 'Sales',
+  invoice: 'Invoice',
+  payment: 'Payment',
+  expense: 'Expense',
+  accounting: 'Accounting',
 }
 
 const hasPermission = (permissions, actions = []) => {
@@ -397,6 +480,61 @@ const routePermissions = [
     actions: ['expense:list'],
   },
 
+  // Chart of Accounts
+  {
+    pattern: /^\/company\/chart-of-accounts\/?$/,
+    actions: ['accounting:view'],
+  },
+
+  {
+    pattern: /^\/company\/chart-of-accounts\/new\/?$/,
+    actions: ['accounting:manage-accounts'],
+  },
+  {
+    pattern: /^\/company\/chart-of-accounts\/[^/]+\/edit\/?$/,
+    actions: ['accounting:manage-accounts'],
+  },
+
+  // Journal Entries
+  {
+    pattern: /^\/company\/journal-entries\/new\/?$/,
+    actions: ['accounting:journal-entry'],
+  },
+  {
+    pattern: /^\/company\/journal-entries\/[^/]+\/edit\/?$/,
+    actions: ['accounting:journal-entry'],
+  },
+  {
+    pattern: /^\/company\/journal-entries\/[^/]+\/?$/,
+    actions: ['accounting:view'],
+  },
+  {
+    pattern: /^\/company\/journal-entries\/?$/,
+    actions: ['accounting:view'],
+  },
+
+  // General Ledger
+  {
+    pattern: /^\/company\/general-ledger\/?$/,
+    actions: ['accounting:view-ledger'],
+  },
+
+  // Trial Balance
+  {
+    pattern: /^\/company\/trial-balance\/?$/,
+    actions: ['accounting:view-ledger'],
+  },
+
+  // Financial Statements
+  {
+    pattern: /^\/company\/financial-statements\/profit-loss\/?$/,
+    actions: ['accounting:view-ledger'],
+  },
+  {
+    pattern: /^\/company\/financial-statements\/balance-sheet\/?$/,
+    actions: ['accounting:view-ledger'],
+  },
+
   // Warehouses
   {
     pattern: /^\/company\/warehouses\/new\/?$/,
@@ -442,6 +580,14 @@ export default function CompaniesRoute() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
+
+  const [accountingOpen, setAccountingOpen] = useState(
+    location.pathname.startsWith('/company/chart-of-accounts') ||
+      location.pathname.startsWith('/company/journal-entries') ||
+      location.pathname.startsWith('/company/general-ledger') ||
+      location.pathname.startsWith('/company/trial-balance') ||
+      location.pathname.startsWith('/company/financial-statements'),
+  )
 
   useEffect(() => {
     setSidebarOpen(false)
@@ -677,6 +823,58 @@ export default function CompaniesRoute() {
           {visibleNavigationItems.map((item) => {
             const Icon = item.icon
 
+            if (item.children) {
+              const visibleChildren = item.children.filter((child) => hasPermission(permissions, child.actions))
+
+              if (visibleChildren.length === 0) return null
+
+              const isAccountingActive = visibleChildren.some((child) => location.pathname.startsWith(child.path))
+
+              return (
+                <div key={item.label}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (sidebarCollapsed) {
+                        setSidebarCollapsed(false)
+                      }
+
+                      setAccountingOpen(true)
+                      navigate('/company/chart-of-accounts')
+                    }}
+                    title={sidebarCollapsed ? item.label : undefined}
+                    className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
+                      isAccountingActive ? 'bg-erp-primary-light text-erp-primary' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    } ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
+                  >
+                    <Icon size={17} className={`shrink-0 ${isAccountingActive ? 'text-erp-primary' : 'text-slate-500'}`} />
+
+                    {!sidebarCollapsed && (
+                      <>
+                        <span className="flex-1 text-left">{item.label}</span>
+                        <ChevronDown size={15} className={`transition-transform ${accountingOpen ? 'rotate-180' : ''}`} />
+                      </>
+                    )}
+                  </button>
+
+                  {!sidebarCollapsed && accountingOpen && (
+                    <div className="ml-4 mt-1 space-y-0.5 border-l border-slate-200 pl-3">
+                      {visibleChildren.map((child) => (
+                        <NavLink
+                          key={child.path}
+                          to={child.path}
+                          end
+                          className={({ isActive }) => `block rounded-lg px-2.5 py-2 text-xs font-medium transition-colors ${isActive ? 'bg-erp-primary-light text-erp-primary' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'}`}
+                        >
+                          {child.label}
+                        </NavLink>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
             return (
               <NavLink
                 key={item.path}
@@ -696,7 +894,6 @@ export default function CompaniesRoute() {
                     {!sidebarCollapsed && (
                       <>
                         <span className="flex-1 truncate">{item.label}</span>
-
                         {isActive && <ChevronRight size={14} className="shrink-0" />}
                       </>
                     )}

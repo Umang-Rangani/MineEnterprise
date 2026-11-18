@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 
-// Current stock, reserved stock અને available stock
+// Current stock, reserved stock, available stock and inventory valuation
 const inventorySchema = new mongoose.Schema(
   {
     companyId: {
@@ -33,6 +33,20 @@ const inventorySchema = new mongoose.Schema(
     reservedStock: {
       type: Number,
       min: [0, 'Reserved stock cannot be negative.'],
+      default: 0,
+    },
+
+    // Moving Weighted Average Cost per unit
+    averageCost: {
+      type: Number,
+      min: [0, 'Average cost cannot be negative.'],
+      default: 0,
+    },
+
+    // Total valuation of current stock in this warehouse
+    stockValue: {
+      type: Number,
+      min: [0, 'Stock value cannot be negative.'],
       default: 0,
     },
 

@@ -38,6 +38,24 @@ const salesDispatchItemSchema = new mongoose.Schema(
       required: true,
       min: [0.01, 'Dispatch quantity must be greater than zero.'],
     },
+
+    unitCost: {
+      type: Number,
+      min: [0, 'Unit cost cannot be negative.'],
+      default: null,
+    },
+
+    totalCost: {
+      type: Number,
+      min: [0, 'Total cost cannot be negative.'],
+      default: null,
+    },
+
+    averageCostAfter: {
+      type: Number,
+      min: [0, 'Average cost cannot be negative.'],
+      default: null,
+    },
   },
   { _id: true },
 )

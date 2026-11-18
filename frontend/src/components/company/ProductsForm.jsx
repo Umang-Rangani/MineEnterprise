@@ -1,10 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Package, LoaderCircle, Save, Tag, FileText, CheckCircle2, AlertCircle, Eye, Barcode, IndianRupee, Boxes, Image, Percent } from 'lucide-react'
+import { useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Package, LoaderCircle, Save, CheckCircle2, AlertCircle, Eye, Barcode, IndianRupee, Boxes, Image as ImageIcon, Percent, Upload, X } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
-import Toast from '../../Toast/Toast'
 import Loading from '../Loading/Loading'
 import { hasPermission, useAuth } from '../../context/AuthContext'
 
@@ -27,6 +26,22 @@ const initialForm = {
 
 const units = ['Piece', 'Kg', 'Gram', 'Litre', 'ML', 'Meter', 'Box', 'Pack', 'Dozen', 'Pair', 'Set', 'Carton']
 
+const MAX_FILE_SIZE = 4 * 1024 * 1024
+
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+function getProductImageUrl(filePath) {
+  if (!filePath) return ''
+
+  if (/^https?:\/\//i.test(filePath)) {
+    return filePath
+  }
+
+  const baseURL = axiosInstance.defaults.baseURL || 'http://localhost:3000'
+
+  return `${baseURL.replace(/\/$/, '')}/${filePath.replace(/^\//, '')}`
+}
+
 export default function ProductsForm() {
   const navigate = useNavigate()
   const { id } = useParams()
@@ -48,10 +63,13 @@ export default function ProductsForm() {
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState({})
   const [apiError, setApiError] = useState('')
-  const [toast, setToast] = useState(null)
 
   const [warehouses, setWarehouses] = useState([])
   const [warehouseStocks, setWarehouseStocks] = useState([])
+
+  // Product image upload states
+  const [imageFile, setImageFile] = useState(null)
+  const [imagePreview, setImagePreview] = useState('')
 
   const items = [
     { title: 'Products', link: '/company/products' },
@@ -65,6 +83,23 @@ export default function ProductsForm() {
     document.title = `${isEdit ? 'Edit Product' : 'Create Product'} | MineERP`
   }, [isEdit])
 
+  // Image preview
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview('')
+      return
+    }
+
+    const previewUrl = URL.createObjectURL(imageFile)
+
+    setImagePreview(previewUrl)
+
+    return () => {
+      URL.revokeObjectURL(previewUrl)
+    }
+  }, [imageFile])
+
+  // Load Categories
   useEffect(() => {
     let active = true
 
@@ -95,6 +130,7 @@ export default function ProductsForm() {
     }
   }, [])
 
+  // Load Warehouses
   useEffect(() => {
     let active = true
 
@@ -130,12 +166,14 @@ export default function ProductsForm() {
     }
   }, [])
 
+  // Load Product
   useEffect(() => {
     let active = true
 
     async function loadProduct() {
       if (!isEdit) {
         setForm(initialForm)
+        setImageFile(null)
         setLoading(false)
         return
       }
@@ -145,8 +183,6 @@ export default function ProductsForm() {
 
       try {
         const { data } = await axiosInstance.get(`/erp/products/${id}`)
-
-        console.log(data)
 
         if (data.success === false) {
           throw new Error(data.message || 'Unable to load product.')
@@ -181,23 +217,15 @@ export default function ProductsForm() {
           status: product.status || 'Active',
         })
 
+        setImageFile(null)
+
         setWarehouseStocks(
           (product.warehouseStock || []).map((item) => ({
             warehouseId: String(item.warehouseId?._id || item.warehouseId),
+            warehouseName: item.warehouseName || item.warehouseId?.name || '',
             quantity: String(item.currentStock ?? 0),
           })),
         )
-
-        // setWarehouseStocks(
-        //   warehouses.map((warehouse) => {
-        //     const existingStock = (product.warehouseStock || []).find((item) => String(item.warehouseId?._id || item.warehouseId) === String(warehouse._id))
-
-        //     return {
-        //       warehouseId: warehouse._id,
-        //       quantity: String(existingStock?.currentStock ?? 0),
-        //     }
-        //   }),
-        // )
       } catch (error) {
         if (active) {
           setApiError(error.response?.data?.message || error.message || 'Unable to load product.')
@@ -237,6 +265,39 @@ export default function ProductsForm() {
     setApiError('')
   }
 
+  // Select Product Image
+  function handleImageChange(event) {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      setApiError('Only JPG, JPEG, PNG and WEBP images are allowed.')
+      event.target.value = ''
+      return
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      setApiError('Image size cannot exceed 4MB.')
+      event.target.value = ''
+      return
+    }
+
+    setApiError('')
+    setImageFile(file)
+  }
+
+  // Remove newly selected image
+  function removeSelectedImage() {
+    setImageFile(null)
+
+    const input = document.getElementById('product-image')
+
+    if (input) {
+      input.value = ''
+    }
+  }
+
   function validateForm() {
     const nextErrors = {}
 
@@ -244,7 +305,6 @@ export default function ProductsForm() {
     const sku = form.sku.trim().toUpperCase()
     const barcode = form.barcode.trim()
     const description = form.description.trim()
-    const imageUrl = form.imageUrl.trim()
 
     const costPrice = Number(form.costPrice)
     const sellingPrice = Number(form.sellingPrice)
@@ -287,18 +347,6 @@ export default function ProductsForm() {
       nextErrors.minStockLevel = 'Minimum stock cannot be negative.'
     }
 
-    if (imageUrl) {
-      try {
-        const parsedUrl = new URL(imageUrl)
-
-        if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-          nextErrors.imageUrl = 'Enter a valid HTTP or HTTPS image URL.'
-        }
-      } catch {
-        nextErrors.imageUrl = 'Enter a valid image URL.'
-      }
-    }
-
     if (!form.unit) {
       nextErrors.unit = 'Please select a unit.'
     }
@@ -322,7 +370,34 @@ export default function ProductsForm() {
     setSaving(true)
     setApiError('')
 
+    let uploadedFilePath = ''
+
+    const oldImagePath = form.imageUrl
+    let newImageUrl = form.imageUrl
+
     try {
+      // Upload new image first
+      if (imageFile) {
+        const uploadData = new FormData()
+
+        uploadData.append('file', imageFile)
+        uploadData.append('uploadFolder', 'products')
+        uploadData.append('filename', 'product-image')
+
+        const uploadResponse = await axiosInstance.post('/upload', uploadData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        })
+
+        if (!uploadResponse.data?.success || !uploadResponse.data?.filePath || !uploadResponse.data?.file) {
+          throw new Error(uploadResponse.data?.message || 'Product image upload failed. Please try again.')
+        }
+
+        uploadedFilePath = uploadResponse.data.filePath
+        newImageUrl = uploadedFilePath
+      }
+
       const payload = {
         name: form.name.trim(),
         sku: form.sku.trim().toUpperCase(),
@@ -342,7 +417,7 @@ export default function ProductsForm() {
           })),
 
         minStockLevel: Number(form.minStockLevel),
-        imageUrl: form.imageUrl.trim(),
+        imageUrl: newImageUrl,
         status: form.status,
       }
 
@@ -352,6 +427,19 @@ export default function ProductsForm() {
         throw new Error(response.data.message || 'Unable to save product.')
       }
 
+      // Delete old image only after successful product update
+      if (imageFile && oldImagePath && oldImagePath !== newImageUrl && oldImagePath.startsWith('/uploads/products/')) {
+        try {
+          await axiosInstance.delete('/upload', {
+            data: {
+              filePath: oldImagePath,
+            },
+          })
+        } catch (deleteError) {
+          console.error('Old product image deletion failed:', deleteError)
+        }
+      }
+
       navigate('/company/products', {
         replace: true,
         state: {
@@ -359,6 +447,19 @@ export default function ProductsForm() {
         },
       })
     } catch (error) {
+      // If product save fails, remove newly uploaded image
+      if (uploadedFilePath) {
+        try {
+          await axiosInstance.delete('/upload', {
+            data: {
+              filePath: uploadedFilePath,
+            },
+          })
+        } catch (deleteError) {
+          console.error('Uploaded product image cleanup failed:', deleteError)
+        }
+      }
+
       setApiError(error.response?.data?.message || error.message || 'Something went wrong while saving the product.')
     } finally {
       setSaving(false)
@@ -389,8 +490,7 @@ export default function ProductsForm() {
     )
   }
 
-
-  //  INITIAL LOADING
+  // Initial Loading
   if (loading) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
@@ -411,10 +511,10 @@ export default function ProductsForm() {
     )
   }
 
+  const displayedImage = imagePreview || getProductImageUrl(form.imageUrl)
+
   return (
     <div className="min-w-0 space-y-4 text-sm">
-      {toast && <Toast toast={toast} onClose={() => setToast(null)} />}
-
       {/* Header */}
       <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
@@ -636,40 +736,55 @@ export default function ProductsForm() {
             </div>
 
             {/* Opening Stock */}
-            <div className="min-w-0 space-y-3 sm:col-span-2 lg:col-span-3">
-              <div>
-                <label className={labelClass}>Opening Stock by Warehouse</label>
+            {!isEdit ? (
+              <div className="min-w-0 space-y-3 sm:col-span-2 lg:col-span-3">
+                <div>
+                  <label className={labelClass}>Opening Stock by Warehouse</label>
 
-                <p className="text-[10px] text-erp-text-muted">Enter the initial quantity available at each warehouse.</p>
+                  <p className="text-[10px] text-erp-text-muted">Enter the initial quantity available at each warehouse.</p>
+                </div>
+
+                {warehouseStocks.map((item) => {
+                  const warehouse = warehouses.find((entry) => entry._id === item.warehouseId)
+
+                  return (
+                    <div key={item.warehouseId} className="grid gap-2 sm:grid-cols-2">
+                      <div className="flex h-10 items-center rounded-lg border border-erp-border px-3 text-xs">{warehouse?.name || warehouse?.warehouseName}</div>
+
+                      <input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={item.quantity}
+                        disabled={saving}
+                        placeholder="Opening quantity"
+                        className={inputClass('warehouseStocks')}
+                        onChange={(event) => {
+                          const quantity = event.target.value
+
+                          setWarehouseStocks((current) => current.map((stock) => (stock.warehouseId === item.warehouseId ? { ...stock, quantity } : stock)))
+                        }}
+                      />
+                    </div>
+                  )
+                })}
+
+                <p className="text-xs font-semibold text-erp-text">Total Opening Stock: {warehouseStocks.reduce((total, item) => total + (Number(item.quantity) || 0), 0)}</p>
               </div>
+            ) : (
+              <div className="rounded-lg border border-erp-border bg-erp-hover/30 p-3 sm:col-span-2 lg:col-span-3">
+                <p className="text-xs font-semibold text-erp-text">Existing Warehouse Stock</p>
 
-              {warehouseStocks.map((item) => {
-                const warehouse = warehouses.find((entry) => entry._id === item.warehouseId)
+                <p className="mt-1 text-[11px] text-erp-text-secondary">Opening stock cannot be changed from product edit. Use Inventory adjustments for stock changes.</p>
 
-                return (
-                  <div key={item.warehouseId} className="grid gap-2 sm:grid-cols-2">
-                    <div className="flex h-10 items-center rounded-lg border border-erp-border px-3 text-xs">{warehouse?.name || warehouse?.warehouseName}</div>
-
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={item.quantity}
-                      disabled={saving}
-                      placeholder="Opening quantity"
-                      className={inputClass('warehouseStocks')}
-                      onChange={(event) => {
-                        const quantity = event.target.value
-
-                        setWarehouseStocks((current) => current.map((stock) => (stock.warehouseId === item.warehouseId ? { ...stock, quantity } : stock)))
-                      }}
-                    />
+                {warehouseStocks.map((item) => (
+                  <div key={item.warehouseId} className="mt-2 flex justify-between rounded-lg border border-erp-border bg-erp-surface p-3 text-xs">
+                    <span>{item.warehouseName || 'Warehouse'}</span>
+                    <span className="font-semibold">{item.quantity}</span>
                   </div>
-                )
-              })}
-
-              <p className="text-xs font-semibold text-erp-text">Total Opening Stock: {warehouseStocks.reduce((total, item) => total + (Number(item.quantity) || 0), 0)}</p>
-            </div>
+                ))}
+              </div>
+            )}
 
             {/* Minimum Stock */}
             <div className="min-w-0 space-y-1">
@@ -690,25 +805,25 @@ export default function ProductsForm() {
         <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
           <div className="flex items-center gap-2 border-b border-erp-border px-3 py-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
-              <Image size={16} />
+              <ImageIcon size={16} />
             </div>
 
             <div>
               <h2 className="text-sm font-bold text-erp-text">Product Image & Status</h2>
-              <p className="text-[11px] text-erp-text-secondary">Set the product image and control its availability.</p>
+
+              <p className="text-[11px] text-erp-text-secondary">Upload the product image and control its availability.</p>
             </div>
           </div>
 
           <div className="grid gap-4 p-4 lg:grid-cols-2">
-            {/* Product Image */}
+            {/* Product Image Preview */}
             <div className="min-w-0 space-y-3">
-              {/* Large Image Preview */}
-              <p className="break-all text-xs text-erp-text-secondary">{form.imageUrl.trim() || 'Enter an image URL to preview the product.'}</p>
+              <p className="text-xs font-semibold text-erp-text-secondary">Image Preview</p>
 
               <div className="flex min-h-64 items-center justify-center overflow-hidden rounded-xl border border-erp-border bg-erp-hover/30 p-3 sm:min-h-80">
-                {form.imageUrl.trim() ? (
+                {displayedImage ? (
                   <img
-                    src={form.imageUrl}
+                    src={displayedImage}
                     alt="Product preview"
                     className="h-64 w-full rounded-lg object-contain sm:h-80"
                     onError={(event) => {
@@ -723,35 +838,67 @@ export default function ProductsForm() {
                     <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-erp-primary/10 text-erp-primary">
                       <Package size={48} />
                     </div>
+
                     <p className="text-sm">No product image available</p>
                   </div>
                 )}
               </div>
+
+              {imageFile && (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-erp-primary/20 bg-erp-primary/5 p-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-semibold text-erp-text">{imageFile.name}</p>
+
+                    <p className="text-[10px] text-erp-text-secondary">{(imageFile.size / 1024).toFixed(1)} KB</p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={removeSelectedImage}
+                    disabled={saving}
+                    className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    <X size={14} />
+                    Remove
+                  </button>
+                </div>
+              )}
+
+              {isEdit && form.imageUrl && !imageFile && <p className="break-all text-[10px] text-erp-text-muted">Existing image: {form.imageUrl}</p>}
             </div>
 
-            {/* Product Status */}
-
-            <div>
-              <div className="flex min-w-0 flex-col gap-3">
+            {/* Upload and Status */}
+            <div className="flex min-w-0 flex-col gap-4">
+              {/* Image Upload */}
+              <div className="space-y-2">
                 <label htmlFor="product-image" className={labelClass}>
-                  Image URL
+                  Upload Product Image
                 </label>
 
-                <input
-                  id="product-image"
-                  type="url"
-                  maxLength={2048}
-                  value={form.imageUrl}
-                  onChange={(event) => updateField('imageUrl', event.target.value)}
-                  placeholder="https://example.com/product.jpg"
-                  disabled={saving}
-                  className={inputClass('imageUrl')}
-                />
+                <label
+                  htmlFor="product-image"
+                  className={`flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-erp-border bg-erp-hover/30 p-5 text-center transition hover:border-erp-primary hover:bg-erp-primary/5 ${
+                    saving ? 'pointer-events-none opacity-60' : ''
+                  }`}
+                >
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-erp-primary/10 text-erp-primary">
+                    <Upload size={22} />
+                  </div>
 
-                {errorText('imageUrl')}
+                  <p className="mt-3 text-xs font-semibold text-erp-text">Click to upload image</p>
+
+                  <p className="mt-1 text-[10px] text-erp-text-secondary">JPG, JPEG, PNG or WEBP</p>
+
+                  <p className="mt-1 text-[10px] text-erp-text-muted">Maximum file size: 4 MB</p>
+                </label>
+
+                <input id="product-image" type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" onChange={handleImageChange} disabled={saving} className="hidden" />
+
+                {imageFile && <p className="text-[10px] font-medium text-emerald-600">New image selected. It will upload when you save the product.</p>}
               </div>
 
-              <div className="flex min-w-0 flex-col gap-3">
+              {/* Product Status */}
+              <div className="space-y-3">
                 <label htmlFor="product-status" className={labelClass}>
                   Product Status
                 </label>
@@ -768,20 +915,24 @@ export default function ProductsForm() {
 
                   <div>
                     <p className="text-sm font-semibold">{form.status === 'Active' ? 'Active Product' : 'Inactive Product'}</p>
+
                     <p className="mt-1 text-xs leading-5">
                       {form.status === 'Active' ? 'This product is active and available for normal product selection and operations.' : 'This product is retained in the system but marked as unavailable for normal use.'}
                     </p>
                   </div>
                 </div>
+              </div>
 
-                <div className="mt-auto rounded-xl border border-erp-border bg-erp-hover/30 p-4">
-                  <p className="text-sm font-semibold text-erp-text">Product Image Guidelines</p>
-                  <ul className="mt-2 list-inside list-disc space-y-1 text-xs leading-5 text-erp-text-secondary">
-                    <li>Use a publicly accessible image URL. & Prefer a clear, high-quality product image.</li>
-                    {/* <li>Prefer a clear, high-quality product image.</li> */}
-                    <li>Supported formats depend on the image URL and browser.</li>
-                  </ul>
-                </div>
+              {/* Image Guidelines */}
+              <div className="mt-auto rounded-xl border border-erp-border bg-erp-hover/30 p-4">
+                <p className="text-sm font-semibold text-erp-text">Product Image Guidelines</p>
+
+                <ul className="mt-2 list-inside list-disc space-y-1 text-xs leading-5 text-erp-text-secondary">
+                  <li>Supported formats: JPG, JPEG, PNG and WEBP.</li>
+                  <li>Maximum image size is 4 MB.</li>
+                  <li>Prefer a clear, high-quality product image.</li>
+                  <li>Existing image will be replaced after successful save.</li>
+                </ul>
               </div>
             </div>
           </div>
