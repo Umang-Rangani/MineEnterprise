@@ -10,9 +10,11 @@ var cors = require('cors')
 var indexRouter = require('./routes/index')
 const superAdminAuth = require('./routes/superAdminAuth')
 const superAdminDashboard = require('./routes/superAdminDashboard')
+const superAdminUsers = require('./routes/superAdminUsers')
+const systemActivityRouter = require('./routes/systemActivity')
+const platformSettingsRouter = require('./routes/platformSettings')
 
 var companiesRouter = require('./routes/companies')
-
 const employeeAuthRouter = require('./routes/employeeAuth')
 const employeesRouter = require('./routes/employees')
 const rolesRouter = require('./routes/roles')
@@ -39,6 +41,8 @@ const trialBalanceRouter = require('./routes/trialBalance')
 const financialStatementsRouter = require('./routes/financialStatements')
 
 const initializeChartOfAccounts = require('./routes/initializeChartOfAccounts')
+
+const reportsRouter = require('./routes/reports')
 
 // Upload Route
 const uploadRouter = require('./routes/upload')
@@ -67,6 +71,9 @@ app.use('/', indexRouter)
 
 app.use('/superadmin', superAdminAuth)
 app.use('/superadmin/dashboard', superAdminDashboard)
+app.use('/superadmin/users', superAdminUsers)
+app.use('/superadmin/activity', systemActivityRouter)
+app.use('/superadmin/settings', platformSettingsRouter)
 
 app.use('/companies', companiesRouter)
 
@@ -94,6 +101,8 @@ app.use('/erp/general-ledger', generalLedgerRouter)
 app.use('/erp/trial-balance', trialBalanceRouter)
 app.use('/erp/financial-statements', financialStatementsRouter)
 app.use('/erp/chart-of-accounts', initializeChartOfAccounts)
+
+app.use('/erp/reports', reportsRouter)
 
 // File Upload
 app.use('/upload', uploadRouter)

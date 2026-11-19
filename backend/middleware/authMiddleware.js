@@ -43,7 +43,7 @@ const authMiddleware = async (req, res, next) => {
       })
     }
 
-    const user = await User.findById(decoded.userId).select('_id companyId name email role roles status permissionOverrides defaultWarehouseId assignedWarehouses')
+    const user = await User.findById(decoded.userId).select('_id companyId name email phone role roles status permissionOverrides defaultWarehouseId assignedWarehouses')
 
     if (!user || user.status !== 'Active') {
       clearAuthCookie(res)
@@ -78,6 +78,7 @@ const authMiddleware = async (req, res, next) => {
         companyId: null,
         name: user.name,
         email: user.email,
+        phone: user.phone || '',
         role: user.role,
         roles: safeRoles,
         permissionOverrides: user.permissionOverrides,
@@ -122,6 +123,7 @@ const authMiddleware = async (req, res, next) => {
       companyId: user.companyId.toString(),
       name: user.name,
       email: user.email,
+      phone: user.phone || '',
       role: user.role,
       roles: safeRoles,
       permissionOverrides: user.permissionOverrides,

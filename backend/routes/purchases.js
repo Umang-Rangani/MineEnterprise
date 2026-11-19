@@ -6,6 +6,7 @@ const PurchaseCounter = require('../models/PurchaseCounter')
 const Product = require('../models/Product')
 const Supplier = require('../models/Supplier')
 
+
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
 

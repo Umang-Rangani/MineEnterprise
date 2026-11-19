@@ -166,6 +166,60 @@ const navigationItems = [
       },
     ],
   },
+
+  {
+    label: 'Reports',
+    path: '/company/reports',
+    icon: ChartNoAxesCombined,
+    actions: ['reports:view'],
+    children: [
+      {
+        label: 'Sales Report',
+        path: '/company/reports/sales',
+        actions: ['reports:sales'],
+      },
+      {
+        label: 'Purchase Report',
+        path: '/company/reports/purchases',
+        actions: ['reports:purchase'],
+      },
+      {
+        label: 'Inventory Report',
+        path: '/company/reports/inventory',
+        actions: ['reports:inventory'],
+      },
+      {
+        label: 'Stock Movement Report',
+        path: '/company/reports/stock-movements',
+        actions: ['reports:inventory'],
+      },
+      {
+        label: 'Customer Report',
+        path: '/company/reports/customers',
+        actions: ['reports:customer'],
+      },
+      {
+        label: 'Supplier Report',
+        path: '/company/reports/suppliers',
+        actions: ['reports:supplier'],
+      },
+      {
+        label: 'Invoice Report',
+        path: '/company/reports/invoices',
+        actions: ['reports:invoice'],
+      },
+      {
+        label: 'Payment Report',
+        path: '/company/reports/payments',
+        actions: ['reports:payment'],
+      },
+      {
+        label: 'Expense Report',
+        path: '/company/reports/expenses',
+        actions: ['reports:expense'],
+      },
+    ],
+  },
 ]
 
 const pageTitles = {
@@ -190,6 +244,8 @@ const pageTitles = {
   'general-ledger': 'General Ledger',
   'trial-balance': 'Trial Balance',
   'financial-statements': 'Financial Statements',
+
+  reports: 'Reports',
 }
 
 const pageDescriptions = {
@@ -214,6 +270,8 @@ const pageDescriptions = {
   'general-ledger': 'View account-wise debit and credit transactions',
   'trial-balance': 'Review debit and credit balances of all accounts',
   'financial-statements': 'View profit and loss and balance sheet reports',
+
+  reports: 'View and analyze your company business reports',
 }
 
 const sectionKey = {
@@ -232,6 +290,7 @@ const sectionKey = {
   payment: 'Payment',
   expense: 'Expense',
   accounting: 'Accounting',
+  reports: 'Reports',
 }
 
 const hasPermission = (permissions, actions = []) => {
@@ -553,11 +612,49 @@ const routePermissions = [
     actions: ['warehouse:list'],
   },
 
-  // Reports and settings
+  // Reports
+  {
+    pattern: /^\/company\/reports\/sales\/?$/,
+    actions: ['reports:sales'],
+  },
+  {
+    pattern: /^\/company\/reports\/purchases\/?$/,
+    actions: ['reports:purchase'],
+  },
+  {
+    pattern: /^\/company\/reports\/inventory\/?$/,
+    actions: ['reports:inventory'],
+  },
+  {
+    pattern: /^\/company\/reports\/stock-movements\/?$/,
+    actions: ['reports:inventory'],
+  },
+  {
+    pattern: /^\/company\/reports\/customers\/?$/,
+    actions: ['reports:customer'],
+  },
+  {
+    pattern: /^\/company\/reports\/suppliers\/?$/,
+    actions: ['reports:supplier'],
+  },
+  {
+    pattern: /^\/company\/reports\/invoices\/?$/,
+    actions: ['reports:invoice'],
+  },
+  {
+    pattern: /^\/company\/reports\/payments\/?$/,
+    actions: ['reports:payment'],
+  },
+  {
+    pattern: /^\/company\/reports\/expenses\/?$/,
+    actions: ['reports:expense'],
+  },
   {
     pattern: /^\/company\/reports\/?$/,
     actions: ['reports:view'],
   },
+
+  // Settings
   {
     pattern: /^\/company\/settings\/?$/,
     actions: ['settings:view'],
@@ -588,6 +685,8 @@ export default function CompaniesRoute() {
       location.pathname.startsWith('/company/trial-balance') ||
       location.pathname.startsWith('/company/financial-statements'),
   )
+
+  const [reportsOpen, setReportsOpen] = useState(location.pathname.startsWith('/company/reports'))
 
   useEffect(() => {
     setSidebarOpen(false)
@@ -828,7 +927,13 @@ export default function CompaniesRoute() {
 
               if (visibleChildren.length === 0) return null
 
-              const isAccountingActive = visibleChildren.some((child) => location.pathname.startsWith(child.path))
+              const isReports = item.label === 'Reports'
+
+              const isSectionActive = isReports ? location.pathname.startsWith('/company/reports') : visibleChildren.some((child) => location.pathname.startsWith(child.path))
+
+              const isOpen = isReports ? reportsOpen : accountingOpen
+
+              const setSectionOpen = isReports ? setReportsOpen : setAccountingOpen
 
               return (
                 <div key={item.label}>
@@ -839,25 +944,29 @@ export default function CompaniesRoute() {
                         setSidebarCollapsed(false)
                       }
 
-                      setAccountingOpen(true)
-                      navigate('/company/chart-of-accounts')
+                      if (isReports) {
+                        navigate(item.path)
+                        setReportsOpen(true)
+                      } else {
+                        setAccountingOpen((previous) => !previous)
+                      }
                     }}
                     title={sidebarCollapsed ? item.label : undefined}
                     className={`group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors ${
-                      isAccountingActive ? 'bg-erp-primary-light text-erp-primary' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      isSectionActive ? 'bg-erp-primary-light text-erp-primary' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     } ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
                   >
-                    <Icon size={17} className={`shrink-0 ${isAccountingActive ? 'text-erp-primary' : 'text-slate-500'}`} />
+                    <Icon size={17} className={`shrink-0 ${isSectionActive ? 'text-erp-primary' : 'text-slate-500'}`} />
 
                     {!sidebarCollapsed && (
                       <>
                         <span className="flex-1 text-left">{item.label}</span>
-                        <ChevronDown size={15} className={`transition-transform ${accountingOpen ? 'rotate-180' : ''}`} />
+                        <ChevronDown size={15} className={`transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                       </>
                     )}
                   </button>
 
-                  {!sidebarCollapsed && accountingOpen && (
+                  {!sidebarCollapsed && isOpen && (
                     <div className="ml-4 mt-1 space-y-0.5 border-l border-slate-200 pl-3">
                       {visibleChildren.map((child) => (
                         <NavLink

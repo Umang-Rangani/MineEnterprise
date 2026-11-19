@@ -75,6 +75,22 @@ import CompanyGeneralLedger from './components/company/CompanyGeneralLedger'
 import CompanyTrialBalance from './components/company/CompanyTrialBalance'
 import CompanyProfitLoss from './components/company/CompanyProfitLoss'
 import CompanyBalanceSheet from './components/company/CompanyBalanceSheet'
+import CompanyReports from './components/company/CompanyReports'
+import SalesReport from './components/company/SalesReport'
+import PurchaseReport from './components/company/PurchaseReport'
+import InventoryReport from './components/company/InventoryReport'
+import StockMovementReport from './components/company/StockMovementReport'
+import CustomerReport from './components/company/CustomerReport'
+import SupplierReport from './components/company/SupplierReport'
+import InvoiceReport from './components/company/InvoiceReport'
+import PaymentReport from './components/company/PaymentReport'
+import ExpenseReport from './components/company/ExpenseReport'
+import SuperAdminAllCompanies from './components/superadmin/SuperAdminAllCompanies'
+import SuperAdminCompanyDetails from './components/superadmin/SuperAdminCompanyDetails'
+import SuperAdminUsers from './components/superadmin/SuperAdminUsers'
+import SuperAdminUserDetails from './components/superadmin/SuperAdminUserDetails'
+import SuperAdminActivity from './components/superadmin/SuperAdminActivity'
+import SuperAdminSettings from './components/superadmin/SuperAdminSettings'
 
 export default function App() {
   return (
@@ -89,6 +105,15 @@ export default function App() {
         <Route path="/superadmin" element={<SuperAdminRoute />}>
           <Route index element={<SuperAdminDashboard />} />
           <Route path="companies" element={<SuperAdminCompanies />} />
+
+          <Route path="all-companies" element={<SuperAdminAllCompanies />} />
+          <Route path="companies/:companyId" element={<SuperAdminCompanyDetails />} />
+
+          <Route path="users" element={<SuperAdminUsers />} />
+          <Route path="users/:userId" element={<SuperAdminUserDetails />} />
+
+          <Route path="activity" element={<SuperAdminActivity />} />
+          <Route path="settings" element={<SuperAdminSettings />} />
         </Route>
       </Route>
 
@@ -205,8 +230,17 @@ export default function App() {
           <Route path="financial-statements/profit-loss" element={<CompanyProfitLoss />} />
           <Route path="financial-statements/balance-sheet" element={<CompanyBalanceSheet />} />
 
-
-          {/* શું Reports Module શરૂ કરીએ? */}
+          {/* Reports */}
+          <Route path="reports" element={<CompanyReports />} />
+          <Route path="reports/sales" element={<SalesReport />} />
+          <Route path="reports/purchases" element={<PurchaseReport />} />
+          <Route path="reports/inventory" element={<InventoryReport />} />
+          <Route path="reports/stock-movements" element={<StockMovementReport />} />
+          <Route path="reports/customers" element={<CustomerReport />} />
+          <Route path="reports/suppliers" element={<SupplierReport />} />
+          <Route path="reports/invoices" element={<InvoiceReport />} />
+          <Route path="reports/payments" element={<PaymentReport />} />
+          <Route path="reports/expenses" element={<ExpenseReport />} />
         </Route>
       </Route>
 

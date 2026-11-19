@@ -186,10 +186,17 @@ const ACTIONS = {
   Reports: {
     VIEW: 'reports:view',
     EXPORT: 'reports:export',
+
     FINANCIAL: 'reports:financial',
     INVENTORY: 'reports:inventory',
     SALES: 'reports:sales',
     PURCHASE: 'reports:purchase',
+
+    CUSTOMER: 'reports:customer',
+    SUPPLIER: 'reports:supplier',
+    INVOICE: 'reports:invoice',
+    PAYMENT: 'reports:payment',
+    EXPENSE: 'reports:expense',
   },
 
   Settings: {
@@ -197,7 +204,6 @@ const ACTIONS = {
     UPDATE_COMPANY: 'settings:update-company',
     UPDATE_PREFERENCES: 'settings:update-preferences',
   },
-  
 }
 
 const ALL_SECTION_ACTIONS = Object.fromEntries(Object.entries(ACTIONS).map(([section, actions]) => [SECTION_KEYS[section], Object.values(actions)]))
@@ -237,7 +243,18 @@ const ROLE_DEFAULT_PERMISSIONS = {
     [SECTION_KEYS.Payment]: Object.values(ACTIONS.Payment),
     [SECTION_KEYS.Expense]: Object.values(ACTIONS.Expense),
     [SECTION_KEYS.Accounting]: Object.values(ACTIONS.Accounting),
-    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.EXPORT, ACTIONS.Reports.FINANCIAL, ACTIONS.Reports.SALES, ACTIONS.Reports.PURCHASE],
+    [SECTION_KEYS.Reports]: [
+      ACTIONS.Reports.VIEW,
+      ACTIONS.Reports.EXPORT,
+      ACTIONS.Reports.FINANCIAL,
+      ACTIONS.Reports.SALES,
+      ACTIONS.Reports.PURCHASE,
+      ACTIONS.Reports.CUSTOMER,
+      ACTIONS.Reports.SUPPLIER,
+      ACTIONS.Reports.INVOICE,
+      ACTIONS.Reports.PAYMENT,
+      ACTIONS.Reports.EXPENSE,
+    ],
   },
 
   [ROLES.INVENTORY_MANAGER]: {
@@ -248,7 +265,7 @@ const ROLE_DEFAULT_PERMISSIONS = {
     [SECTION_KEYS.Warehouse]: Object.values(ACTIONS.Warehouse),
     [SECTION_KEYS.Supplier]: [ACTIONS.Supplier.LIST, ACTIONS.Supplier.VIEW, ACTIONS.Supplier.CREATE, ACTIONS.Supplier.UPDATE, ACTIONS.Supplier.UPDATE_STATUS, ACTIONS.Supplier.EXPORT],
     [SECTION_KEYS.Purchase]: [ACTIONS.Purchase.LIST, ACTIONS.Purchase.VIEW, ACTIONS.Purchase.CREATE, ACTIONS.Purchase.UPDATE, ACTIONS.Purchase.UPDATE_STATUS, ACTIONS.Purchase.EXPORT],
-    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.INVENTORY, ACTIONS.Reports.PURCHASE],
+    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.INVENTORY, ACTIONS.Reports.PURCHASE, ACTIONS.Reports.SUPPLIER],
   },
 
   [ROLES.SALES_MANAGER]: {
@@ -258,7 +275,7 @@ const ROLE_DEFAULT_PERMISSIONS = {
     [SECTION_KEYS.Sales]: Object.values(ACTIONS.Sales),
     [SECTION_KEYS.Invoice]: Object.values(ACTIONS.Invoice),
     [SECTION_KEYS.Payment]: [ACTIONS.Payment.LIST, ACTIONS.Payment.VIEW, ACTIONS.Payment.RECORD],
-    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.SALES, ACTIONS.Reports.EXPORT],
+    [SECTION_KEYS.Reports]: [ACTIONS.Reports.VIEW, ACTIONS.Reports.SALES, ACTIONS.Reports.EXPORT, ACTIONS.Reports.CUSTOMER, ACTIONS.Reports.INVOICE, ACTIONS.Reports.PAYMENT],
   },
 
   [ROLES.EMPLOYEE]: {

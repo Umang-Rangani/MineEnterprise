@@ -8,6 +8,7 @@ const router = express.Router()
 
 const authMiddleware = require('../middleware/authMiddleware')
 const initializeDefaultChartOfAccounts = require('../services/defaultChartOfAccounts')
+const logSystemActivity = require('../services/systemActivityService')
 
 router.get('/me', authMiddleware, async (req, res) => {
   try {
@@ -169,7 +170,7 @@ router.post('/register', async (req, res) => {
         { session },
       )
 
-      await Company.create(
+      const [createdCompany] = await Company.create(
         [
           {
             companyName: companyName.trim(),
@@ -193,6 +194,27 @@ router.post('/register', async (req, res) => {
         ],
         { session },
       )
+
+      await logSystemActivity({
+        actor: {
+          userId: owner._id,
+          name: owner.name,
+          email: owner.email,
+          role: owner.role,
+        },
+        company: {
+          companyId: createdCompany._id,
+          companyName: createdCompany.companyName,
+        },
+        action: 'COMPANY_REGISTERED',
+        description: `${createdCompany.companyName} was registered and is awaiting approval.`,
+        metadata: {
+          companyStatus: createdCompany.status,
+          businessType: createdCompany.businessType,
+        },
+        req,
+        session,
+      })
     })
 
     return res.status(201).json({
@@ -218,6 +240,137 @@ router.post('/register', async (req, res) => {
   }
 })
 
+// SuperAdmin: Get all companies with search, filter and pagination
+router.get('/all', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'SuperAdmin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. SuperAdmin only.',
+      })
+    }
+
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10))
+
+    const { search = '', status = '' } = req.query
+
+    const allowedStatuses = ['Pending', 'Approved', 'Rejected', 'Inactive']
+
+    if (status && !allowedStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid company status.',
+      })
+    }
+
+    const filter = {}
+
+    if (status) {
+      filter.status = status
+    }
+
+    const searchText = search.trim()
+
+    if (searchText) {
+      const escapedSearch = searchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+      const regex = new RegExp(escapedSearch, 'i')
+
+      const matchingOwners = await User.find({
+        $or: [{ name: regex }, { email: regex }],
+      }).distinct('_id')
+
+      filter.$or = [
+        { companyName: regex },
+        { companyEmail: regex },
+        { companyPhone: regex },
+        { businessType: regex },
+        { businessCategory: regex },
+        { city: regex },
+        { state: regex },
+        { country: regex },
+        { gstNumber: regex },
+        { panNumber: regex },
+        { owner: { $in: matchingOwners } },
+      ]
+    }
+
+    const [companies, totalCompanies] = await Promise.all([
+      Company.find(filter)
+        .populate('owner', 'name email phone')
+        .populate('approvedBy', 'name email')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .lean(),
+
+      Company.countDocuments(filter),
+    ])
+
+    return res.status(200).json({
+      success: true,
+      companies,
+      pagination: {
+        currentPage: page,
+        limit,
+        totalCompanies,
+        totalPages: Math.ceil(totalCompanies / limit),
+      },
+    })
+  } catch (error) {
+    console.error('All companies error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to fetch companies.',
+    })
+  }
+})
+
+// SuperAdmin: Get single company details
+router.get('/:companyId', authMiddleware, async (req, res) => {
+  try {
+    if (req.user.role !== 'SuperAdmin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. SuperAdmin only.',
+      })
+    }
+
+    const { companyId } = req.params
+
+    if (!mongoose.isValidObjectId(companyId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid company ID.',
+      })
+    }
+
+    const company = await Company.findById(companyId).populate('owner', 'name email phone status createdAt').populate('approvedBy', 'name email').lean()
+
+    if (!company) {
+      return res.status(404).json({
+        success: false,
+        message: 'Company not found.',
+      })
+    }
+
+    return res.status(200).json({
+      success: true,
+      company,
+    })
+  } catch (error) {
+    console.error('Single company details error:', error)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to load company details.',
+    })
+  }
+})
+
+// SuperAdmin: Approve or Reject company
 router.patch('/:companyId/review', authMiddleware, async (req, res) => {
   try {
     if (req.user.role !== 'SuperAdmin') {
@@ -267,6 +420,7 @@ router.patch('/:companyId/review', authMiddleware, async (req, res) => {
       })
     }
 
+    // Approve company
     if (action === 'Approve') {
       const session = await mongoose.startSession()
 
@@ -289,9 +443,55 @@ router.patch('/:companyId/review', authMiddleware, async (req, res) => {
             throw new Error('COMPANY_REVIEW_CONFLICT')
           }
 
-          await User.updateOne({ _id: updatedCompany.owner, role: 'CompanyAdmin' }, { $set: { companyId: updatedCompany._id } }, { session })
+          const ownerUpdate = await User.updateOne(
+            {
+              _id: updatedCompany.owner,
+              role: 'CompanyAdmin',
+            },
+            {
+              $set: {
+                companyId: updatedCompany._id,
+              },
+            },
+            { session },
+          )
+
+          if (ownerUpdate.matchedCount !== 1) {
+            throw new Error('COMPANY_OWNER_NOT_FOUND')
+          }
 
           await initializeDefaultChartOfAccounts(updatedCompany._id, session)
+
+          const companyOwner = await User.findById(updatedCompany.owner).select('name email role').session(session)
+
+          await logSystemActivity({
+            actor: {
+              userId: req.user.userId,
+              name: req.user.name,
+              email: req.user.email,
+              role: req.user.role,
+            },
+            target: companyOwner
+              ? {
+                  userId: companyOwner._id,
+                  name: companyOwner.name,
+                  email: companyOwner.email,
+                  role: companyOwner.role,
+                }
+              : null,
+            company: {
+              companyId: updatedCompany._id,
+              companyName: updatedCompany.companyName,
+            },
+            action: 'COMPANY_APPROVED',
+            description: `${updatedCompany.companyName} was approved by ${req.user.name}.`,
+            metadata: {
+              previousStatus: 'Pending',
+              newStatus: 'Approved',
+            },
+            req,
+            session,
+          })
         })
       } catch (error) {
         if (error.message === 'COMPANY_REVIEW_CONFLICT') {
@@ -312,24 +512,72 @@ router.patch('/:companyId/review', authMiddleware, async (req, res) => {
       })
     }
 
-    const updatedCompany = await Company.findOneAndUpdate(
-      { _id: companyId, status: 'Pending' },
-      {
-        $set: {
-          status: 'Rejected',
-          approvedBy: null,
-          approvedAt: null,
-          rejectionReason: rejectionReason.trim(),
-        },
-      },
-      { new: true },
-    )
+    // Reject company
+    const rejectionSession = await mongoose.startSession()
+    let updatedCompany = null
 
-    if (!updatedCompany) {
-      return res.status(409).json({
-        success: false,
-        message: 'Company has already been reviewed.',
+    try {
+      await rejectionSession.withTransaction(async () => {
+        updatedCompany = await Company.findOneAndUpdate(
+          { _id: companyId, status: 'Pending' },
+          {
+            $set: {
+              status: 'Rejected',
+              approvedBy: null,
+              approvedAt: null,
+              rejectionReason: rejectionReason.trim(),
+            },
+          },
+          { new: true, session: rejectionSession },
+        )
+
+        if (!updatedCompany) {
+          throw new Error('COMPANY_REVIEW_CONFLICT')
+        }
+
+        const companyOwner = await User.findById(updatedCompany.owner).select('name email role').session(rejectionSession)
+
+        await logSystemActivity({
+          actor: {
+            userId: req.user.userId,
+            name: req.user.name,
+            email: req.user.email,
+            role: req.user.role,
+          },
+          target: companyOwner
+            ? {
+                userId: companyOwner._id,
+                name: companyOwner.name,
+                email: companyOwner.email,
+                role: companyOwner.role,
+              }
+            : null,
+          company: {
+            companyId: updatedCompany._id,
+            companyName: updatedCompany.companyName,
+          },
+          action: 'COMPANY_REJECTED',
+          description: `${updatedCompany.companyName} was rejected by ${req.user.name}.`,
+          metadata: {
+            previousStatus: 'Pending',
+            newStatus: 'Rejected',
+            rejectionReason: rejectionReason.trim(),
+          },
+          req,
+          session: rejectionSession,
+        })
       })
+    } catch (error) {
+      if (error.message === 'COMPANY_REVIEW_CONFLICT') {
+        return res.status(409).json({
+          success: false,
+          message: 'Company has already been reviewed.',
+        })
+      }
+
+      throw error
+    } finally {
+      await rejectionSession.endSession()
     }
 
     return res.status(200).json({
