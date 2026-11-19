@@ -92,9 +92,9 @@ function getInventoryList(data) {
 }
 
 function getWarehouseStocks(item) {
-  const result = item?.warehouseStocks ?? item?.warehouses ?? item?.warehouseBreakdown ?? item?.warehouseStock ?? []
+  const candidates = [item?.warehouseStocks, item?.warehouses, item?.warehouseBreakdown, item?.warehouseStock]
 
-  return Array.isArray(result) ? result : []
+  return candidates.find((value) => Array.isArray(value) && value.length > 0) || candidates.find((value) => Array.isArray(value)) || []
 }
 
 function getWarehouseName(stock) {
@@ -595,7 +595,7 @@ export default function CompanyInventory() {
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-xs text-erp-text-muted">Not provided by API</span>
+                              <span className="text-xs text-erp-text-muted">No warehouse stock recorded</span>
                             )}
                           </td>
 
@@ -748,7 +748,7 @@ export default function CompanyInventory() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-xs text-erp-text-muted">Warehouse breakdown API responseમાં ઉપલબ્ધ નથી.</p>
+                          <p className="text-xs text-erp-text-muted">No warehouse stock recorded.</p>
                         )}
                       </div>
 

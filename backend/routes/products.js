@@ -179,6 +179,7 @@ router.get('/', permissionMiddleware('Product', 'LIST'), async (req, res, next) 
 
     const [products, total] = await Promise.all([
       Product.find(filter)
+        .populate({ path: 'categoryId', select: 'name' })
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)

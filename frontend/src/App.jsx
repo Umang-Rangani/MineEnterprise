@@ -91,6 +91,7 @@ import SuperAdminUsers from './components/superadmin/SuperAdminUsers'
 import SuperAdminUserDetails from './components/superadmin/SuperAdminUserDetails'
 import SuperAdminActivity from './components/superadmin/SuperAdminActivity'
 import SuperAdminSettings from './components/superadmin/SuperAdminSettings'
+import NotFound from './components/NotFound'
 
 export default function App() {
   return (
@@ -247,8 +248,10 @@ export default function App() {
       {/* Forbidden */}
       <Route path="/forbidden" element={<Forbidden />} />
 
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      {/* 404 Not Found */}
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
+
+// આગળનો Issue #8: Default Vite page title client ને યોગ્ય MineERP title થી બદલવો.

@@ -8,11 +8,6 @@ export default function Login() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  console.log('LOGIN DEBUG:', {
-    loading,
-    user,
-    pathname: location.pathname,
-  })
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -25,43 +20,7 @@ export default function Login() {
     return <Navigate to={destination} replace />
   }
 
-  // const handleSubmit = async (event) => {
-  //   event.preventDefault()
-  //   setError('')
-  //   setSubmitting(true)
-
-  //   try {
-  //     const currentUser = await login(email.trim(), password)
-
-  //     if (!currentUser) {
-  //       setError('Invalid email or password.')
-  //       return
-  //     }
-
-  //     const role = currentUser.role
-
-  //     let destination
-
-  //     if (role === 'SuperAdmin') {
-  //       destination = '/superadmin'
-  //     } else if (['CompanyAdmin', 'Employee'].includes(role)) {
-  //       destination = '/company'
-  //     } else {
-  //       setError('Your account does not have a valid role.')
-  //       return
-  //     }
-
-  //     const previousPath = location.state?.from?.pathname
-
-  //     const isAllowedPath = previousPath && previousPath !== '/login' && (role === 'SuperAdmin' ? previousPath.startsWith('/superadmin') : previousPath.startsWith('/company'))
-
-  //     navigate(isAllowedPath ? previousPath : destination, { replace: true })
-  //   } catch (err) {
-  //     setError(err.response?.data?.message || err.message || 'Invalid email or password.')
-  //   } finally {
-  //     setSubmitting(false)
-  //   }
-  // }
+ 
 
   const handleSubmit = async (event) => {
     event.preventDefault()

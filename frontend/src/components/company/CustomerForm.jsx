@@ -218,43 +218,71 @@ export default function CustomerForm() {
 
   const labelClass = 'mb-1.5 block text-xs font-semibold text-slate-700'
 
-  const renderInput = (field, label, placeholder = '', type = 'text', required = false) => (
-    <div className="min-w-0">
-      <label className={labelClass}>
-        {label}
-        {required && <span className="ml-1 text-red-500">*</span>}
-      </label>
+  const renderInput = (field, label, placeholder = '', type = 'text', required = false) => {
+    const inputId = `customer-${field}`
+    const errorId = `${inputId}-error`
 
-      <input
-        type={type}
-        value={form[field]}
-        onChange={(event) => updateField(field, event.target.value)}
-        placeholder={placeholder}
-        required={required}
-        min={type === 'number' ? 0 : undefined}
-        step={type === 'number' ? '0.01' : undefined}
-        className={inputClass(field)}
-      />
+    return (
+      <div className="min-w-0">
+        <label htmlFor={inputId} className={labelClass}>
+          {label}
+          {required && <span className="ml-1 text-red-500">*</span>}
+        </label>
 
-      {fieldErrors[field] && <p className="mt-1 text-[11px] text-red-600">{fieldErrors[field]}</p>}
-    </div>
-  )
+        <input
+          id={inputId}
+          name={field}
+          type={type}
+          value={form[field]}
+          onChange={(event) => updateField(field, event.target.value)}
+          placeholder={placeholder}
+          required={required}
+          min={type === 'number' ? 0 : undefined}
+          step={type === 'number' ? '0.01' : undefined}
+          aria-invalid={Boolean(fieldErrors[field])}
+          aria-describedby={fieldErrors[field] ? errorId : undefined}
+          className={inputClass(field)}
+        />
 
-  const renderTextarea = (field, label, placeholder = '') => (
-    <div className="min-w-0">
-      <label className={labelClass}>{label}</label>
+        {fieldErrors[field] && (
+          <p id={errorId} className="mt-1 text-[11px] text-red-600">
+            {fieldErrors[field]}
+          </p>
+        )}
+      </div>
+    )
+  }
 
-      <textarea
-        rows={3}
-        value={form[field]}
-        onChange={(event) => updateField(field, event.target.value)}
-        placeholder={placeholder}
-        className={`w-full resize-y rounded-lg border bg-white px-3 py-2.5 text-xs outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 ${fieldErrors[field] ? 'border-red-400' : 'border-slate-200'}`}
-      />
+  const renderTextarea = (field, label, placeholder = '') => {
+    const inputId = `customer-${field}`
+    const errorId = `${inputId}-error`
 
-      {fieldErrors[field] && <p className="mt-1 text-[11px] text-red-600">{fieldErrors[field]}</p>}
-    </div>
-  )
+    return (
+      <div className="min-w-0">
+        <label htmlFor={inputId} className={labelClass}>
+          {label}
+        </label>
+
+        <textarea
+          id={inputId}
+          name={field}
+          rows={3}
+          value={form[field]}
+          onChange={(event) => updateField(field, event.target.value)}
+          placeholder={placeholder}
+          aria-invalid={Boolean(fieldErrors[field])}
+          aria-describedby={fieldErrors[field] ? errorId : undefined}
+          className={`w-full resize-y rounded-lg border bg-white px-3 py-2.5 text-xs outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10 ${fieldErrors[field] ? 'border-red-400' : 'border-slate-200'}`}
+        />
+
+        {fieldErrors[field] && (
+          <p id={errorId} className="mt-1 text-[11px] text-red-600">
+            {fieldErrors[field]}
+          </p>
+        )}
+      </div>
+    )
+  }
 
   if (loading) {
     return (
@@ -351,7 +379,7 @@ export default function CustomerForm() {
 
             {isEdit && (
               <div className="min-w-0">
-                <label className={labelClass}>Customer Code</label>
+                <p className={labelClass}>Customer Code</p>
                 <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3">
                   <span className="text-xs font-semibold tracking-wide text-slate-700">{form.customerCode || 'Not available'}</span>
                   <span className="ml-auto text-[10px] font-medium text-emerald-600">Auto Generated</span>
@@ -361,7 +389,7 @@ export default function CustomerForm() {
 
             {!isEdit && (
               <div className="min-w-0">
-                <label className={labelClass}>Customer Code</label>
+                <p className={labelClass}>Customer Code</p>
                 <div className="flex h-10 items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3">
                   <Info size={14} className="shrink-0 text-blue-600" />
                   <span className="text-[11px] text-blue-700">Automatically generated after saving</span>
@@ -415,8 +443,11 @@ export default function CustomerForm() {
 
           <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="min-w-0">
-              <label className={labelClass}>Payment Terms</label>
-              <select value={form.paymentTerms} onChange={(event) => updateField('paymentTerms', event.target.value)} className={inputClass('paymentTerms')}>
+              <label htmlFor="customer-paymentTerms" className={labelClass}>
+                Payment Terms
+              </label>
+
+              <select id="customer-paymentTerms" name="paymentTerms" value={form.paymentTerms} onChange={(event) => updateField('paymentTerms', event.target.value)} className={inputClass('paymentTerms')}>
                 <option value="">Select payment terms</option>
                 <option value="Immediate">Immediate</option>
                 <option value="7 Days">7 Days</option>

@@ -63,7 +63,7 @@ router.get('/', authMiddleware, permissionMiddleware('Employee', 'LIST'), async 
 
     const baseQuery = {
       companyId: company._id,
-      role: { $ne: ROLES.SUPER_ADMIN },
+      role: ROLES.EMPLOYEE,
     }
 
     // Employee પોતાનો row જોઈ શકશે નહીં.
@@ -246,9 +246,9 @@ router.get('/export', authMiddleware, permissionMiddleware('Employee', 'EXPORT')
 
     const filter = {
       companyId: company._id,
-      role: { $ne: ROLES.SUPER_ADMIN },
+      role: ROLES.EMPLOYEE,
     }
-
+    
     // Search filter
     if (typeof req.query.search === 'string' && req.query.search.trim()) {
       const search = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

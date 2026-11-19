@@ -684,7 +684,7 @@ export default function ExpenseForm() {
             {/* Left: Upload */}
             <div className="flex min-w-0 flex-col gap-3">
               <div className="mb-1 flex items-center justify-between">
-                <h3 className="text-xs font-bold text-slate-700">upload Receipt </h3>
+                <h3 className="text-xs font-bold text-slate-700">Upload Receipt</h3>
               </div>
               {!isLocked && (
                 <label

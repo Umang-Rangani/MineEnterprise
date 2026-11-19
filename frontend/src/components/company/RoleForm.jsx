@@ -51,12 +51,14 @@ function humanize(value) {
     .replace(/[_:-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+    .toLowerCase()
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function getPermissionLabel(permission) {
-  const parts = String(permission).split(/[:._]/)
-  const action = parts[parts.length - 1]?.toUpperCase()
+  const parts = String(permission).split(/[:.]/)
+  const action = parts[parts.length - 1] || permission
+  const normalizedAction = action.replace(/[_-]+/g, ' ').trim().toUpperCase()
 
   const labels = {
     LIST: 'View List',
@@ -72,11 +74,11 @@ function getPermissionLabel(permission) {
     IMPORT: 'Import',
   }
 
-  return labels[action] || humanize(action || permission)
+  return labels[normalizedAction] || humanize(action)
 }
 
 function getPermissionDescription(permission) {
-  const action = String(permission).split(/[:._]/).pop()?.toUpperCase()
+  const action = String(permission).split(/[:.]/).pop()?.replace(/[_-]+/g, ' ').trim().toUpperCase()
 
   const descriptions = {
     LIST: 'View records and lists',
@@ -434,7 +436,6 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
       }),
     }))
     .filter((section) => !normalizedPermissionSearch || section.visiblePermissions.length > 0)
-
 
   //  INITIAL LOADING
   if (loading) {

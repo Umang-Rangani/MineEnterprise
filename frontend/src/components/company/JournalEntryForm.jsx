@@ -188,9 +188,24 @@ export default function JournalEntryForm() {
   }
 
   const addLine = () => {
+    if (!canManage || saving) return
+
     setForm((current) => ({
       ...current,
-      lines: [...current.lines, { ...initialLine }],
+      lines: [
+        ...current.lines,
+        {
+          accountId: '',
+          description: '',
+          debit: '',
+          credit: '',
+        },
+      ],
+    }))
+
+    setFieldErrors((current) => ({
+      ...current,
+      lines: '',
     }))
   }
 
@@ -526,8 +541,8 @@ export default function JournalEntryForm() {
             <button
               type="button"
               onClick={addLine}
-              disabled={!canManage}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-erp-primary/20 bg-erp-primary/5 px-3 text-[11px] font-bold text-erp-primary transition hover:bg-erp-primary/10 disabled:opacity-50"
+              disabled={!canManage || saving}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-erp-primary/20 bg-erp-primary/5 px-3 text-[11px] font-bold text-erp-primary transition hover:bg-erp-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus size={14} />
               Add Line
@@ -538,7 +553,7 @@ export default function JournalEntryForm() {
 
           <div className="space-y-3 p-3">
             {form.lines.map((line, index) => (
-              <div key={index} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+              <div key={line.id || index} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-xs font-bold text-slate-700">Line {index + 1}</p>
 

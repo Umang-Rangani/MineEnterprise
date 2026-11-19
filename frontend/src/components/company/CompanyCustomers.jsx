@@ -6,6 +6,7 @@ import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
 import Toast from '../../Toast/Toast'
 import Loading from '../Loading/Loading'
+import TrashBox from '../../TrashBox/TrashBox'
 import { hasPermission, useAuth } from '../../context/AuthContext'
 
 export default function CompanyCustomers() {
@@ -26,7 +27,9 @@ export default function CompanyCustomers() {
 
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('All')
+
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
 
   const [pagination, setPagination] = useState({
     total: 0,
@@ -39,6 +42,11 @@ export default function CompanyCustomers() {
 
   const [toast, setToast] = useState(null)
   const [updatingId, setUpdatingId] = useState(null)
+
+  const [actionModal, setActionModal] = useState({
+    isOpen: false,
+    customer: null,
+  })
 
   const showToast = (type, message, duration = 3000) => {
     setToast({
@@ -66,6 +74,8 @@ export default function CompanyCustomers() {
     }
   }, [location.state, location.pathname, navigate])
 
+  // FETCH CUSTOMERS
+
   useEffect(() => {
     let cancelled = false
 
@@ -82,7 +92,7 @@ export default function CompanyCustomers() {
             search: search.trim(),
             status: status === 'All' ? undefined : status,
             page,
-            limit: 10,
+            limit: pageSize,
           },
         })
 
@@ -92,11 +102,17 @@ export default function CompanyCustomers() {
 
         setCustomers(Array.isArray(data.customers) ? data.customers : [])
 
+        const total = Number(data.pagination?.total ?? data.total ?? 0)
+
+        const totalPages = Math.max(1, Number(data.pagination?.totalPages ?? data.totalPages ?? 1) || 1)
+
+        const currentPage = Math.min(Math.max(1, Number(data.pagination?.currentPage ?? data.page ?? page) || 1), totalPages)
+
         setPagination({
-          total: data.pagination?.total ?? data.total ?? 0,
-          totalPages: data.pagination?.totalPages ?? data.totalPages ?? 1,
-          currentPage: data.pagination?.currentPage ?? data.page ?? page,
-          limit: data.pagination?.limit ?? 10,
+          total,
+          totalPages,
+          currentPage,
+          limit: pageSize,
         })
 
         setHasLoaded(true)
@@ -117,27 +133,62 @@ export default function CompanyCustomers() {
     return () => {
       cancelled = true
     }
-  }, [search, status, page, refreshKey])
+  }, [search, status, page, pageSize, refreshKey])
 
-  const handleStatusChange = async (customer) => {
+  // CUSTOMER STATUS MODAL
+
+  const openStatusModal = (customer) => {
     if (!canUpdateStatus || updatingId) return
+
+    setActionModal({
+      isOpen: true,
+      customer,
+    })
+  }
+
+  const closeStatusModal = () => {
+    if (updatingId) return
+
+    setActionModal({
+      isOpen: false,
+      customer: null,
+    })
+  }
+
+  // CONFIRM ACTIVATE / DEACTIVATE
+
+  const handleConfirmStatus = async () => {
+    const customer = actionModal.customer
+
+    if (!customer?._id || !canUpdateStatus || updatingId) return
 
     const nextStatus = customer.status === 'Active' ? 'Inactive' : 'Active'
 
     setUpdatingId(customer._id)
 
     try {
-      await axiosInstance.patch(`/erp/customers/${customer._id}/status`, { status: nextStatus })
+      const response = await axiosInstance.patch(`/erp/customers/${customer._id}/status`, { status: nextStatus })
+
+      if (response.data?.success === false) {
+        throw new Error(response.data.message || 'Unable to update customer status.')
+      }
 
       setCustomers((current) => current.map((item) => (item._id === customer._id ? { ...item, status: nextStatus } : item)))
 
+      setActionModal({
+        isOpen: false,
+        customer: null,
+      })
+
       showToast('success', `Customer ${nextStatus.toLowerCase()} successfully.`)
     } catch (error) {
-      showToast('error', error.response?.data?.message || 'Unable to update customer status.', 5000)
+      showToast('error', error.response?.data?.message || error.message || 'Unable to update customer status.', 5000)
     } finally {
       setUpdatingId(null)
     }
   }
+
+  // HELPERS
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
@@ -171,20 +222,27 @@ export default function CompanyCustomers() {
       color: 'text-blue-600',
       border: 'border-blue-200',
     },
-
   ]
 
-  const startRecord = pagination.total === 0 ? 0 : (pagination.currentPage - 1) * pagination.limit + 1
+  const totalPages = Math.max(1, pagination.totalPages)
+  const safePage = Math.min(page, totalPages)
 
-  const endRecord = Math.min(pagination.currentPage * pagination.limit, pagination.total)
+  const startIndex = (safePage - 1) * pageSize
+
+  const startRecord = pagination.total === 0 ? 0 : startIndex + 1
+
+  const endRecord = Math.min(startIndex + customers.length, pagination.total)
 
   const breadcrumbItems = [{ title: 'Customers', link: null }]
+
+  // INITIAL LOADING
 
   if (loading && !hasLoaded) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
         <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
           <div className="h-1 bg-erp-primary" />
+
           <div className="flex min-h-16 items-center px-4 sm:px-5">
             <BreadCrumb items={breadcrumbItems} />
           </div>
@@ -203,7 +261,25 @@ export default function CompanyCustomers() {
     <div className="min-w-0 space-y-4 text-sm">
       {toast && <Toast toast={toast} onClose={closeToast} />}
 
-      {/* Header */}
+      {/* STATUS CONFIRMATION MODAL */}
+
+      <TrashBox
+        isOpen={actionModal.isOpen}
+        onClose={closeStatusModal}
+        title={actionModal.customer?.status === 'Active' ? 'Deactivate Customer' : 'Activate Customer'}
+        message={
+          actionModal.customer?.status === 'Active' ? `Are you sure you want to deactivate ${actionModal.customer?.customerName || 'this customer'}?` : `Are you sure you want to activate ${actionModal.customer?.customerName || 'this customer'}?`
+        }
+        warningText={actionModal.customer?.status === 'Active' ? 'This customer will be marked as inactive.' : 'This customer will become active again.'}
+        actionButtonText={actionModal.customer?.status === 'Active' ? 'Deactivate Customer' : 'Activate Customer'}
+        cancelButtonText="Cancel"
+        variant={actionModal.customer?.status === 'Active' ? 'delete' : 'activate'}
+        onAction={handleConfirmStatus}
+        isProcessing={Boolean(updatingId)}
+      />
+
+      {/* HEADER */}
+
       <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
 
@@ -230,7 +306,7 @@ export default function CompanyCustomers() {
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={refreshing || loading}
+              disabled={refreshing || loading || Boolean(updatingId)}
               className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-erp-border px-3 text-xs font-semibold text-erp-text-secondary transition hover:bg-erp-hover disabled:opacity-60"
             >
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
@@ -251,10 +327,12 @@ export default function CompanyCustomers() {
         </div>
       </section>
 
-      {/* Customer Table */}
+      {/* CUSTOMER TABLE */}
+
       <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
-        {/* Filter Header */}
-        <div className="flex flex-col gap-3 border-b border-erp-border p-3 sm:flex-row sm:items-center sm:justify-between ">
+        {/* FILTER HEADER */}
+
+        <div className="flex flex-col gap-3 border-b border-erp-border p-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative min-w-0 flex-1 sm:max-w-md">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
 
@@ -286,12 +364,12 @@ export default function CompanyCustomers() {
           </div>
         </div>
 
-     
+        {/* TABLE */}
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1050px] border-collapse text-left">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500 border-b border-erp-border">
+              <tr className="border-b border-erp-border bg-slate-50 text-[10px] font-bold uppercase tracking-wide text-slate-500">
                 <th className="px-4 py-3">Customer</th>
                 <th className="px-4 py-3">Contact Details</th>
                 <th className="px-4 py-3">Location</th>
@@ -372,14 +450,15 @@ export default function CompanyCustomers() {
                       </td>
 
                       <td className="px-4 py-3 text-center">
-                        <span className={`text-xs font-semibold tabular-nums  ${isActive ? 'text-slate-700' : 'text-erp-disabled-text'}`}>{formatCurrency(customer.openingBalance)}</span>
+                        <span className={`text-xs font-semibold tabular-nums ${isActive ? 'text-slate-700' : 'text-erp-disabled-text'}`}>{formatCurrency(customer.openingBalance)}</span>
                       </td>
 
                       <td className="px-4 py-3 text-center">
                         <span className={`text-xs font-semibold tabular-nums ${isActive ? 'text-slate-700' : 'text-erp-disabled-text'}`}>{formatCurrency(customer.creditLimit)}</span>
                       </td>
 
-                      {/* Status */}
+                      {/* STATUS */}
+
                       <td className="px-4 py-3 text-center">
                         <span
                           className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-bold ${
@@ -390,7 +469,8 @@ export default function CompanyCustomers() {
                         </span>
                       </td>
 
-                      {/* Actions */}
+                      {/* ACTIONS */}
+
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-center gap-1.5">
                           {canView && (
@@ -418,7 +498,7 @@ export default function CompanyCustomers() {
                           {canUpdateStatus && (
                             <button
                               type="button"
-                              onClick={() => handleStatusChange(customer)}
+                              onClick={() => openStatusModal(customer)}
                               disabled={isUpdating || Boolean(updatingId)}
                               title={isActive ? 'Deactivate customer' : 'Activate customer'}
                               className={`inline-flex h-8 min-w-20 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
@@ -438,39 +518,79 @@ export default function CompanyCustomers() {
           </table>
         </div>
 
-        {/* Pagination */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-erp-border px-3 py-3 sm:px-4">
-          <p className="text-[11px] text-slate-500">
-            Showing{' '}
-            <span className="font-bold text-slate-700">
-              {startRecord}-{endRecord}
-            </span>{' '}
-            of <span className="font-bold text-slate-700">{pagination.total}</span> customers
-          </p>
+        {/* PAGINATION */}
 
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 border-t border-erp-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xs text-erp-text-secondary sm:text-sm">
+              Showing <span className="font-semibold text-erp-text">{startRecord === 0 ? '0' : `${startRecord}–${endRecord}`}</span> of <span className="font-semibold text-erp-text">{formatNumber(pagination.total)}</span> customers
+            </p>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="customer-page-size" className="whitespace-nowrap text-xs text-erp-text-secondary">
+                Rows:
+              </label>
+
+              <select
+                id="customer-page-size"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value))
+                  setPage(1)
+                }}
+                disabled={loading || refreshing}
+                className="h-8 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs text-erp-text-secondary outline-none focus:border-erp-primary disabled:opacity-50"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              disabled={page <= 1 || refreshing}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage <= 1 || loading || refreshing}
+              onClick={() => setPage(1)}
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronLeft size={14} />
-              Previous
+              First
             </button>
 
-            <span className="min-w-14 text-center text-[11px] font-bold text-slate-700">
-              {pagination.currentPage} / {pagination.totalPages}
+            <button
+              type="button"
+              disabled={safePage <= 1 || loading || refreshing}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              aria-label="Previous page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <span className="min-w-20 px-1 text-center text-xs text-erp-text-secondary sm:text-sm">
+              Page {safePage} of {totalPages}
             </span>
 
             <button
               type="button"
-              disabled={page >= pagination.totalPages || refreshing}
-              onClick={() => setPage((current) => current + 1)}
-              className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage >= totalPages || loading || refreshing}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              aria-label="Next page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Next
-              <ChevronRight size={14} />
+              <ChevronRight size={16} />
+            </button>
+
+            <button
+              type="button"
+              disabled={safePage >= totalPages || loading || refreshing}
+              onClick={() => setPage(totalPages)}
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Last
             </button>
           </div>
         </div>

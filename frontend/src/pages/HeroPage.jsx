@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Building2, Check, CheckCircle2, ChevronRight, ChartNoAxesCombined, CircleDollarSign, LayoutDashboard, LockKeyhole, Menu, Package, ShieldCheck, ShoppingBag, Users, Workflow, X, Zap } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 const features = [
   {
@@ -93,7 +94,6 @@ function DashboardPreview() {
       <div className="pointer-events-none absolute -inset-5 rounded-[36px] bg-erp-primary/10 blur-3xl" />
 
       <div className="relative overflow-hidden rounded-2xl border border-erp-border bg-erp-surface shadow-erp-modal">
-        {/* Dashboard header */}
         <div className="flex items-center justify-between gap-3 border-b border-erp-border px-3 py-4 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
@@ -113,7 +113,6 @@ function DashboardPreview() {
         </div>
 
         <div className="grid grid-cols-[106px_minmax(0,1fr)] sm:grid-cols-[140px_minmax(0,1fr)]">
-          {/* Sidebar */}
           <aside className="border-r border-erp-border bg-erp-surface-secondary/70 p-2 sm:p-3">
             <p className="mb-3 px-1 pt-2 text-[9px] font-bold uppercase tracking-wider text-erp-text-muted sm:px-2">Workspace</p>
 
@@ -138,7 +137,6 @@ function DashboardPreview() {
             </div>
           </aside>
 
-          {/* Main dashboard */}
           <div className="min-w-0 p-2.5 sm:p-5">
             <div className="flex items-start justify-between gap-2">
               <div>
@@ -169,7 +167,6 @@ function DashboardPreview() {
               </div>
             </div>
 
-            {/* Activity chart */}
             <div className="mt-3 rounded-xl border border-erp-border p-3 sm:p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-bold text-erp-text sm:text-sm">Workspace activity</p>
@@ -205,7 +202,6 @@ function DashboardPreview() {
         </div>
       </div>
 
-      {/* Floating security card */}
       <div className="absolute -bottom-5 -left-3 hidden items-center gap-3 rounded-2xl border border-erp-border bg-erp-surface p-4 shadow-erp-dropdown sm:flex">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-erp-success-light text-erp-success">
           <ShieldCheck size={21} />
@@ -221,6 +217,11 @@ function DashboardPreview() {
 
 export default function HeroPage() {
   const [menuOpen, setMenuOpen] = useState(false)
+  const { user, loading } = useAuth()
+
+  const isAuthenticated = Boolean(user)
+
+  const dashboardPath = user?.role === 'SuperAdmin' ? '/superadmin' : '/company'
 
   const closeMenu = () => setMenuOpen(false)
 
@@ -244,14 +245,24 @@ export default function HeroPage() {
           </nav>
 
           <div className="hidden items-center gap-2 md:flex">
-            <Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-semibold text-erp-text transition hover:bg-erp-surface-secondary">
-              Sign In
-            </Link>
+            {!loading &&
+              (isAuthenticated ? (
+                <Link to={dashboardPath} className="inline-flex items-center gap-2 rounded-xl bg-erp-primary px-5 py-3 text-sm font-semibold text-erp-text-inverse shadow-erp-card transition hover:bg-erp-primary-hover">
+                  Go to Dashboard
+                  <ArrowRight size={16} />
+                </Link>
+              ) : (
+                <>
+                  <Link to="/login" className="rounded-xl px-4 py-2.5 text-sm font-semibold text-erp-text transition hover:bg-erp-surface-secondary">
+                    Sign In
+                  </Link>
 
-            <Link to="/register-company" className="inline-flex items-center gap-2 rounded-xl bg-erp-primary px-5 py-3 text-sm font-semibold text-erp-text-inverse shadow-erp-card transition hover:bg-erp-primary-hover">
-              Get Started
-              <ArrowRight size={16} />
-            </Link>
+                  <Link to="/register-company" className="inline-flex items-center gap-2 rounded-xl bg-erp-primary px-5 py-3 text-sm font-semibold text-erp-text-inverse shadow-erp-card transition hover:bg-erp-primary-hover">
+                    Get Started
+                    <ArrowRight size={16} />
+                  </Link>
+                </>
+              ))}
           </div>
 
           <button
@@ -278,13 +289,23 @@ export default function HeroPage() {
                 Why MineERP
               </a>
 
-              <Link to="/login" onClick={closeMenu} className="mt-2 rounded-lg border border-erp-border px-3 py-3 text-center text-sm font-semibold text-erp-text">
-                Sign In
-              </Link>
+              {!loading &&
+                (isAuthenticated ? (
+                  <Link to={dashboardPath} onClick={closeMenu} className="mt-2 inline-flex items-center justify-center gap-2 rounded-lg bg-erp-primary px-3 py-3 text-center text-sm font-semibold text-erp-text-inverse">
+                    Go to Dashboard
+                    <ArrowRight size={16} />
+                  </Link>
+                ) : (
+                  <>
+                    <Link to="/login" onClick={closeMenu} className="mt-2 rounded-lg border border-erp-border px-3 py-3 text-center text-sm font-semibold text-erp-text">
+                      Sign In
+                    </Link>
 
-              <Link to="/register-company" onClick={closeMenu} className="rounded-lg bg-erp-primary px-3 py-3 text-center text-sm font-semibold text-erp-text-inverse">
-                Get Started
-              </Link>
+                    <Link to="/register-company" onClick={closeMenu} className="rounded-lg bg-erp-primary px-3 py-3 text-center text-sm font-semibold text-erp-text-inverse">
+                      Get Started
+                    </Link>
+                  </>
+                ))}
             </div>
           </nav>
         )}
@@ -311,21 +332,34 @@ export default function HeroPage() {
             <p className="mt-6 max-w-xl text-base leading-8 text-erp-text-secondary sm:text-lg">Meet MineERP — your centralized business workspace for managing operations, organizing your team, and controlling access without the complexity.</p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link
-                to="/register-company"
-                className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl bg-erp-primary px-6 py-4 text-sm font-bold text-erp-text-inverse shadow-erp-dropdown transition hover:-translate-y-0.5 hover:bg-erp-primary-hover"
-              >
-                Register Your Business
-                <ArrowRight size={17} />
-              </Link>
+              {!loading &&
+                (isAuthenticated ? (
+                  <Link
+                    to={dashboardPath}
+                    className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl bg-erp-primary px-6 py-4 text-sm font-bold text-erp-text-inverse shadow-erp-dropdown transition hover:-translate-y-0.5 hover:bg-erp-primary-hover"
+                  >
+                    Go to Dashboard
+                    <ArrowRight size={17} />
+                  </Link>
+                ) : (
+                  <>
+                    <Link
+                      to="/register-company"
+                      className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl bg-erp-primary px-6 py-4 text-sm font-bold text-erp-text-inverse shadow-erp-dropdown transition hover:-translate-y-0.5 hover:bg-erp-primary-hover"
+                    >
+                      Register Your Business
+                      <ArrowRight size={17} />
+                    </Link>
 
-              <Link
-                to="/login"
-                className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-6 py-4 text-sm font-bold text-erp-text transition hover:border-erp-focus hover:bg-erp-surface-hover"
-              >
-                Sign In to MineERP
-                <ChevronRight size={17} />
-              </Link>
+                    <Link
+                      to="/login"
+                      className="inline-flex min-h-14 items-center justify-center gap-2 rounded-xl border border-erp-border bg-erp-surface px-6 py-4 text-sm font-bold text-erp-text transition hover:border-erp-focus hover:bg-erp-surface-hover"
+                    >
+                      Sign In to MineERP
+                      <ChevronRight size={17} />
+                    </Link>
+                  </>
+                ))}
             </div>
 
             <div className="mt-8 flex flex-wrap gap-x-5 gap-y-3 border-t border-erp-border pt-6">
@@ -470,13 +504,15 @@ export default function HeroPage() {
             <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-white/80 sm:text-base">Start with a centralized workspace designed to simplify business management, organize your team, and keep access under control.</p>
 
             <div className="mt-8">
-              <Link
-                to="/register-company"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-erp-surface px-6 py-3.5 text-sm font-bold text-erp-primary shadow-erp-dropdown transition hover:-translate-y-0.5 hover:bg-erp-primary-light"
-              >
-                Register Your Business
-                <ArrowRight size={17} />
-              </Link>
+              {!loading && (
+                <Link
+                  to={isAuthenticated ? dashboardPath : '/register-company'}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-erp-surface px-6 py-3.5 text-sm font-bold text-erp-primary shadow-erp-dropdown transition hover:-translate-y-0.5 hover:bg-erp-primary-light"
+                >
+                  {isAuthenticated ? 'Go to Dashboard' : 'Register Your Business'}
+                  <ArrowRight size={17} />
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -489,10 +525,12 @@ export default function HeroPage() {
 
           <p className="text-xs leading-5 text-erp-text-secondary">© {new Date().getFullYear()} MineERP. All rights reserved.</p>
 
-          <Link to="/login" className="inline-flex items-center gap-2 text-xs font-semibold text-erp-text-secondary transition hover:text-erp-primary">
-            Access your workspace
-            <ArrowRight size={14} />
-          </Link>
+          {!loading && (
+            <Link to={isAuthenticated ? dashboardPath : '/login'} className="inline-flex items-center gap-2 text-xs font-semibold text-erp-text-secondary transition hover:text-erp-primary">
+              {isAuthenticated ? 'Go to Dashboard' : 'Access your workspace'}
+              <ArrowRight size={14} />
+            </Link>
+          )}
         </div>
       </footer>
     </main>

@@ -140,7 +140,7 @@ const getEffectivePermissions = (user, company) => {
   const validPermissions = getValidPermissionKeys()
 
   // If explicitly assigned permissions exist, use only those permissions.
-  if (Array.isArray(user.permissionOverrides)) {
+  if (Array.isArray(user.permissionOverrides) && user.permissionOverrides.length > 0) {
     const assignedPermissions = [...new Set(user.permissionOverrides.filter((permission) => typeof permission === 'string' && validPermissions.has(permission)))]
 
     const effective = {}

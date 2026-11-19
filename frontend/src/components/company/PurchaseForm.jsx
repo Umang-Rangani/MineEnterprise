@@ -1169,7 +1169,7 @@ export default function PurchaseForm() {
         <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-erp-border bg-erp-surface/95 p-2 shadow-sm backdrop-blur">
           <div className="hidden min-w-0 sm:block">
             <p className="text-xs font-semibold text-erp-text">{isEdit ? 'Update draft purchase' : 'Ready to create purchase'}</p>
-            <p className="mt-0.5 text-[10px] text-erp-text-secondary">Inventory will not change when this purchase is saved.</p>
+            <p className="mt-0.5 text-[10px] text-erp-text-secondary">Stock updates only after the related Goods Receipt is confirmed.</p>
           </div>
 
           <div className="ml-auto flex flex-wrap items-center gap-1.5">

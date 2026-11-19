@@ -58,7 +58,7 @@ const actionDescriptions = {
 }
 
 function getActionName(permission) {
-  const parts = String(permission).split(/[:._]/)
+  const parts = String(permission).split(/[:.]/)
   return parts[parts.length - 1] || permission
 }
 
@@ -68,16 +68,19 @@ function humanize(value) {
     .replace(/[_:-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
+    .toLowerCase()
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function permissionLabel(permission) {
-  const action = getActionName(permission).toUpperCase()
+  const action = getActionName(permission).replace(/[_-]+/g, ' ').trim().toUpperCase()
+
   return actionLabels[action] || humanize(action)
 }
 
 function permissionDescription(permission) {
-  const action = getActionName(permission).toUpperCase()
+  const action = getActionName(permission).replace(/[_-]+/g, ' ').trim().toUpperCase()
+
   return actionDescriptions[action] || `Allow ${permissionLabel(permission).toLowerCase()} access`
 }
 
@@ -342,13 +345,8 @@ export default function EmployeeForm() {
   const handleSubmit = async (event) => {
     event.preventDefault()
 
-    if (!canSubmit) {
-      showToast('error', `You do not have permission to ${isEdit ? 'update' : 'create'} expenses.`)
-      return
-    }
-
-    if (isLocked) {
-      showToast('error', 'Only Draft expenses can be edited.')
+    if (!canSubmitForm) {
+      showToast('error', `You do not have permission to ${isEdit ? 'update' : 'create'} employees.`)
       return
     }
 
@@ -358,65 +356,39 @@ export default function EmployeeForm() {
     setSaving(true)
 
     try {
-      let uploadedReceipt = null
-
-      // STEP 1: Upload receipt first
-      if (receiptFile) {
-        const uploadPayload = new FormData()
-
-        uploadPayload.append('file', receiptFile)
-        uploadPayload.append('uploadFolder', 'expenses')
-        uploadPayload.append('filename', 'expense-receipt')
-
-        const uploadResponse = await axiosInstance.post('/upload', uploadPayload)
-
-        const uploadData = uploadResponse?.data
-
-        if (!uploadData?.success || !uploadData?.filePath) {
-          throw new Error(uploadData?.message || 'Receipt upload failed.')
-        }
-
-        uploadedReceipt = {
-          filename: uploadData.file?.filename || '',
-          originalName: uploadData.file?.originalName || receiptFile.name,
-          path: uploadData.filePath,
-          mimeType: uploadData.file?.mimeType || receiptFile.type,
-          size: uploadData.file?.size || receiptFile.size,
-        }
-      }
-
-      // STEP 2: Prepare expense data
       const payload = {
-        expenseCategory: form.expenseCategory.trim(),
-        title: form.title.trim(),
-        description: form.description.trim(),
-        expenseDate: form.expenseDate,
-        amount: Number(form.amount),
-        taxRate: Number(form.taxRate),
-        paymentMode: form.paymentMode,
-        transactionReference: form.transactionReference.trim(),
-        receiptNumber: form.receiptNumber.trim(),
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
       }
 
-      // Attach newly uploaded receipt metadata
-      if (uploadedReceipt) {
-        payload.receiptFile = uploadedReceipt
+      if (canAssignRoles) {
+        payload.roles = selectedRoles
       }
 
-      // STEP 3: Save expense
+      if (canManagePermissions) {
+        payload.permissionOverrides = selectedPermissions
+      }
+
       if (isEdit) {
-        await axiosInstance.patch(`/erp/expenses/${id}`, payload)
+        payload.status = form.status
+
+        await axiosInstance.patch(`/erp/employees/${id}`, payload)
       } else {
-        await axiosInstance.post('/erp/expenses', payload)
+        payload.password = form.password
+        payload.roles = selectedRoles
+        payload.permissionOverrides = selectedPermissions
+
+        await axiosInstance.post('/erp/employees', payload)
       }
 
-      navigate('/company/expenses', {
+      navigate('/company/employees', {
         state: {
-          message: isEdit ? 'Expense updated successfully.' : 'Expense created successfully as Draft.',
+          message: isEdit ? 'Employee updated successfully.' : 'Employee created successfully.',
         },
       })
     } catch (error) {
-      showToast('error', error.response?.data?.message || error.message || `Unable to ${isEdit ? 'update' : 'create'} expense.`, 5000)
+      showToast('error', error.response?.data?.message || error.message || `Unable to ${isEdit ? 'update' : 'create'} employee.`, 5000)
     } finally {
       setSaving(false)
     }

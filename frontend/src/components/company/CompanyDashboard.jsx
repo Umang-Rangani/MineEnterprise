@@ -20,7 +20,7 @@ export default function CompanyDashboard() {
   const [error, setError] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const items = [{ title: 'Dashboard', link: null }]
+  const items = []
 
   useEffect(() => {
     let cancelled = false
@@ -29,44 +29,56 @@ export default function CompanyDashboard() {
       setLoading(true)
       setError('')
 
-      try {
-        const results = await Promise.allSettled([axiosInstance.get('/companies/me'), axiosInstance.get('/erp/employees')])
+      const results = await Promise.allSettled([
+        axiosInstance.get('/companies/me'),
+        axiosInstance.get('/erp/employees'),
+        axiosInstance.get('/erp/products?page=1&limit=1'),
+        axiosInstance.get('/erp/sales?page=1&limit=1'),
+        axiosInstance.get('/erp/invoices/stats'),
+      ])
 
-        if (cancelled) return
+      if (cancelled) return
 
-        const [companyResult, employeesResult] = results
+      const [companyResult, employeesResult, productsResult, ordersResult, revenueResult] = results
 
-        if (companyResult.status === 'fulfilled' && companyResult.value.data?.success) {
-          setCompany(companyResult.value.data.company)
-        } else {
-          const message = companyResult.status === 'rejected' ? companyResult.reason?.response?.data?.message : null
+      // Company Information
+      if (companyResult.status === 'fulfilled' && companyResult.value.data?.success) {
+        setCompany(companyResult.value.data.company)
+      } else {
+        const message = companyResult.status === 'rejected' ? companyResult.reason?.response?.data?.message : null
 
-          setError(message || 'Unable to load company details.')
-        }
-
-        if (employeesResult.status === 'fulfilled' && employeesResult.value.data?.success) {
-          const employeeData = employeesResult.value.data
-
-          setStats((previous) => ({
-            ...previous,
-            employees: typeof employeeData.count === 'number' ? employeeData.count : Array.isArray(employeeData.employees) ? employeeData.employees.length : 0,
-          }))
-        } else {
-          setStats((previous) => ({
-            ...previous,
-            employees: null,
-          }))
-        }
-      } catch {
-        if (!cancelled) {
-          setError('Unable to load dashboard data.')
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-          setHasLoaded(true)
-        }
+        setError(message || 'Unable to load company details.')
       }
+
+      // Employees
+      const employeeData = employeesResult.status === 'fulfilled' && employeesResult.value.data?.success ? employeesResult.value.data : null
+
+      const employeeCount = employeeData ? (typeof employeeData.count === 'number' ? employeeData.count : Array.isArray(employeeData.employees) ? employeeData.employees.length : 0) : null
+
+      // Products
+      const productData = productsResult.status === 'fulfilled' && productsResult.value.data?.success ? productsResult.value.data : null
+
+      const productCount = typeof productData?.pagination?.total === 'number' ? productData.pagination.total : null
+
+      // Sales Orders
+      const orderData = ordersResult.status === 'fulfilled' && ordersResult.value.data?.success ? ordersResult.value.data : null
+
+      const orderCount = typeof orderData?.pagination?.total === 'number' ? orderData.pagination.total : null
+
+      // Invoice Revenue
+      const revenueData = revenueResult.status === 'fulfilled' && revenueResult.value.data?.success ? revenueResult.value.data : null
+
+      const totalRevenue = typeof revenueData?.data?.totalRevenue === 'number' ? revenueData.data.totalRevenue : null
+
+      setStats({
+        employees: employeeCount,
+        products: productCount,
+        orders: orderCount,
+        revenue: totalRevenue,
+      })
+
+      setLoading(false)
+      setHasLoaded(true)
     }
 
     fetchDashboardData()
@@ -113,7 +125,7 @@ export default function CompanyDashboard() {
       label: 'Revenue',
       value: stats.revenue,
       icon: IndianRupee,
-      description: 'Total company revenue',
+      description: 'Total approved invoice revenue',
       color: 'text-amber-600',
       bg: 'bg-amber-50',
     },
@@ -263,10 +275,9 @@ export default function CompanyDashboard() {
       )}
 
       {/* Statistics */}
-      <section >
+      <section>
         {/* Company welcome card */}
-        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm mb-3" >
-
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm mb-3">
           <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-erp-primary-light text-erp-primary">
@@ -292,8 +303,6 @@ export default function CompanyDashboard() {
             </div>
           </div>
         </div>
-
-
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {statCards.map((stat) => {

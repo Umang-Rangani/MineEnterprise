@@ -686,12 +686,6 @@ export default function SupplierDetails() {
 
                 <DetailItem label="Opening Balance" value={formatAmount(supplier.openingBalance)} icon={IndianRupee} inactive={isInactive} />
               </div>
-
-              <div className={`mt-4 flex items-start gap-2 rounded-lg p-3 ${isInactive ? 'bg-erp-disabled-light' : 'bg-erp-surface-secondary/60'}`}>
-                <AlertCircle size={15} className={`mt-0.5 shrink-0 ${isInactive ? 'text-erp-disabled' : 'text-erp-text-muted'}`} />
-
-                <p className={`text-xs leading-5 ${secondaryTextClass}`}>Opening balance is shown for reference. Your current edit endpoint does not update this value.</p>
-              </div>
             </section>
 
             {/* Additional Information */}

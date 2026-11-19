@@ -13,7 +13,6 @@ const permissionMiddleware = require('../middleware/permissionMiddleware')
 const { sendEmail } = require('../utils/sendEmail')
 const invoiceEmail = require('../utils/emailTemplates/invoiceEmail')
 
-
 const router = express.Router()
 
 router.use(authMiddleware)
@@ -596,7 +595,7 @@ const createInvoiceEmailAttempt = async ({ invoiceId, companyId, userId, to, sub
 
   const invoice = await Invoice.findOneAndUpdate(
     {
-      _id: invoiceId,   
+      _id: invoiceId,
       companyId,
       status: { $in: INVOICE_EMAIL_ALLOWED_STATUSES },
       emailStatus: expectedEmailStatus,
@@ -757,6 +756,47 @@ router.get('/', permissionMiddleware('Invoice', 'invoice:list'), async (req, res
         limit,
         total,
         totalPages: Math.ceil(total / limit),
+      },
+    })
+  } catch (error) {
+    return handleError(res, error)
+  }
+})
+
+// GET INVOICE REVENUE STATS
+router.get('/stats', permissionMiddleware('Invoice', 'invoice:list'), async (req, res) => {
+  try {
+    const companyId = requireCompanyId(req)
+
+    const filter = {
+      companyId,
+      status: { $nin: ['Draft', 'Cancelled'] },
+    }
+
+    const isPrivilegedWarehouseUser = req.user?.role === 'SuperAdmin' || req.user?.role === 'CompanyAdmin' || (req.user?.roles || []).some((role) => role.type === 'Predefined' && role.name === 'Manager')
+
+    if (!isPrivilegedWarehouseUser) {
+      const allowedWarehouses = [...(req.user?.assignedWarehouses || []).map(String), ...(req.user?.defaultWarehouseId ? [String(req.user.defaultWarehouseId)] : [])]
+
+      filter.warehouseId = {
+        $in: [...new Set(allowedWarehouses)],
+      }
+    }
+
+    const result = await Invoice.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$grandTotal' },
+        },
+      },
+    ])
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalRevenue: Number((result[0]?.totalRevenue || 0).toFixed(2)),
       },
     })
   } catch (error) {

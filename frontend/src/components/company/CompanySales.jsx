@@ -31,6 +31,7 @@ export default function CompanySales() {
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('All')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const [pagination, setPagination] = useState({
     total: 0,
@@ -104,7 +105,7 @@ export default function CompanySales() {
             search: search.trim(),
             status: status === 'All' ? undefined : status,
             page,
-            limit: 10,
+            limit: pageSize,
           },
         })
 
@@ -114,11 +115,17 @@ export default function CompanySales() {
 
         setOrders(Array.isArray(data.data) ? data.data : [])
 
+        const total = Number(data.pagination?.total ?? data.total ?? 0)
+
+        const totalPages = Math.max(1, Number(data.pagination?.totalPages ?? data.totalPages ?? 1) || 1)
+
+        const currentPage = Math.min(Math.max(1, Number(data.pagination?.currentPage ?? data.page ?? page) || 1), totalPages)
+
         setPagination({
-          total: data.pagination?.total ?? 0,
-          totalPages: data.pagination?.totalPages ?? 1,
-          page: data.pagination?.page ?? page,
-          limit: data.pagination?.limit ?? 10,
+          total,
+          totalPages,
+          currentPage,
+          limit: pageSize,
         })
 
         setHasLoaded(true)
@@ -139,7 +146,7 @@ export default function CompanySales() {
     return () => {
       cancelled = true
     }
-  }, [search, status, page, refreshKey])
+  }, [search, status, page, pageSize, refreshKey])
 
   const handleRefresh = () => {
     setPage(1)
@@ -257,9 +264,14 @@ export default function CompanySales() {
     },
   ]
 
-  const startRecord = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1
+  const totalPages = Math.max(1, pagination.totalPages)
+  const safePage = Math.min(page, totalPages)
 
-  const endRecord = Math.min(pagination.page * pagination.limit, pagination.total)
+  const startIndex = (safePage - 1) * pageSize
+
+  const startRecord = pagination.total === 0 ? 0 : startIndex + 1
+
+  const endRecord = Math.min(startIndex + orders.length, pagination.total)
 
   const breadcrumbItems = [
     {
@@ -577,39 +589,79 @@ export default function CompanySales() {
           </table>
         </div>
 
-        {/* Pagination */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-erp-border px-3 py-3 sm:px-4">
-          <p className="text-[11px] text-slate-500">
-            Showing{' '}
-            <span className="font-bold text-slate-700">
-              {startRecord}-{endRecord}
-            </span>{' '}
-            of <span className="font-bold text-slate-700">{pagination.total}</span> sales orders
-          </p>
+        {/* PAGINATION */}
 
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 border-t border-erp-border px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-xs text-erp-text-secondary sm:text-sm">
+              Showing <span className="font-semibold text-erp-text">{startRecord === 0 ? '0' : `${startRecord}–${endRecord}`}</span> of <span className="font-semibold text-erp-text">{formatNumber(pagination.total)}</span> sales orders
+            </p>
+
+            <div className="flex items-center gap-2">
+              <label htmlFor="sales-page-size" className="whitespace-nowrap text-xs text-erp-text-secondary">
+                Rows:
+              </label>
+
+              <select
+                id="sales-page-size"
+                value={pageSize}
+                onChange={(event) => {
+                  setPageSize(Number(event.target.value))
+                  setPage(1)
+                }}
+                disabled={loading || refreshing}
+                className="h-8 rounded-lg border border-erp-border bg-erp-surface px-2 text-xs text-erp-text-secondary outline-none focus:border-erp-primary disabled:opacity-50"
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
-              disabled={page <= 1 || refreshing}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage <= 1 || loading || refreshing}
+              onClick={() => setPage(1)}
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <ChevronLeft size={14} />
-              Previous
+              First
             </button>
 
-            <span className="min-w-14 text-center text-[11px] font-bold text-slate-700">
-              {pagination.page} / {pagination.totalPages}
+            <button
+              type="button"
+              disabled={safePage <= 1 || loading || refreshing}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              aria-label="Previous page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <span className="min-w-20 px-1 text-center text-xs text-erp-text-secondary sm:text-sm">
+              Page {safePage} of {totalPages}
             </span>
 
             <button
               type="button"
-              disabled={page >= pagination.totalPages || refreshing}
-              onClick={() => setPage((current) => current + 1)}
-              className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-semibold text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={safePage >= totalPages || loading || refreshing}
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              aria-label="Next page"
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-erp-border text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Next
-              <ChevronRight size={14} />
+              <ChevronRight size={16} />
+            </button>
+
+            <button
+              type="button"
+              disabled={safePage >= totalPages || loading || refreshing}
+              onClick={() => setPage(totalPages)}
+              className="flex h-8 items-center justify-center rounded-lg border border-erp-border px-2 text-xs text-erp-text-secondary transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Last
             </button>
           </div>
         </div>

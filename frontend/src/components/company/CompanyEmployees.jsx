@@ -26,16 +26,25 @@ function getStoredPreferences() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
 
+    const validRoleAliases = {
+      'Inventory Manager': 'InventoryManager',
+      'Sales Manager': 'SalesManager',
+    }
+
+    const savedRoleFilter = typeof saved.roleFilter === 'string' ? saved.roleFilter : 'All'
+
+    const roleFilter = validRoleAliases[savedRoleFilter] || savedRoleFilter
+
     return {
       statusFilter: ['All', 'Active', 'Inactive'].includes(saved.statusFilter) ? saved.statusFilter : 'All',
-      roleFilter: typeof saved.roleFilter === 'string' ? saved.roleFilter : 'All',
-      pageSize: [5, 10, 20].includes(Number(saved.pageSize)) ? Number(saved.pageSize) : 5,
+      roleFilter,
+      pageSize: [5, 10, 20, 50, 100].includes(Number(saved.pageSize)) ? Number(saved.pageSize) : 10,
     }
   } catch {
     return {
       statusFilter: 'All',
       roleFilter: 'All',
-      pageSize: 5,
+      pageSize: 10,
     }
   }
 }
@@ -113,7 +122,7 @@ export default function CompanyEmployees() {
   const [pagination, setPagination] = useState({
     page: 1,
     limit: initialPreferences.pageSize,
-    total: 0,
+    totalEmployees: 0,
     totalPages: 1,
   })
 
@@ -225,7 +234,7 @@ export default function CompanyEmployees() {
         setPagination({
           page: serverPage,
           limit: paginationData.limit ?? pageSize,
-          total: paginationData.totalEmployees ?? 0,
+          totalEmployees: paginationData.totalEmployees ?? 0,
           totalPages: Math.max(1, paginationData.totalPages ?? 1),
         })
 
@@ -319,7 +328,7 @@ export default function CompanyEmployees() {
           // Use fallback error message.
         }
       } else {
-        message = getErrorMessage(error, message)
+        message = error.response?.data?.message || error.message || message
       }
 
       showToast('error', message)
@@ -406,14 +415,12 @@ export default function CompanyEmployees() {
   const openDetails = (employee) => {
     navigate(`/company/employees/${employee._id}`)
   }
-
   const totalPages = Math.max(1, pagination.totalPages)
-  const safePage = Math.min(pagination.page, totalPages)
+  const safePage = Math.min(currentPage, totalPages)
 
-  const startItem = pagination.total === 0 ? 0 : (safePage - 1) * pagination.limit + 1
+  const startItem = pagination.totalEmployees === 0 ? 0 : (safePage - 1) * pageSize + 1
 
-  const endItem = Math.min(safePage * pagination.limit, pagination.total)
-
+  const endItem = Math.min(safePage * pageSize, pagination.totalEmployees)
   const items = [{ title: 'Employees', link: null }]
 
   if (loading && !hasLoaded) {
@@ -757,15 +764,19 @@ export default function CompanyEmployees() {
                       </div>
 
                       <div className="flex gap-2 border-t border-slate-100 pt-2.5">
-                        <button type="button" onClick={() => openDetails(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                          <Eye size={14} />
-                          View
-                        </button>
+                        {canView && (
+                          <button type="button" onClick={() => openDetails(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                            <Eye size={14} />
+                            View
+                          </button>
+                        )}
 
-                        <button type="button" onClick={() => openEdit(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
-                          <Pencil size={14} />
-                          Edit
-                        </button>
+                        {canUpdate && (
+                          <button type="button" onClick={() => openEdit(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
+                            <Pencil size={14} />
+                            Edit
+                          </button>
+                        )}
 
                         {canUpdateStatus && (
                           <button
@@ -783,15 +794,17 @@ export default function CompanyEmployees() {
                           </button>
                         )}
 
-                        <button
-                          type="button"
-                          onClick={() => setConfirmEmployee(employee)}
-                          disabled={Boolean(deletingId)}
-                          className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {deletingId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                          Delete
-                        </button>
+                        {canDelete && (
+                          <button
+                            type="button"
+                            onClick={() => setConfirmEmployee(employee)}
+                            disabled={Boolean(deletingId)}
+                            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {deletingId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                   )
@@ -802,7 +815,7 @@ export default function CompanyEmployees() {
         </div>
 
         {/* Pagination */}
-        {!hasLoaded && (
+        {hasLoaded && (
           <div className="flex flex-col gap-3 border-t border-slate-100 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-xs text-slate-500 sm:text-sm">
@@ -810,7 +823,7 @@ export default function CompanyEmployees() {
                 <span className="font-semibold text-slate-700">
                   {startItem}–{endItem}
                 </span>{' '}
-                of <span className="font-semibold text-slate-700">{pagination.total}</span> employees
+                of <span className="font-semibold text-slate-700">{pagination.totalEmployees}</span> employees
               </p>
 
               <div className="flex items-center gap-2">
@@ -830,6 +843,8 @@ export default function CompanyEmployees() {
                   <option value={5}>5</option>
                   <option value={10}>10</option>
                   <option value={20}>20</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
                 </select>
               </div>
             </div>
@@ -837,16 +852,17 @@ export default function CompanyEmployees() {
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                disabled={safePage <= 1 || loading}
+                disabled={safePage <= 1 || loading || refreshing}
                 onClick={() => setCurrentPage(1)}
+                aria-label="First page"
                 className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                1
+                First
               </button>
 
               <button
                 type="button"
-                disabled={safePage <= 1 || loading}
+                disabled={safePage <= 1 || loading || refreshing}
                 onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
                 aria-label="Previous page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -860,7 +876,7 @@ export default function CompanyEmployees() {
 
               <button
                 type="button"
-                disabled={safePage >= totalPages || loading}
+                disabled={safePage >= totalPages || loading || refreshing}
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
                 aria-label="Next page"
                 className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
@@ -870,11 +886,12 @@ export default function CompanyEmployees() {
 
               <button
                 type="button"
-                disabled={safePage >= totalPages || loading}
+                disabled={safePage >= totalPages || loading || refreshing}
                 onClick={() => setCurrentPage(totalPages)}
+                aria-label="Last page"
                 className="flex h-8 items-center justify-center rounded-lg border border-slate-200 px-2 text-xs text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {totalPages}
+                Last
               </button>
             </div>
           </div>
