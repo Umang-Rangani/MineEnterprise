@@ -13,6 +13,7 @@ const superAdminDashboard = require('./routes/superAdminDashboard')
 const superAdminUsers = require('./routes/superAdminUsers')
 const systemActivityRouter = require('./routes/systemActivity')
 const platformSettingsRouter = require('./routes/platformSettings')
+const passwordAuthRouter = require('./routes/passwordAuth')
 
 var companiesRouter = require('./routes/companies')
 const employeeAuthRouter = require('./routes/employeeAuth')
@@ -74,6 +75,7 @@ app.use('/superadmin/dashboard', superAdminDashboard)
 app.use('/superadmin/users', superAdminUsers)
 app.use('/superadmin/activity', systemActivityRouter)
 app.use('/superadmin/settings', platformSettingsRouter)
+app.use('/password', passwordAuthRouter)
 
 app.use('/companies', companiesRouter)
 

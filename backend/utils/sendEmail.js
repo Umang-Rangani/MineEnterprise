@@ -11,7 +11,7 @@ const getTransporter = () => {
     service: 'gmail',
     auth: {
       user: EMAIL_USER,
-      pass: EMAIL_PASS,
+      pass: EMAIL_PASS.replace(/\s/g, ''),
     },
   })
 }

@@ -18,7 +18,7 @@ const pageTitles = {
   'all-companies': 'All Companies',
   users: 'Users & Access',
   activity: 'System Activity',
-  settings: 'Settings',
+  settings: 'Account Settings',
 }
 
 export default function SuperAdminRoute() {
