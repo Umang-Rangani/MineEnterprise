@@ -6,6 +6,9 @@ const Company = require('../models/Company')
 
 const router = express.Router()
 
+const GST_PATTERN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+const PAN_PATTERN = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+
 const authMiddleware = require('../middleware/authMiddleware')
 const initializeDefaultChartOfAccounts = require('../services/defaultChartOfAccounts')
 const logSystemActivity = require('../services/systemActivityService')
@@ -115,6 +118,38 @@ router.post('/register', async (req, res) => {
     })
   }
 
+  const normalizedGST = typeof gstNumber === 'string' ? gstNumber.trim().toUpperCase() : ''
+
+  const normalizedPAN = typeof panNumber === 'string' ? panNumber.trim().toUpperCase() : ''
+
+  if (gstNumber != null && typeof gstNumber !== 'string') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid GST number.',
+    })
+  }
+
+  if (panNumber != null && typeof panNumber !== 'string') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid PAN number.',
+    })
+  }
+
+  if (normalizedGST && !GST_PATTERN.test(normalizedGST)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please enter a valid 15-character GSTIN.',
+    })
+  }
+
+  if (normalizedPAN && !PAN_PATTERN.test(normalizedPAN)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please enter a valid 10-character PAN.',
+    })
+  }
+
   const allowedBusinessTypes = ['Manufacturer', 'Wholesaler', 'Retailer', 'Distributor', 'Other']
 
   if (!allowedBusinessTypes.includes(businessType)) {
@@ -185,8 +220,8 @@ router.post('/register', async (req, res) => {
             state: state.trim(),
             country: country.trim(),
             postalCode: postalCode.trim(),
-            gstNumber: gstNumber?.trim() || '',
-            panNumber: panNumber?.trim() || '',
+            gstNumber: normalizedGST,
+            panNumber: normalizedPAN,
             currency: currency?.trim() || 'INR',
             businessCategory: businessCategory.trim(),
             status: 'Pending',

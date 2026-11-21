@@ -18,6 +18,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [permissions, setPermissions] = useState({})
   const [loading, setLoading] = useState(true)
+  const sessionRestoreRef = useRef(null)
 
   const [permissionsLoading, setPermissionsLoading] = useState(true)
   const [permissionsError, setPermissionsError] = useState('')
@@ -113,10 +114,13 @@ export function AuthProvider({ children }) {
     } catch (adminError) {
       const status = adminError.response?.status
 
-      if (status && ![401, 403].includes(status)) {
-        throw new Error(adminError.response?.data?.message || 'Unable to sign in.')
+      // Fallback is allowed ONLY for 401 Unauthorized.
+      // Never fallback for 403 Forbidden.
+      if (status !== 401) {
+        throw new Error(adminError.response?.data?.message || adminError.message || 'Unable to sign in.')
       }
 
+      // Only 401 reaches Employee / Company login.
       try {
         const response = await axiosInstance.post('/erp/auth/login', credentials)
 
@@ -149,16 +153,20 @@ export function AuthProvider({ children }) {
     }
   }
 
+
+
   useEffect(() => {
-    const restoreSession = async () => {
-      try {
-        await refreshUser()
-      } finally {
-        setLoading(false)
-      }
+    if (!sessionRestoreRef.current) {
+      sessionRestoreRef.current = refreshUser()
     }
 
-    restoreSession()
+    sessionRestoreRef.current
+      .catch((error) => {
+        console.error('Session restore failed:', error)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [])
 
   const permissionsIntervalRef = useRef(null)

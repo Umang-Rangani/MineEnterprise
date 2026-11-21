@@ -27,6 +27,7 @@ const inventoryRouter = require('./routes/inventory')
 const warehousesRoutes = require('./routes/warehouses')
 const suppliersRouter = require('./routes/suppliers')
 const purchasesRouter = require('./routes/purchases')
+const dashboardRouter = require('./routes/dashboard') 
 
 const goodsReceiptsRouter = require('./routes/goodsReceipts')
 const customersRouter = require('./routes/customers')
@@ -75,6 +76,8 @@ app.use('/superadmin/dashboard', superAdminDashboard)
 app.use('/superadmin/users', superAdminUsers)
 app.use('/superadmin/activity', systemActivityRouter)
 app.use('/superadmin/settings', platformSettingsRouter)
+app.use('/erp/dashboard', dashboardRouter)
+
 app.use('/password', passwordAuthRouter)
 
 app.use('/companies', companiesRouter)

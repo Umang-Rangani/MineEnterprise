@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Building2, Check, CheckCircle2, ChevronRight, ChartNoAxesCombined, CircleDollarSign, LayoutDashboard, LockKeyhole, Menu, Package, ShieldCheck, ShoppingBag, Users, Workflow, X, Zap } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useEffect } from 'react'
 
 const features = [
   {
@@ -218,6 +219,10 @@ function DashboardPreview() {
 export default function HeroPage() {
   const [menuOpen, setMenuOpen] = useState(false)
   const { user, loading } = useAuth()
+
+  useEffect(() => {
+    document.title = 'MineERP | Business Management'
+  }, [])
 
   const isAuthenticated = Boolean(user)
 

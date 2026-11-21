@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Eye, EyeOff, Layers3, LockKeyhole, Mail, MapPin, ShieldCheck, UserRound, LoaderCircle, ReceiptText, Globe2 } from 'lucide-react'
 import axiosInstance from '../api/axiosInstance'
+import { useEffect } from 'react'
 
 const initialForm = {
   name: '',
@@ -31,7 +32,12 @@ const inputClass = 'h-9 w-full min-w-0 rounded-lg border border-erp-border bg-er
 const labelClass = 'mb-1 block text-[11px] font-semibold text-erp-text'
 
 export default function CompanyRegistration() {
+  useEffect(() => {
+    document.title = 'Register Your Company | MineERP'
+  }, [])
+
   const [form, setForm] = useState(initialForm)
+
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState({})
   const [showPassword, setShowPassword] = useState(false)
@@ -41,7 +47,12 @@ export default function CompanyRegistration() {
   const [success, setSuccess] = useState('')
 
   const handleChange = (event) => {
-    const { name, value } = event.target
+    const { name } = event.target
+    let { value } = event.target
+
+    if (name === 'gstNumber' || name === 'panNumber') {
+      value = value.toUpperCase().replace(/\s/g, '')
+    }
 
     setForm((previous) => ({
       ...previous,
@@ -112,6 +123,20 @@ export default function CompanyRegistration() {
 
       if (form.website.trim() && !/^https?:\/\/.+\..+/i.test(form.website.trim())) {
         nextErrors.website = 'Enter a valid website URL.'
+      }
+
+      const gstNumber = form.gstNumber.trim().toUpperCase()
+      const panNumber = form.panNumber.trim().toUpperCase()
+
+      const gstPattern = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/
+      const panPattern = /^[A-Z]{5}[0-9]{4}[A-Z]$/
+
+      if (gstNumber && !gstPattern.test(gstNumber)) {
+        nextErrors.gstNumber = 'Enter a valid 15-character GSTIN.'
+      }
+
+      if (panNumber && !panPattern.test(panNumber)) {
+        nextErrors.panNumber = 'Enter a valid 10-character PAN.'
       }
     }
 
@@ -283,7 +308,7 @@ export default function CompanyRegistration() {
                     <p className="text-[10px] font-semibold uppercase tracking-[0.17em] text-erp-text-secondary">Business registration</p>
                     <h2 className="mt-0.5 text-lg font-bold tracking-tight text-erp-text sm:text-xl">{step === 1 ? 'Create your account' : step === 2 ? 'Register your company' : 'Complete your details'}</h2>
                     <p className="mt-0.5 text-[11px] leading-4 text-erp-text-secondary">
-                      {step === 1 ? 'Enter the details of the person managing this business.' : step === 2 ? 'Tell us about your company and business activities.' : 'Add your business address and financial information.'}
+                      {step === 1 ? 'Enter the details of the person managing this business.' : step === 2 ? 'Tell us about your company and business activities.' : 'Add your business address details.'}
                     </p>
                   </div>
                 </div>
@@ -291,7 +316,7 @@ export default function CompanyRegistration() {
                 <div className="w-full shrink-0 sm:w-62 lg:w-140">
                   <div className="mb-1.5 flex items-center justify-between gap-2">
                     <span className="text-[10px] font-semibold text-erp-primary">STEP {step} OF 3</span>
-                    <span className="text-[10px] text-erp-text-secondary">{step === 1 ? 'Owner Details' : step === 2 ? 'Company Details' : 'Address & Tax'}</span>
+                    <span className="text-[10px] text-erp-text-secondary">{step === 1 ? 'Owner Details' : step === 2 ? 'Company Details' : 'Business Address'}</span>
                   </div>
 
                   <div className="h-1.5 overflow-hidden rounded-full bg-erp-surface-secondary">
@@ -563,14 +588,36 @@ export default function CompanyRegistration() {
                             <label htmlFor="gstNumber" className={labelClass}>
                               GST number
                             </label>
-                            <input id="gstNumber" name="gstNumber" value={form.gstNumber} onChange={handleChange} placeholder="GSTIN (optional)" className={inputClass} />
+
+                            <input
+                              id="gstNumber"
+                              name="gstNumber"
+                              value={form.gstNumber}
+                              onChange={handleChange}
+                              maxLength={15}
+                              autoComplete="off"
+                              placeholder="GSTIN (optional)"
+                              className={`${inputClass} ${errors.gstNumber ? 'border-erp-danger' : ''}`}
+                            />
+                            {errors.gstNumber && <p className="mt-1 text-[10px] text-erp-danger">{errors.gstNumber}</p>}
                           </div>
 
                           <div className="min-w-0">
                             <label htmlFor="panNumber" className={labelClass}>
                               PAN number
                             </label>
-                            <input id="panNumber" name="panNumber" value={form.panNumber} onChange={handleChange} placeholder="PAN (optional)" className={inputClass} />
+
+                            <input
+                              id="panNumber"
+                              name="panNumber"
+                              value={form.panNumber}
+                              onChange={handleChange}
+                              maxLength={10}
+                              autoComplete="off"
+                              placeholder="PAN (optional)"
+                              className={`${inputClass} ${errors.panNumber ? 'border-erp-danger' : ''}`}
+                            />
+                            {errors.panNumber && <p className="mt-1 text-[10px] text-erp-danger">{errors.panNumber}</p>}
                           </div>
 
                           <div className="min-w-0">

@@ -2,12 +2,17 @@ import { useState } from 'react'
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { ArrowRight, Eye, EyeOff, Layers3, LockKeyhole, Mail, ShieldCheck, Building2, LoaderCircle } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useEffect } from 'react'
 
 export default function Login() {
   const { user, loading, login } = useAuth()
+
+  useEffect(() => {
+    document.title = 'Sign In | MineERP'
+  }, [])
+
   const navigate = useNavigate()
   const location = useLocation()
-
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -15,12 +20,21 @@ export default function Login() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  if (!loading && user) {
+  if (loading) {
+    return (
+      <main className="flex min-h-dvh items-center justify-center bg-erp-bg text-erp-text">
+        <div className="flex items-center gap-2 text-sm text-erp-text-secondary">
+          <LoaderCircle size={20} className="animate-spin" />
+          Checking authentication...
+        </div>
+      </main>
+    )
+  }
+
+  if (user) {
     const destination = user.role === 'SuperAdmin' ? '/superadmin' : ['CompanyAdmin', 'Employee'].includes(user.role) ? '/company' : '/'
     return <Navigate to={destination} replace />
   }
-
- 
 
   const handleSubmit = async (event) => {
     event.preventDefault()
@@ -72,7 +86,7 @@ export default function Login() {
         <div className="pointer-events-none absolute -bottom-28 -left-20 h-80 w-80 rounded-full border border-erp-text-inverse/10" />
         <div className="pointer-events-none absolute bottom-24 right-12 h-40 w-40 rounded-full bg-erp-accent/20 blur-3xl" />
 
-        <Link to="/login" className="relative flex items-center gap-3">
+        <Link to="/" className="relative flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-erp-text-inverse/10 ring-1 ring-erp-text-inverse/15">
             <Layers3 size={23} />
           </div>
@@ -116,7 +130,7 @@ export default function Login() {
 
       <section className="flex min-h-dvh items-center justify-center px-4 py-5 sm:px-6 lg:px-8">
         <div className="w-full max-w-sm">
-          <Link to="/login" className="mb-5 flex items-center gap-2.5 lg:hidden">
+          <Link to="/" className="mb-5 flex items-center gap-2.5 lg:hidden">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-erp-sidebar-bg text-erp-text-inverse">
               <Layers3 size={20} />
             </div>
