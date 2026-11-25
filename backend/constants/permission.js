@@ -54,6 +54,7 @@ const ACTIONS = {
     ASSIGN_ROLE: 'employee:assign-role',
     MANAGE_PERMISSIONS: 'employee:manage-permissions',
     EXPORT: 'employee:export',
+    RESET_PASSWORD: 'employee:reset-password',
   },
 
   Role: {
@@ -199,11 +200,11 @@ const ACTIONS = {
     EXPENSE: 'reports:expense',
   },
 
-  Settings: {
-    VIEW: 'settings:view',
-    UPDATE_COMPANY: 'settings:update-company',
-    UPDATE_PREFERENCES: 'settings:update-preferences',
-  },
+  // Settings: {
+  //   VIEW: 'settings:view',
+  //   UPDATE_COMPANY: 'settings:update-company',
+  //   UPDATE_PREFERENCES: 'settings:update-preferences',
+  // },
 }
 
 const ALL_SECTION_ACTIONS = Object.fromEntries(Object.entries(ACTIONS).map(([section, actions]) => [SECTION_KEYS[section], Object.values(actions)]))

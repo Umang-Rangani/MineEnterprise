@@ -92,6 +92,8 @@ import SuperAdminUserDetails from './components/superadmin/SuperAdminUserDetails
 import SuperAdminActivity from './components/superadmin/SuperAdminActivity'
 import SuperAdminSettings from './components/superadmin/SuperAdminSettings'
 import NotFound from './components/NotFound'
+import CompanyProfile from './components/company/CompanyProfile'
+import CompanyProfileEdit from './components/company/CompanyProfileEdit'
 
 export default function App() {
   return (
@@ -119,10 +121,13 @@ export default function App() {
       </Route>
 
       {/* Company Workspace Routes */}
-      <Route element={<ProtectedRoute allowedRoles={['CompanyAdmin', 'Employee']} />}>
+      <Route element={<ProtectedRoute allowedRoles={['CompanyAdmin', 'Employee', 'Manager', 'Accountant', 'InventoryManager', 'SalesManager']} />}>
         <Route path="/company" element={<CompaniesRoute />}>
           {/* Dashboard */}
           <Route index element={<CompanyDashboard />} />
+
+          <Route path="profile" element={<CompanyProfile />} />
+          <Route path="profile/edit" element={<CompanyProfileEdit />} />
 
           {/* Employees */}
           <Route path="employees" element={<CompanyEmployees />} />
@@ -150,9 +155,9 @@ export default function App() {
 
           {/* Inventory */}
           <Route path="inventory" element={<CompanyInventory />} />
+          <Route path="inventory/:id/history" element={<InventoryHistory />} />
           <Route path="inventory/:id/stock-in" element={<InventoryStockForm />} />
           <Route path="inventory/:id/stock-out" element={<InventoryStockForm />} />
-          <Route path="inventory/:id/history" element={<InventoryHistory />} />
           <Route path="inventory/stock-transfer" element={<StockTransfer />} />
 
           {/* Warehouses */}

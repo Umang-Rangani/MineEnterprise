@@ -1,6 +1,32 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, UserRound, Mail, Phone, LockKeyhole, Eye, EyeOff, ShieldCheck, Users, Package, ShoppingCart, Warehouse, FileText, Settings, Check, Save, LoaderCircle, Search, Info, CircleCheck, View } from 'lucide-react'
+import {
+  ArrowLeft,
+  UserRound,
+  Mail,
+  Phone,
+  LockKeyhole,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Users,
+  Package,
+  ShoppingCart,
+  Warehouse,
+  FileText,
+  Settings,
+  Check,
+  Save,
+  LoaderCircle,
+  Search,
+  Info,
+  CircleCheck,
+  Camera,
+  X,
+  KeyRound,
+  Send,
+  ShieldCheck as ShieldCheckIcon,
+} from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
@@ -56,6 +82,9 @@ const actionDescriptions = {
   EXPORT: 'Export data',
   IMPORT: 'Import data',
 }
+
+const MAX_PHOTO_SIZE = 4 * 1024 * 1024
+const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 
 function getActionName(permission) {
   const parts = String(permission).split(/[:.]/)
@@ -124,13 +153,21 @@ export default function EmployeeForm() {
 
   const isEdit = Boolean(id)
 
-  const { permissions } = useAuth()
+  const auth = useAuth()
+  const { permissions } = auth
+
+  const currentUser = auth.user || auth.currentUser || auth.employee
+  const currentUserId = currentUser?._id || currentUser?.id || currentUser?.userId
+
+  const isSelfEmployee = Boolean(isEdit && currentUserId && String(currentUserId) === String(id))
 
   const canViewEmployee = hasPermission(permissions, 'employee:view')
   const canCreateEmployee = hasPermission(permissions, 'employee:create')
   const canUpdateEmployee = hasPermission(permissions, 'employee:update')
   const canAssignRoles = hasPermission(permissions, 'employee:assign-role')
   const canManagePermissions = hasPermission(permissions, 'employee:manage-permissions')
+
+  const canResetEmployeePassword = isEdit && !isSelfEmployee && hasPermission(permissions, 'employee:reset-password')
 
   const EMPLOYEE_UPDATE = 'employee:update'
   const EMPLOYEE_ASSIGN_ROLE = 'employee:assign-role'
@@ -159,6 +196,23 @@ export default function EmployeeForm() {
   const [toast, setToast] = useState(null)
   const [fieldErrors, setFieldErrors] = useState({})
 
+  // Profile photo states
+  const [currentPhoto, setCurrentPhoto] = useState('')
+  const [selectedPhoto, setSelectedPhoto] = useState(null)
+  const [photoPreview, setPhotoPreview] = useState('')
+  const [photoError, setPhotoError] = useState('')
+  const [photoLoadError, setPhotoLoadError] = useState(false)
+
+  // Employee password reset states
+  const [otpSent, setOtpSent] = useState(false)
+  const [otpVerified, setOtpVerified] = useState(false)
+  const [resetOtp, setResetOtp] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
+  const [showResetPassword, setShowResetPassword] = useState(false)
+  const [showConfirmResetPassword, setShowConfirmResetPassword] = useState(false)
+
   const showToast = (type, message, duration = 3000) => {
     setToast({
       id: Date.now(),
@@ -171,6 +225,95 @@ export default function EmployeeForm() {
   const closeToast = () => {
     setToast(null)
   }
+
+  // Convert stored upload path into a full backend image URL.
+  const getPhotoUrl = (photoPath) => {
+    if (!photoPath || typeof photoPath !== 'string') return ''
+
+    const path = photoPath.trim()
+
+    if (!path) return ''
+
+    if (/^https?:\/\//i.test(path)) {
+      return path
+    }
+
+    try {
+      const apiBaseUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+      const backendOrigin = new URL(apiBaseUrl).origin
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`
+
+      return `${backendOrigin}${normalizedPath}`
+    } catch {
+      return ''
+    }
+  }
+
+  // Handle profile photo selection.
+  const handlePhotoChange = (event) => {
+    const file = event.target.files?.[0]
+
+    if (!file) return
+
+    setPhotoError('')
+    setPhotoLoadError(false)
+
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      setPhotoError('Only JPG, PNG and WEBP images are allowed.')
+      event.target.value = ''
+      return
+    }
+
+    if (file.size > MAX_PHOTO_SIZE) {
+      setPhotoError('Profile photo must be smaller than 4 MB.')
+      event.target.value = ''
+      return
+    }
+
+    setSelectedPhoto(file)
+    setPhotoPreview(URL.createObjectURL(file))
+  }
+
+  // Remove newly selected photo and restore the existing photo preview.
+  const clearSelectedPhoto = () => {
+    setSelectedPhoto(null)
+    setPhotoPreview('')
+    setPhotoError('')
+    setPhotoLoadError(false)
+
+    const fileInput = document.getElementById('employee-profile-photo')
+
+    if (fileInput) {
+      fileInput.value = ''
+    }
+  }
+
+  // Upload selected photo and return its saved path.
+  const uploadEmployeePhoto = async (employeeId) => {
+    if (!selectedPhoto) return null
+
+    const formData = new FormData()
+    formData.append('file', selectedPhoto)
+
+    const response = await axiosInstance.post(`/erp/employees/${employeeId}/upload-photo`, formData)
+
+    const filePath = response.data.filePath
+
+    if (!filePath) {
+      throw new Error('Photo upload succeeded but the server did not return a file path.')
+    }
+
+    return filePath
+  }
+
+  // Revoke temporary preview URLs when they are replaced or component unmounts.
+  useEffect(() => {
+    if (!photoPreview || !photoPreview.startsWith('blob:')) return
+
+    return () => {
+      URL.revokeObjectURL(photoPreview)
+    }
+  }, [photoPreview])
 
   useEffect(() => {
     document.title = isEdit ? 'Edit Employee | MineERP' : 'Add Employee | MineERP'
@@ -190,6 +333,7 @@ export default function EmployeeForm() {
             limit: 100,
           },
         })
+
         const roleData = rolesResponse.data
 
         const roles = Array.isArray(roleData.roles) ? roleData.roles : []
@@ -219,6 +363,12 @@ export default function EmployeeForm() {
             password: '',
             status: employee.status || 'Active',
           })
+
+          setCurrentPhoto(employee.profilePhoto || '')
+          setSelectedPhoto(null)
+          setPhotoPreview('')
+          setPhotoError('')
+          setPhotoLoadError(false)
 
           const employeeRoles = Array.isArray(employee.roles)
             ? employee.roles.map((role) => ({
@@ -290,14 +440,12 @@ export default function EmployeeForm() {
       if (next.has(permission)) {
         next.delete(permission)
 
-        // UPDATE OFF થાય તો બંને dependent permissions પણ OFF.
         if (permission === EMPLOYEE_UPDATE) {
           dependentPermissions.forEach((item) => next.delete(item))
         }
       } else {
         next.add(permission)
 
-        // Role assignment અથવા permission management માટે UPDATE જરૂરી.
         if (dependentPermissions.includes(permission)) {
           next.add(EMPLOYEE_UPDATE)
         }
@@ -324,7 +472,7 @@ export default function EmployeeForm() {
       errors.password = 'Password must contain at least 8 characters.'
     }
 
-    if (form.password && form.password.length < 8) {
+    if (!isEdit && form.password && form.password.length < 8) {
       errors.password = 'Password must contain at least 8 characters.'
     }
 
@@ -342,6 +490,92 @@ export default function EmployeeForm() {
     return true
   }
 
+  // Request OTP for the selected employee.
+  const handleRequestResetOtp = async () => {
+    if (!id || resetLoading || !canResetEmployeePassword) return
+
+    setResetLoading(true)
+
+    try {
+      await axiosInstance.post(`/erp/employees/${id}/password-reset/request-otp`)
+
+      setOtpSent(true)
+      setOtpVerified(false)
+      setResetOtp('')
+      setNewPassword('')
+      setConfirmPassword('')
+
+      showToast('success', 'Password reset OTP sent to employee email.')
+    } catch (error) {
+      showToast('error', error.response?.data?.message || 'Unable to send password reset OTP.', 5000)
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
+  // Verify the received OTP.
+  const handleVerifyResetOtp = async () => {
+    if (!id || resetLoading || !canResetEmployeePassword) return
+
+    if (!/^\d{6}$/.test(resetOtp)) {
+      showToast('warning', 'Enter a valid 6-digit OTP.')
+      return
+    }
+
+    setResetLoading(true)
+
+    try {
+      await axiosInstance.post(`/erp/employees/${id}/password-reset/verify-otp`, {
+        otp: resetOtp,
+      })
+
+      setOtpVerified(true)
+      showToast('success', 'OTP verified successfully.')
+    } catch (error) {
+      showToast('error', error.response?.data?.message || 'Invalid or expired OTP.', 5000)
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
+  // Update the employee password after OTP verification.
+  const handleUpdateEmployeePassword = async () => {
+    if (!id || resetLoading || !otpVerified || !canResetEmployeePassword) return
+
+    if (newPassword.length < 8) {
+      showToast('warning', 'Password must contain at least 8 characters.')
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      showToast('warning', 'New password and confirm password do not match.')
+      return
+    }
+
+    setResetLoading(true)
+
+    try {
+      await axiosInstance.post(`/erp/employees/${id}/password-reset/update-password`, {
+        newPassword,
+        confirmPassword,
+      })
+
+      setOtpSent(false)
+      setOtpVerified(false)
+      setResetOtp('')
+      setNewPassword('')
+      setConfirmPassword('')
+      setShowResetPassword(false)
+      setShowConfirmResetPassword(false)
+
+      showToast('success', 'Employee password reset successfully.')
+    } catch (error) {
+      showToast('error', error.response?.data?.message || 'Unable to reset employee password.', 5000)
+    } finally {
+      setResetLoading(false)
+    }
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
 
@@ -353,7 +587,15 @@ export default function EmployeeForm() {
     if (saving) return
     if (!validateForm()) return
 
+    if (photoError) {
+      showToast('warning', 'Please select a valid profile photo.')
+      return
+    }
+
     setSaving(true)
+
+    let uploadedPhotoPath = ''
+    let photoEmployeeId = id || ''
 
     try {
       const payload = {
@@ -373,13 +615,65 @@ export default function EmployeeForm() {
       if (isEdit) {
         payload.status = form.status
 
+        // Upload a new photo only when the user selected one.
+        if (selectedPhoto) {
+          uploadedPhotoPath = await uploadEmployeePhoto(id)
+          payload.profilePhoto = uploadedPhotoPath
+        }
+
         await axiosInstance.patch(`/erp/employees/${id}`, payload)
+
+        // Delete the old photo only after the new photo is saved.
+        if (uploadedPhotoPath && currentPhoto && currentPhoto !== uploadedPhotoPath) {
+          try {
+            await axiosInstance.delete(`/erp/employees/${id}/delete-photo`, {
+              data: {
+                filePath: currentPhoto,
+              },
+            })
+          } catch (deleteError) {
+            console.error('Old employee photo cleanup failed:', deleteError)
+
+            showToast('warning', 'Employee updated, but the old photo could not be deleted.', 5000)
+          }
+        }
       } else {
         payload.password = form.password
         payload.roles = selectedRoles
         payload.permissionOverrides = selectedPermissions
 
-        await axiosInstance.post('/erp/employees', payload)
+        const createResponse = await axiosInstance.post('/erp/employees', payload)
+
+        const createdEmployee = createResponse.data.employee || createResponse.data.data?.employee || createResponse.data
+
+        photoEmployeeId = createdEmployee._id || createdEmployee.id
+
+        if (!photoEmployeeId) {
+          throw new Error('Employee was created, but the server did not return an employee ID.')
+        }
+
+        // Upload photo after employee creation.
+        if (selectedPhoto) {
+          try {
+            uploadedPhotoPath = await uploadEmployeePhoto(photoEmployeeId)
+
+            await axiosInstance.patch(`/erp/employees/${photoEmployeeId}`, {
+              profilePhoto: uploadedPhotoPath,
+            })
+          } catch (photoUploadError) {
+            console.error('Employee photo upload/save failed:', photoUploadError)
+
+            showToast('warning', 'Employee created successfully, but the profile photo could not be saved. You can try again from Edit Employee.', 6000)
+
+            navigate('/company/employees', {
+              state: {
+                message: 'Employee created successfully. Profile photo upload/save failed.',
+              },
+            })
+
+            return
+          }
+        }
       }
 
       navigate('/company/employees', {
@@ -388,6 +682,19 @@ export default function EmployeeForm() {
         },
       })
     } catch (error) {
+      // If a newly uploaded photo was not saved, try to remove the unused file.
+      if (uploadedPhotoPath && photoEmployeeId) {
+        try {
+          await axiosInstance.delete(`/erp/employees/${photoEmployeeId}/delete-photo`, {
+            data: {
+              filePath: uploadedPhotoPath,
+            },
+          })
+        } catch (cleanupError) {
+          console.error('Unused employee photo cleanup failed:', cleanupError)
+        }
+      }
+
       showToast('error', error.response?.data?.message || error.message || `Unable to ${isEdit ? 'update' : 'create'} employee.`, 5000)
     } finally {
       setSaving(false)
@@ -413,11 +720,12 @@ export default function EmployeeForm() {
   const selectedCount = selectedPermissions.filter((permission) => allPermissionKeys.includes(permission)).length
 
   let items
+
   if (isEdit) {
     items = [
       { title: 'Employees', link: '/company/employees' },
       {
-        title: isEdit && `${form.name}`,
+        title: form.name,
         link: `/company/employees/${id}`,
       },
       {
@@ -461,12 +769,10 @@ export default function EmployeeForm() {
         <div className="h-1 bg-erp-primary" />
 
         <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
-          {/* Breadcrumb */}
           <div className="min-w-0 flex-1 overflow-hidden">
             <BreadCrumb items={items} />
           </div>
 
-          {/* view Control */}
           {isEdit && canViewEmployee && (
             <button
               type="button"
@@ -483,6 +789,7 @@ export default function EmployeeForm() {
       </section>
 
       <form onSubmit={handleSubmit} className="space-y-3">
+        {/* Personal Information */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-erp-primary/10 text-erp-primary">
@@ -496,17 +803,22 @@ export default function EmployeeForm() {
           </div>
 
           <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
+            {/* Full Name */}
             <div className="min-w-0 space-y-1">
               <label className="block text-xs font-semibold text-slate-700">Full Name *</label>
+
               <div className={`flex min-h-10 items-center gap-2 rounded-lg border bg-white px-2.5 ${fieldErrors.name ? 'border-red-400' : 'border-slate-200'}`}>
                 <UserRound size={15} className="shrink-0 text-slate-400" />
                 <input value={form.name} onChange={(event) => updateField('name', event.target.value)} placeholder="Full name" autoComplete="name" className="w-full min-w-0 bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400" />
               </div>
+
               {fieldErrors.name && <p className="text-[11px] text-red-600">{fieldErrors.name}</p>}
             </div>
 
+            {/* Email */}
             <div className="min-w-0 space-y-1">
               <label className="block text-xs font-semibold text-slate-700">Email Address *</label>
+
               <div className={`flex min-h-10 items-center gap-2 rounded-lg border bg-white px-2.5 ${fieldErrors.email ? 'border-red-400' : 'border-slate-200'}`}>
                 <Mail size={15} className="shrink-0 text-slate-400" />
                 <input
@@ -518,11 +830,14 @@ export default function EmployeeForm() {
                   className="w-full min-w-0 bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400"
                 />
               </div>
+
               {fieldErrors.email && <p className="text-[11px] text-red-600">{fieldErrors.email}</p>}
             </div>
 
+            {/* Phone */}
             <div className="min-w-0 space-y-1">
               <label className="block text-xs font-semibold text-slate-700">Phone Number</label>
+
               <div className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5">
                 <Phone size={15} className="shrink-0 text-slate-400" />
                 <input
@@ -536,28 +851,83 @@ export default function EmployeeForm() {
               </div>
             </div>
 
-            <div className="min-w-0 space-y-1">
-              <label className="block text-xs font-semibold text-slate-700">{isEdit ? 'New Password (optional)' : 'Password *'}</label>
-              <div className={`flex min-h-10 items-center gap-2 rounded-lg border bg-white px-2.5 ${fieldErrors.password ? 'border-red-400' : 'border-slate-200'}`}>
-                <LockKeyhole size={15} className="shrink-0 text-slate-400" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={form.password}
-                  onChange={(event) => updateField('password', event.target.value)}
-                  placeholder={isEdit ? 'Leave blank to keep current' : 'Min. 8 characters'}
-                  autoComplete="new-password"
-                  className="w-full min-w-0 bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400"
-                />
-                <button type="button" onClick={() => setShowPassword((current) => !current)} className="shrink-0 text-slate-400 hover:text-slate-700" aria-label={showPassword ? 'Hide password' : 'Show password'}>
-                  {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                </button>
+            {/* Initial Password - Add Employee only */}
+            {!isEdit && (
+              <div className="min-w-0 space-y-1">
+                <label className="block text-xs font-semibold text-slate-700">Password *</label>
+
+                <div className={`flex min-h-10 items-center gap-2 rounded-lg border bg-white px-2.5 ${fieldErrors.password ? 'border-red-400' : 'border-slate-200'}`}>
+                  <LockKeyhole size={15} className="shrink-0 text-slate-400" />
+
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={(event) => updateField('password', event.target.value)}
+                    placeholder="Min. 8 characters"
+                    autoComplete="new-password"
+                    className="w-full min-w-0 bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400"
+                  />
+
+                  <button type="button" onClick={() => setShowPassword((current) => !current)} className="shrink-0 text-slate-400 hover:text-slate-700" aria-label={showPassword ? 'Hide password' : 'Show password'}>
+                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+
+                {fieldErrors.password && <p className="text-[11px] text-red-600">{fieldErrors.password}</p>}
               </div>
-              {fieldErrors.password && <p className="text-[11px] text-red-600">{fieldErrors.password}</p>}
+            )}
+
+            {/* Profile Photo */}
+            <div className="space-y-2 sm:col-span-2 lg:col-span-4">
+              <label className="block text-xs font-semibold text-slate-700">
+                Profile Photo
+                <span className="ml-1 font-normal text-slate-400">(Optional)</span>
+              </label>
+
+              <div className="flex flex-wrap items-center gap-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-white">
+                  {photoPreview ? (
+                    <img src={photoPreview} alt="Selected employee profile" className="h-full w-full object-cover" />
+                  ) : currentPhoto && !photoLoadError ? (
+                    <img src={getPhotoUrl(currentPhoto)} alt="Employee profile" className="h-full w-full object-cover" onError={() => setPhotoLoadError(true)} />
+                  ) : (
+                    <UserRound size={30} className="text-slate-300" />
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-erp-primary bg-white px-3 text-xs font-semibold text-erp-primary transition hover:bg-erp-primary/5">
+                      <Camera size={15} />
+                      {selectedPhoto ? 'Change Selected Photo' : currentPhoto ? 'Change Photo' : 'Upload Photo'}
+
+                      <input id="employee-profile-photo" type="file" accept="image/jpeg,image/png,image/webp" onChange={handlePhotoChange} className="hidden" />
+                    </label>
+
+                    {selectedPhoto && (
+                      <button type="button" onClick={clearSelectedPhoto} className="inline-flex h-9 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-100">
+                        <X size={14} />
+                        Remove Selection
+                      </button>
+                    )}
+                  </div>
+
+                  <p className="mt-2 text-[11px] text-slate-500">JPG, PNG or WEBP. Maximum file size 4 MB.</p>
+
+                  {selectedPhoto && <p className="mt-1 truncate text-[11px] font-medium text-emerald-700">Selected: {selectedPhoto.name}</p>}
+
+                  {photoError && <p className="mt-1 text-[11px] text-red-600">{photoError}</p>}
+
+                  {photoLoadError && currentPhoto && !selectedPhoto && <p className="mt-1 text-[11px] text-amber-700">Existing profile photo could not be loaded. You can upload a new one.</p>}
+                </div>
+              </div>
             </div>
 
+            {/* Account Status */}
             {isEdit && (
               <div className="space-y-1 sm:col-span-2 lg:col-span-4">
                 <label className="block text-xs font-semibold text-slate-700">Account Status</label>
+
                 <div className="flex gap-2">
                   {['Active', 'Inactive'].map((status) => (
                     <button
@@ -577,11 +947,161 @@ export default function EmployeeForm() {
           </div>
         </section>
 
+        {/* Employee Password Reset */}
+        {canResetEmployeePassword && (
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+            <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-700">
+                <KeyRound size={16} />
+              </div>
+
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">Employee Password Reset</h2>
+                <p className="text-[11px] text-slate-500">Reset this employee's password using email OTP verification</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-3">
+              <div className="rounded-lg border border-blue-100 bg-blue-50/70 p-3">
+                <div className="flex items-start gap-2">
+                  <Info size={15} className="mt-0.5 shrink-0 text-blue-700" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-blue-900">OTP will be sent to the employee's registered email.</p>
+                    <p className="mt-1 break-all text-xs text-blue-800">{form.email || 'Employee email not available'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {!otpSent ? (
+                <button
+                  type="button"
+                  onClick={handleRequestResetOtp}
+                  disabled={resetLoading || !form.email}
+                  className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 text-xs font-semibold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {resetLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Send size={14} />}
+                  {resetLoading ? 'Sending OTP...' : 'Send Password Reset OTP'}
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  {!otpVerified ? (
+                    <>
+                      <div className="max-w-sm space-y-1">
+                        <label className="block text-xs font-semibold text-slate-700">Enter 6-digit OTP</label>
+
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          maxLength={6}
+                          value={resetOtp}
+                          onChange={(event) => setResetOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="Enter OTP"
+                          className="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm tracking-[0.3em] outline-none transition focus:border-erp-primary focus:ring-2 focus:ring-erp-primary/10"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={handleVerifyResetOtp}
+                          disabled={resetLoading || resetOtp.length !== 6}
+                          className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 text-xs font-semibold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {resetLoading ? <LoaderCircle size={15} className="animate-spin" /> : <ShieldCheckIcon size={15} />}
+                          Verify OTP
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleRequestResetOtp}
+                          disabled={resetLoading}
+                          className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {resetLoading && <LoaderCircle size={14} className="animate-spin" />}
+                          Resend OTP
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+                        <CircleCheck size={16} className="shrink-0 text-emerald-700" />
+                        <p className="text-xs font-semibold text-emerald-800">OTP verified. You can now set a new password.</p>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {/* New Password */}
+                        <div className="min-w-0 space-y-1">
+                          <label className="block text-xs font-semibold text-slate-700">New Password *</label>
+
+                          <div className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5">
+                            <LockKeyhole size={15} className="shrink-0 text-slate-400" />
+
+                            <input
+                              type={showResetPassword ? 'text' : 'password'}
+                              value={newPassword}
+                              onChange={(event) => setNewPassword(event.target.value)}
+                              placeholder="Minimum 8 characters"
+                              autoComplete="new-password"
+                              className="w-full min-w-0 bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400"
+                            />
+
+                            <button type="button" onClick={() => setShowResetPassword((current) => !current)} className="shrink-0 text-slate-400 hover:text-slate-700" aria-label={showResetPassword ? 'Hide password' : 'Show password'}>
+                              {showResetPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Confirm Password */}
+                        <div className="min-w-0 space-y-1">
+                          <label className="block text-xs font-semibold text-slate-700">Confirm New Password *</label>
+
+                          <div className="flex min-h-10 items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5">
+                            <LockKeyhole size={15} className="shrink-0 text-slate-400" />
+
+                            <input
+                              type={showConfirmResetPassword ? 'text' : 'password'}
+                              value={confirmPassword}
+                              onChange={(event) => setConfirmPassword(event.target.value)}
+                              placeholder="Re-enter new password"
+                              autoComplete="new-password"
+                              className="w-full min-w-0 bg-transparent py-1.5 text-xs outline-none placeholder:text-slate-400"
+                            />
+
+                            <button type="button" onClick={() => setShowConfirmResetPassword((current) => !current)} className="shrink-0 text-slate-400 hover:text-slate-700" aria-label={showConfirmResetPassword ? 'Hide password' : 'Show password'}>
+                              {showConfirmResetPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {newPassword && confirmPassword && newPassword !== confirmPassword && <p className="text-[11px] text-red-600">Passwords do not match.</p>}
+
+                      <button
+                        type="button"
+                        onClick={handleUpdateEmployeePassword}
+                        disabled={resetLoading || newPassword.length < 8 || !confirmPassword || newPassword !== confirmPassword}
+                        className="inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-erp-primary px-4 text-xs font-semibold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {resetLoading ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}
+                        {resetLoading ? 'Updating Password...' : 'Update Employee Password'}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Assign Roles */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-2.5">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
               <ShieldCheck size={16} />
             </div>
+
             <div>
               <h2 className="text-sm font-bold text-slate-900">Assign Roles</h2>
               <p className="text-[11px] text-slate-500">Select one or more roles</p>
@@ -622,6 +1142,7 @@ export default function EmployeeForm() {
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
                             <Users size={14} />
                           </div>
+
                           <span className="truncate text-xs font-bold text-slate-800">{role.name}</span>
                         </div>
 
@@ -634,6 +1155,7 @@ export default function EmployeeForm() {
 
                       <div className="mt-2 flex items-center justify-between border-t border-slate-100 pt-2">
                         <span className="text-[10px] text-slate-500">{rolePermissionCount} permissions</span>
+
                         <span className={`text-[10px] font-semibold ${selected ? 'text-erp-primary' : 'text-slate-400'}`}>{selected ? 'Selected' : 'Select'}</span>
                       </div>
                     </button>
@@ -644,12 +1166,14 @@ export default function EmployeeForm() {
           </div>
         </section>
 
+        {/* Permissions */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-3 py-2.5">
             <div className="flex items-center gap-2">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
                 <ShieldCheck size={16} />
               </div>
+
               <div>
                 <h2 className="text-sm font-bold text-slate-900">Permissions</h2>
                 <p className="text-[11px] text-slate-500">Customize employee access</p>
@@ -668,6 +1192,7 @@ export default function EmployeeForm() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="relative w-full sm:max-w-xs">
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+
                 <input
                   value={permissionSearch}
                   onChange={(event) => setPermissionSearch(event.target.value)}
@@ -723,6 +1248,7 @@ export default function EmployeeForm() {
                           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white text-erp-primary">
                             <Icon size={14} />
                           </div>
+
                           <div className="min-w-0">
                             <h3 className="truncate text-xs font-bold text-slate-800">{section.name}</h3>
                             <p className="text-[10px] text-slate-500">
@@ -746,12 +1272,10 @@ export default function EmployeeForm() {
                                 section.permissions.forEach((permission) => next.add(permission))
                               }
 
-                              // Dependent permissions mate employee:update compulsory
                               if (dependentPermissions.some((permission) => next.has(permission))) {
                                 next.add(EMPLOYEE_UPDATE)
                               }
 
-                              // employee:update OFF hoy to dependent permissions pan OFF
                               if (!next.has(EMPLOYEE_UPDATE)) {
                                 dependentPermissions.forEach((permission) => next.delete(permission))
                               }
@@ -782,7 +1306,9 @@ export default function EmployeeForm() {
                                 aria-checked={enabled}
                                 disabled={!canManagePermissions}
                                 onClick={() => {
-                                  if (canManagePermissions) togglePermission(permission)
+                                  if (canManagePermissions) {
+                                    togglePermission(permission)
+                                  }
                                 }}
                                 className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-erp-primary/30 disabled:cursor-not-allowed disabled:opacity-50 ${
                                   enabled ? 'bg-erp-primary' : 'bg-slate-300'
@@ -802,6 +1328,7 @@ export default function EmployeeForm() {
           </div>
         </section>
 
+        {/* Form Actions */}
         <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 rounded-xl border border-slate-200 bg-white/95 p-2.5 shadow-sm backdrop-blur">
           <button type="button" onClick={() => navigate('/company/employees')} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
             <ArrowLeft size={14} />
@@ -814,6 +1341,7 @@ export default function EmployeeForm() {
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-erp-primary px-4 text-xs font-bold text-white transition hover:bg-erp-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
           >
             {saving ? <LoaderCircle size={15} className="animate-spin" /> : <Save size={15} />}
+
             {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Employee'}
           </button>
         </div>

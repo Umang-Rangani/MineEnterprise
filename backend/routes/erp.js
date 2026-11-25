@@ -57,9 +57,8 @@ router.get('/my-permissions', authMiddleware, async (req, res, next) => {
       })
     }
 
-    // console.log('USER ROLE:', req.user.role)
-    // console.log('USER OVERRIDES:', req.user.permissionOverrides)
-    // console.log('USER ROLES:', req.user.roles)
+  
+    
 
     const permissions = getEffectivePermissions(req.user, company)
 

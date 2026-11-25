@@ -10,7 +10,7 @@ export default function Forbidden() {
 
   const isSuperAdmin = user?.role === 'SuperAdmin' || user?.role === 'superadmin'
 
-  const dashboardPath = isSuperAdmin ? '/superadmin' : '/company'
+  const dashboardPath = isSuperAdmin ? '/superadmin' : '/company/profile'
 
   useEffect(() => {
     document.title = 'Access Forbidden | MineERP'

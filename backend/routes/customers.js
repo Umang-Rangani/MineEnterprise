@@ -5,6 +5,7 @@ const Customer = require('../models/Customer')
 const CustomerCounter = require('../models/CustomerCounter')
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
+const { hasPermission } = require('../utils/permission')
 
 const router = express.Router()
 
@@ -115,8 +116,65 @@ const handleError = (error, res, next) => {
   return next(error)
 }
 
+const requireCustomerListOrSalesCreatePermission = async (req, res, next) => {
+  try {
+    if (!req.user?.userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      })
+    }
+
+    if (req.user.role === 'SuperAdmin') {
+      return next()
+    }
+
+    if (!req.user.companyId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Company access required',
+      })
+    }
+
+    const Company = require('../models/Company')
+
+    const company = await Company.findOne({
+      _id: req.user.companyId,
+      status: 'Approved',
+    })
+      .select('_id status customRoles predefinedRolePermissions')
+      .lean()
+
+    if (!company) {
+      return res.status(403).json({
+        success: false,
+        message: 'Approved company not found',
+      })
+    }
+
+    const canListCustomers = hasPermission(req.user, company, 'Customer', 'LIST')
+
+    const canCreateSales = hasPermission(req.user, company, 'Sales', 'CREATE')
+
+    if (!canListCustomers && !canCreateSales) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to perform this action',
+        requiredPermission: 'Customer:LIST or Sales:CREATE',
+      })
+    }
+
+    req.company = company
+    req.customerListAccess = canListCustomers
+
+    return next()
+  } catch (error) {
+    return next(error)
+  }
+}
+
 // GET /erp/customers
-router.get('/', permissionMiddleware('Customer', 'LIST'), async (req, res, next) => {
+router.get('/', requireCustomerListOrSalesCreatePermission, async (req, res, next) => {
   try {
     const companyId = getCompanyId(req)
 
@@ -326,7 +384,6 @@ router.patch('/:id', permissionMiddleware('Customer', 'UPDATE'), async (req, res
         message: 'Customer name cannot be empty',
       })
     }
-
 
     if (payload.status !== undefined && !['Active', 'Inactive'].includes(payload.status)) {
       return res.status(400).json({

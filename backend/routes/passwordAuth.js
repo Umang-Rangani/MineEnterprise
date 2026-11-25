@@ -1,12 +1,45 @@
 const express = require('express')
+const User = require('../models/User')
 const authMiddleware = require('../middleware/authMiddleware')
 
 const { requestPasswordOtp, verifyPasswordOtp, updatePasswordAfterOtp } = require('../services/passwordOtpService')
 
 const router = express.Router()
 
+// Only CompanyAdmin and SuperAdmin can change their own password
+const requireSelfPasswordChangeAccess = async (req, res, next) => {
+  try {
+    const user = await User.findById(req.user.userId).select('role')
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found.',
+      })
+    }
+
+    const allowedRoles = ['CompanyAdmin', 'SuperAdmin']
+
+    if (!allowedRoles.includes(user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You are not allowed to change your own password.',
+      })
+    }
+
+    next()
+  } catch (error) {
+    console.error('Password permission error:', error.message)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to verify password change permission.',
+    })
+  }
+}
+
 // STEP 1: Request OTP
-router.post('/request-otp', authMiddleware, async (req, res) => {
+router.post('/request-otp', authMiddleware, requireSelfPasswordChangeAccess, async (req, res) => {
   try {
     const result = await requestPasswordOtp({
       userId: req.user.userId,
@@ -27,7 +60,7 @@ router.post('/request-otp', authMiddleware, async (req, res) => {
 })
 
 // Resend OTP
-router.post('/resend-otp', authMiddleware, async (req, res) => {
+router.post('/resend-otp', authMiddleware, requireSelfPasswordChangeAccess, async (req, res) => {
   try {
     const result = await requestPasswordOtp({
       userId: req.user.userId,
@@ -48,7 +81,7 @@ router.post('/resend-otp', authMiddleware, async (req, res) => {
 })
 
 // STEP 2: Verify OTP
-router.post('/verify-otp', authMiddleware, async (req, res) => {
+router.post('/verify-otp', authMiddleware, requireSelfPasswordChangeAccess, async (req, res) => {
   try {
     const result = await verifyPasswordOtp({
       userId: req.user.userId,
@@ -70,7 +103,7 @@ router.post('/verify-otp', authMiddleware, async (req, res) => {
 })
 
 // STEP 3: Update password after OTP verification
-router.post('/update-password', authMiddleware, async (req, res) => {
+router.post('/update-password', authMiddleware, requireSelfPasswordChangeAccess, async (req, res) => {
   try {
     const result = await updatePasswordAfterOtp({
       userId: req.user.userId,

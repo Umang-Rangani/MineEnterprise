@@ -41,6 +41,7 @@ const journalEntriesRouter = require('./routes/journalEntries')
 const generalLedgerRouter = require('./routes/generalLedger')
 const trialBalanceRouter = require('./routes/trialBalance')
 const financialStatementsRouter = require('./routes/financialStatements')
+const profileRouter = require('./routes/profile')
 
 const initializeChartOfAccounts = require('./routes/initializeChartOfAccounts')
 
@@ -99,6 +100,7 @@ app.use('/erp/sales', salesRouter)
 app.use('/erp/invoices', invoicesRouter)
 app.use('/erp/payments', paymentsRouter)
 app.use('/erp/expenses', expensesRouter)
+app.use('/erp/profile', profileRouter)
 
 app.use('/erp/chart-of-accounts', chartOfAccountsRouter)
 app.use('/erp/journal-entries', journalEntriesRouter)

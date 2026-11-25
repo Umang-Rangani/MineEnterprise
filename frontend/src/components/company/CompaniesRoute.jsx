@@ -29,9 +29,11 @@ import {
   ReceiptText,
   Calculator,
   ChevronDown,
+  UserRound,
 } from 'lucide-react'
 
 import { useAuth } from '../../context/AuthContext'
+import { useRef } from 'react'
 
 const navigationItems = [
   {
@@ -40,6 +42,12 @@ const navigationItems = [
     icon: LayoutDashboard,
     end: true,
     actions: ['dashboard:view'],
+  },
+  {
+    label: 'My Profile',
+    path: '/company/profile',
+    icon: UserRound,
+    alwaysVisible: true,
   },
   {
     label: 'Employees',
@@ -224,6 +232,7 @@ const navigationItems = [
 
 const pageTitles = {
   company: 'Dashboard',
+  profile: 'My Profile',
   employees: 'Employees',
   roles: 'Roles & Permissions',
   categories: 'Categories',
@@ -250,6 +259,7 @@ const pageTitles = {
 
 const pageDescriptions = {
   company: 'Company overview and business activity',
+  profile: 'View your personal and account information',
   employees: 'Manage your team and employee access',
   roles: 'Manage roles and employee permissions',
   categories: 'Organize your product categories',
@@ -373,10 +383,16 @@ const routePermissions = [
     actions: ['category:list'],
   },
 
-  //  products
+  // Products
   {
     pattern: /^\/company\/products\/?$/,
     actions: ['product:list', 'product:view'],
+  },
+
+  // Inventory
+  {
+    pattern: /^\/company\/inventory\/stock-transfer\/?$/,
+    actions: ['inventory:transfer-stock'],
   },
   {
     pattern: /^\/company\/inventory\/?$/,
@@ -677,6 +693,7 @@ export default function CompaniesRoute() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [notificationOpen, setNotificationOpen] = useState(false)
+  const notificationRef = useRef(null)
 
   const [accountingOpen, setAccountingOpen] = useState(
     location.pathname.startsWith('/company/chart-of-accounts') ||
@@ -705,6 +722,20 @@ export default function CompaniesRoute() {
 
     return () => {
       window.removeEventListener('keydown', handleEscape)
+    }
+  }, [])
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (notificationRef.current && !notificationRef.current.contains(event.target)) {
+        setNotificationOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
     }
   }, [])
 
@@ -825,6 +856,19 @@ export default function CompaniesRoute() {
     return <Navigate to="/" replace />
   }
 
+  const isCompanyProfileEditRoute = /^\/company\/profile\/edit\/?$/.test(location.pathname)
+
+  if (isCompanyProfileEditRoute && !isCompanyAdmin) {
+    return <Navigate to="/company/profile" replace />
+  }
+
+  const isCompanyDashboardRoute = /^\/company\/?$/.test(location.pathname)
+  const canViewDashboard = hasPermission(permissions, ['dashboard:view'])
+
+  if (isCompanyDashboardRoute && !canViewDashboard) {
+    return <Navigate to="/company/profile" replace />
+  }
+
   const matchedRoute = routePermissions.find((route) => route.pattern.test(location.pathname))
 
   if (matchedRoute && !hasPermission(permissions, matchedRoute.actions)) {
@@ -832,7 +876,7 @@ export default function CompaniesRoute() {
 
     const previousRoute = previousPath ? routePermissions.find((route) => route.pattern.test(previousPath)) : null
 
-    const fallbackPath = previousPath && previousPath !== '/forbidden' && previousRoute && hasPermission(permissions, previousRoute.actions) ? previousPath : '/company'
+    const fallbackPath = previousPath && previousPath !== '/forbidden' && previousRoute && hasPermission(permissions, previousRoute.actions) ? previousPath : '/company/profile'
 
     console.log('COMPANY ROUTE DEBUG:', {
       userRole: user?.role,
@@ -852,7 +896,7 @@ export default function CompaniesRoute() {
     )
   }
 
-  const visibleNavigationItems = navigationItems.filter((item) => hasPermission(permissions, item.actions))
+  const visibleNavigationItems = navigationItems.filter((item) => item.alwaysVisible || hasPermission(permissions, item.actions))
 
   const pathParts = location.pathname.split('/').filter(Boolean)
   const currentPath = pathParts[1] || 'company'
@@ -945,10 +989,28 @@ export default function CompaniesRoute() {
                       }
 
                       if (isReports) {
-                        navigate(item.path)
-                        setReportsOpen(true)
+                        const shouldOpen = !reportsOpen
+
+                        setReportsOpen(shouldOpen)
+
+                        if (shouldOpen && !location.pathname.startsWith('/company/reports')) {
+                          navigate(item.path)
+                        }
                       } else {
-                        setAccountingOpen((previous) => !previous)
+                        const shouldOpen = !accountingOpen
+
+                        setAccountingOpen(shouldOpen)
+
+                        const isAccountingRoute =
+                          location.pathname.startsWith('/company/chart-of-accounts') ||
+                          location.pathname.startsWith('/company/journal-entries') ||
+                          location.pathname.startsWith('/company/general-ledger') ||
+                          location.pathname.startsWith('/company/trial-balance') ||
+                          location.pathname.startsWith('/company/financial-statements')
+
+                        if (shouldOpen && !isAccountingRoute) {
+                          navigate(item.path)
+                        }
                       }
                     }}
                     title={sidebarCollapsed ? item.label : undefined}
@@ -1055,7 +1117,7 @@ export default function CompaniesRoute() {
 
           <div className="flex shrink-0 items-center gap-2 sm:gap-3">
             {/* Notifications */}
-            <div className="relative">
+            <div className="relative" ref={notificationRef}>
               <button
                 type="button"
                 onClick={() => setNotificationOpen((previous) => !previous)}
@@ -1076,24 +1138,15 @@ export default function CompaniesRoute() {
 
             <div className="hidden h-7 w-px bg-slate-200 sm:block" />
 
-            <div className="hidden max-w-36 sm:block">
-              <p className="truncate text-xs font-semibold text-slate-800">{displayName}</p>
-              <p className="truncate text-[10px] text-slate-500">{roleLabel}</p>
-            </div>
-
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-erp-primary-light text-xs font-bold text-erp-primary sm:hidden">{displayName.charAt(0).toUpperCase()}</div>
-
-            <div className="hidden h-7 w-px bg-slate-200 sm:block" />
-
-            <div className={`flex items-center gap-2.5 rounded-lg bg-slate-50 p-2 ${sidebarCollapsed ? 'justify-center' : ''}`}>
+            {/* Single User Profile */}
+            <div className="flex min-w-0 max-w-[112px] items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 sm:max-w-52 sm:gap-2.5 sm:px-2.5 sm:py-2">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-erp-primary-light text-xs font-bold text-erp-primary">{displayName.charAt(0).toUpperCase()}</div>
 
-              {!sidebarCollapsed && (
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-xs font-semibold text-slate-800">{displayName}</p>
-                  <p className="truncate text-[10px] text-slate-500">{user.email}</p>
-                </div>
-              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-slate-800">{displayName}</p>
+
+                <p className="hidden truncate text-[10px] text-slate-500 sm:block">{roleLabel}</p>
+              </div>
             </div>
           </div>
         </header>

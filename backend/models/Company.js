@@ -21,6 +21,11 @@ const customRoleSchema = new mongoose.Schema(
       default: [],
     },
 
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+
     isSystem: {
       type: Boolean,
       default: false,

@@ -104,6 +104,7 @@ router.get('/', authMiddleware, permissionMiddleware('Role', 'LIST'), async (req
       description: role.description || '',
       permissions: (role.permissions || []).filter((permission) => validPermissions.has(permission)),
       isSystem: role.isSystem === true,
+      isActive: role.isActive !== false,
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
     }))
@@ -231,6 +232,17 @@ router.post('/', authMiddleware, permissionMiddleware('Role', 'CREATE'), async (
 
     const duplicateRole = (company.customRoles || []).some((role) => role.name.toLowerCase() === name.trim().toLowerCase())
 
+    const normalizedRoleName = name.trim().toLowerCase()
+
+    const isPredefinedRoleName = allowedPredefinedRoles.some((roleName) => roleName.toLowerCase() === normalizedRoleName)
+
+    if (isPredefinedRoleName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Predefined role names cannot be used for custom roles.',
+      })
+    }
+
     if (duplicateRole) {
       return res.status(409).json({
         success: false,
@@ -311,6 +323,7 @@ router.post('/', authMiddleware, permissionMiddleware('Role', 'CREATE'), async (
         name: createdRole.name,
         description: createdRole.description,
         permissions: createdRole.permissions,
+        isActive: createdRole.isActive !== false,
         isSystem: createdRole.isSystem === true,
         createdAt: createdRole.createdAt,
         updatedAt: createdRole.updatedAt,
@@ -405,7 +418,7 @@ router.get('/:id', authMiddleware, permissionMiddleware('Role', 'VIEW'), async (
         name: customRole.name,
         description: customRole.description || '',
         permissions: (customRole.permissions || []).filter((permission) => validPermissions.has(permission)),
-        isSystem: customRole.isSystem === true,
+        isActive: customRole.isActive !== false,
         createdAt: customRole.createdAt,
         updatedAt: customRole.updatedAt,
       },
@@ -633,8 +646,7 @@ router.patch('/:id', authMiddleware, async (req, res, next) => {
           name: customRole.name,
           description: customRole.description || '',
           permissions: customRole.permissions || [],
-          isActive: customRole.isActive,
-          isSystem: customRole.isSystem === true,
+          isActive: customRole.isActive !== false,
           createdAt: customRole.createdAt,
           updatedAt: customRole.updatedAt,
         },
@@ -684,6 +696,20 @@ router.patch('/:id', authMiddleware, async (req, res, next) => {
 
     const duplicateRole = company.customRoles.find((role) => String(role._id) !== String(id) && role.name.toLowerCase() === normalizedName.toLowerCase())
 
+
+    const normalizedRoleName = normalizedName.toLowerCase()
+
+const isPredefinedRoleName = allowedPredefinedRoles.some(
+  (roleName) => roleName.toLowerCase() === normalizedRoleName
+)
+
+if (isPredefinedRoleName) {
+  return res.status(400).json({
+    success: false,
+    message: 'Predefined role names cannot be used for custom roles.',
+  })
+}
+
     if (duplicateRole) {
       return res.status(409).json({
         success: false,
@@ -722,8 +748,7 @@ router.patch('/:id', authMiddleware, async (req, res, next) => {
         name: customRole.name,
         description: customRole.description || '',
         permissions: customRole.permissions,
-        isActive: customRole.isActive,
-        isSystem: customRole.isSystem === true,
+        isActive: customRole.isActive !== false,
         createdAt: customRole.createdAt,
         updatedAt: customRole.updatedAt,
       },

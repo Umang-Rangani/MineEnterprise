@@ -44,7 +44,7 @@ export function AuthProvider({ children }) {
     try {
       const response = await axiosInstance.get('/erp/my-permissions')
 
-      if (!response.data?.success || !response.data?.permissions == null) {
+      if (!response.data?.success || response.data?.permissions == null) {
         throw new Error(response.data?.message || 'Unable to load permissions.')
       }
 
@@ -66,33 +66,38 @@ export function AuthProvider({ children }) {
   }
 
   const refreshUser = async () => {
-    const endpoints = ['/superadmin/me']
+    try {
+      const response = await axiosInstance.get('/erp/profile')
 
-    for (const endpoint of endpoints) {
-      try {
-        const response = await axiosInstance.get(endpoint)
-
-        if (response.data?.success && response.data?.user) {
-          const currentUser = response.data.user
-
-          setUser(currentUser)
-          await loadPermissions(currentUser)
-
-          return currentUser
-        }
-      } catch (error) {
-        const status = error.response?.status
-
-        // Try the next endpoint if this session type is not supported.
-        if (status && ![401, 403, 404].includes(status)) {
-          console.error(`Session restore failed at ${endpoint}:`, error)
-        }
+      if (!response.data?.success || !response.data?.user) {
+        throw new Error(response.data?.message || 'Unable to restore session.')
       }
-    }
 
-    setUser(null)
-    setPermissions({})
-    return null
+      const profileUser = response.data.user
+
+      const currentUser = {
+        ...profileUser,
+        _id: profileUser._id || profileUser.id,
+      }
+
+      setUser(currentUser)
+      await loadPermissions(currentUser)
+
+      return currentUser
+    } catch (error) {
+      const status = error.response?.status
+
+      if (status && ![401, 403, 404].includes(status)) {
+        console.error('Session restore failed:', error)
+      }
+
+      setUser(null)
+      setPermissions({})
+      setPermissionsError('')
+      setPermissionsLoading(false)
+
+      return null
+    }
   }
 
   const login = async (email, password) => {
@@ -152,8 +157,6 @@ export function AuthProvider({ children }) {
       setPermissionsLoading(false)
     }
   }
-
-
 
   useEffect(() => {
     if (!sessionRestoreRef.current) {

@@ -566,6 +566,7 @@ function buildGoodsReceiptValuationMap({ receipts, purchases, movements }) {
 function buildTransferMovementMap(movements) {
   const groups = new Map()
   const issues = []
+  const transferMap = new Map()
 
   for (const movement of movements) {
     if (movement.type !== 'TRANSFER') continue
@@ -590,67 +591,135 @@ function buildTransferMovementMap(movements) {
     groups.get(key).push(movement)
   }
 
-  const transferMap = new Map()
+  const EPSILON = 0.000001
 
   for (const [key, entries] of groups) {
-    if (entries.length !== 2) {
-      issues.push({
-        reference: entries[0]?.reference || '',
-        reason: 'Transfer must contain exactly two matching movement records.',
-      })
-      continue
-    }
+    const outbound = entries.filter((item) => Number(item.newStock) < Number(item.previousStock)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
 
-    const outbound = entries.filter((item) => Number(item.newStock) < Number(item.previousStock))
+    const inbound = entries.filter((item) => Number(item.newStock) > Number(item.previousStock)).sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
 
-    const inbound = entries.filter((item) => Number(item.newStock) > Number(item.previousStock))
+    const usedInboundIds = new Set()
 
-    if (outbound.length !== 1 || inbound.length !== 1) {
-      issues.push({
-        reference: entries[0]?.reference || '',
-        reason: 'Transfer source and destination movements could not be identified.',
-      })
-      continue
-    }
+    for (const source of outbound) {
+      const sourceQuantity = Number(source.quantity)
 
-    const source = outbound[0]
-    const destination = inbound[0]
+      const sourceSnapshotMatches = Number.isFinite(sourceQuantity) && sourceQuantity > 0 && Math.abs(Number(source.previousStock) - Number(source.newStock) - sourceQuantity) < EPSILON
 
-    const quantityMatches = Math.abs(Number(source.quantity) - Number(destination.quantity)) < 0.000001
+      if (!sourceSnapshotMatches) {
+        issues.push({
+          movementId: source._id,
+          reference: source.reference,
+          reason: 'Transfer source stock snapshot or quantity is invalid.',
+        })
+        continue
+      }
 
-    const warehousesMatch = String(source.destinationWarehouseId) === String(destination.warehouseId) && String(destination.destinationWarehouseId) === String(source.warehouseId)
+      const candidates = inbound
+        .filter((destination) => {
+          if (usedInboundIds.has(String(destination._id))) return false
 
-    const sourceSnapshotMatches = Math.abs(Number(source.previousStock) - Number(source.newStock) - Number(source.quantity)) < 0.000001
+          const destinationQuantity = Number(destination.quantity)
 
-    const destinationSnapshotMatches = Math.abs(Number(destination.newStock) - Number(destination.previousStock) - Number(destination.quantity)) < 0.000001
+          const quantityMatches = Number.isFinite(destinationQuantity) && Math.abs(sourceQuantity - destinationQuantity) < EPSILON
 
-    if (!quantityMatches || !warehousesMatch || !sourceSnapshotMatches || !destinationSnapshotMatches) {
-      issues.push({
+          const warehousesMatch = String(source.destinationWarehouseId) === String(destination.warehouseId) && String(destination.destinationWarehouseId) === String(source.warehouseId)
+
+          const destinationSnapshotMatches = Number.isFinite(destinationQuantity) && Math.abs(Number(destination.newStock) - Number(destination.previousStock) - destinationQuantity) < EPSILON
+
+          const productMatches = String(source.productId) === String(destination.productId)
+
+          return quantityMatches && warehousesMatch && destinationSnapshotMatches && productMatches
+        })
+        .map((destination) => ({
+          destination,
+          timeDifference: Math.abs(new Date(source.createdAt).getTime() - new Date(destination.createdAt).getTime()),
+        }))
+        .filter((item) => Number.isFinite(item.timeDifference) && item.timeDifference <= 10000)
+        .sort((a, b) => a.timeDifference - b.timeDifference)
+
+      if (candidates.length === 0 || (candidates.length > 1 && Math.abs(candidates[0].timeDifference - candidates[1].timeDifference) < 1)) {
+        issues.push({
+          movementId: source._id,
+          reference: source.reference,
+          reason: candidates.length === 0 ? 'Transfer source movement has no matching destination movement.' : 'Transfer source movement has ambiguous destination movements.',
+        })
+        continue
+      }
+
+      const destination = candidates[0].destination
+
+      const transfer = {
+        key,
         reference: source.reference,
-        reason: 'Transfer quantity, stock snapshots or warehouse pairing do not match.',
+        productId: String(source.productId),
+        sourceWarehouseId: String(source.warehouseId),
+        destinationWarehouseId: String(destination.warehouseId),
+        quantity: sourceQuantity,
+        sourceMovement: source,
+        destinationMovement: destination,
+      }
+
+      transferMap.set(String(source._id), transfer)
+      transferMap.set(String(destination._id), transfer)
+
+      usedInboundIds.add(String(destination._id))
+
+      // last
+    }
+
+    for (const destination of inbound) {
+      if (usedInboundIds.has(String(destination._id))) continue
+
+      issues.push({
+        movementId: destination._id,
+        reference: destination.reference,
+        reason: 'Transfer destination movement has no matching source movement.',
       })
-      continue
     }
-
-    const transfer = {
-      key,
-      reference: source.reference,
-      productId: String(source.productId),
-      sourceWarehouseId: String(source.warehouseId),
-      destinationWarehouseId: String(destination.warehouseId),
-      quantity: Number(source.quantity),
-      sourceMovement: source,
-      destinationMovement: destination,
-    }
-
-    transferMap.set(String(source._id), transfer)
-    transferMap.set(String(destination._id), transfer)
   }
 
   return {
     transferMap,
     issues,
   }
+}
+
+function inspectTransferMovementGroups(movements) {
+  const groups = new Map()
+
+  for (const movement of movements) {
+    if (movement.type !== 'TRANSFER') continue
+
+    const reference = String(movement.reference || '').trim()
+    const productId = String(movement.productId || '')
+    const warehouseId = String(movement.warehouseId || '')
+    const destinationWarehouseId = String(movement.destinationWarehouseId || '')
+
+    const warehousePair = [warehouseId, destinationWarehouseId].sort()
+    const key = [reference, productId, warehousePair[0], warehousePair[1]].join('|')
+
+    if (!groups.has(key)) groups.set(key, [])
+
+    groups.get(key).push({
+      movementId: String(movement._id),
+      reference,
+      productId,
+      warehouseId,
+      destinationWarehouseId,
+      quantity: movement.quantity,
+      previousStock: movement.previousStock,
+      newStock: movement.newStock,
+      createdAt: movement.createdAt,
+    })
+  }
+
+  return [...groups.entries()]
+    .filter(([, entries]) => entries.length !== 2)
+    .map(([key, entries]) => ({
+      key,
+      count: entries.length,
+      movements: entries,
+    }))
 }
 
 function getInventoryKey(productId, warehouseId) {
@@ -997,6 +1066,75 @@ function replayStockMovements({ movements, products, receiptValuationMap, transf
   return {
     states,
     issues,
+  }
+}
+
+async function reconstructProductValuation({ companyId, productId, session }) {
+  const movements = await InventoryMovement.find({
+    companyId,
+    productId,
+  })
+    .sort({ createdAt: 1, _id: 1 })
+    .session(session)
+    .lean()
+
+  const allReceipts = await GoodsReceipt.find({
+    companyId,
+    status: 'Confirmed',
+  })
+    .session(session)
+    .lean()
+
+  const receipts = allReceipts
+    .map((receipt) => ({
+      ...receipt,
+      items: (receipt.items || []).filter((item) => String(item.productId) === String(productId)),
+    }))
+    .filter((receipt) => receipt.items.length > 0)
+
+  const purchaseIds = [...new Set(receipts.map((receipt) => String(receipt.purchaseId || '')).filter(Boolean))]
+
+  const purchases = purchaseIds.length
+    ? await Purchase.find({
+        companyId,
+        _id: { $in: purchaseIds },
+      })
+        .session(session)
+        .lean()
+    : []
+
+  const product = await Product.findOne({
+    _id: productId,
+    companyId,
+  })
+    .select('_id name sku costPrice')
+    .session(session)
+    .lean()
+
+  if (!product) {
+    throw createError('Product not found.')
+  }
+
+  const { valuationMap, issues: receiptIssues } = buildGoodsReceiptValuationMap({
+    receipts,
+    purchases,
+    movements,
+  })
+
+  // console.log('[Transfer Diagnostic]', JSON.stringify(inspectTransferMovementGroups(movements), null, 2))
+
+  const { transferMap, issues: transferIssues } = buildTransferMovementMap(movements)
+
+  const { states, issues: replayIssues } = replayStockMovements({
+    movements,
+    products: [product],
+    receiptValuationMap: valuationMap,
+    transferMap,
+  })
+
+  return {
+    states,
+    issues: [...receiptIssues, ...transferIssues, ...replayIssues],
   }
 }
 
@@ -1684,7 +1822,7 @@ router.post('/stock-out', permissionMiddleware('Inventory', 'ADJUST_STOCK'), asy
 })
 
 // POST /erp/inventory/stock-transfer
-router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK'), async (req, res, next) => {
+router.post('/stock-transfer', permissionMiddleware('Inventory', 'TRANSFER_STOCK'), async (req, res, next) => {
   let session
 
   try {
@@ -1746,7 +1884,61 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
         throw createError('Product has no stock record in the source warehouse.')
       }
 
+      let historicalValuation = null
+
+      const getHistoricalValuation = async () => {
+        if (!historicalValuation) {
+          historicalValuation = await reconstructProductValuation({
+            companyId,
+            productId: product._id,
+            session,
+          })
+        }
+
+        if (historicalValuation.issues.length > 0) {
+          // console.error('[Inventory Valuation Review] Unresolved issues:', JSON.stringify(historicalValuation.issues.slice(0, 10), null, 2))
+
+          throw createError('Historical inventory movements contain unresolved valuation issues. Complete Inventory Valuation Review first.')
+        }
+
+        return historicalValuation
+      }
+
+      const needsHistoricalValuation = (inventory) => {
+        const quantity = Number(inventory.currentStock) || 0
+        const averageCost = Number(inventory.averageCost) || 0
+        const stockValue = Number(inventory.stockValue) || 0
+
+        // Invalid negative values should be rejected by the validator.
+        if (quantity <= 0 || averageCost < 0 || stockValue < 0) {
+          return false
+        }
+
+        const expectedValue = roundMoney(quantity * averageCost)
+
+        return averageCost <= 0 || stockValue <= 0 || Math.abs(expectedValue - stockValue) > 0.02
+      }
+
+      const restoreHistoricalValuation = (inventory, warehouseId, label, history) => {
+        const state = history.states.get(getInventoryKey(product._id, warehouseId))
+
+        if (!state || state.manualReview || Math.abs(Number(state.quantity) - Number(inventory.currentStock)) > 0.000001 || Number(state.averageCost) <= 0 || Number(state.stockValue) <= 0) {
+          throw createError(`${label} historical valuation could not be reliably reconstructed. Complete Inventory Valuation Review first.`)
+        }
+
+        inventory.averageCost = roundMoney(state.averageCost)
+        inventory.stockValue = roundMoney(state.stockValue)
+      }
+
+      // SOURCE INVENTORY VALUATION
+      if (needsHistoricalValuation(source)) {
+        const history = await getHistoricalValuation()
+
+        restoreHistoricalValuation(source, sourceWarehouse._id, 'Source inventory', history)
+      }
+
       const sourceValuation = validateInventoryValuation(source)
+
       const amount = Number(quantity)
       const availableStock = getAvailableStock(source)
 
@@ -1754,6 +1946,7 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
         throw createError('Insufficient available stock in source warehouse.')
       }
 
+      // DESTINATION INVENTORY
       const destination = await getOrCreateWarehouseInventory({
         companyId,
         warehouseId: destinationWarehouse._id,
@@ -1761,6 +1954,12 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'ADJUST_STOCK')
         userId,
         session,
       })
+
+      if (needsHistoricalValuation(destination)) {
+        const history = await getHistoricalValuation()
+
+        restoreHistoricalValuation(destination, destinationWarehouse._id, 'Destination inventory', history)
+      }
 
       const destinationValuation = validateInventoryValuation(destination, 'Destination inventory')
 

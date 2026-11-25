@@ -15,6 +15,8 @@ const initializeDefaultChartOfAccounts = require('../services/defaultChartOfAcco
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
 
+const { hasPermission } = require('../utils/permission')
+
 const router = express.Router()
 
 router.use(authMiddleware)
@@ -31,6 +33,32 @@ function validCompanyId(req, res) {
   }
 
   return new mongoose.Types.ObjectId(String(companyId))
+}
+
+const requireProductListOrTransferPermission = (req, res, next) => {
+  try {
+    const companyId = validCompanyId(req, res)
+    if (!companyId) return
+
+    const canListProducts = hasPermission(req.user, { _id: companyId }, 'Product', 'LIST')
+
+    const canTransferStock = hasPermission(req.user, { _id: companyId }, 'Inventory', 'TRANSFER_STOCK')
+
+    if (!canListProducts && !canTransferStock) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to perform this action.',
+        requiredPermission: 'Product:LIST or Inventory:TRANSFER_STOCK',
+      })
+    }
+
+    req.companyId = companyId
+    req.canListAllProducts = canListProducts
+
+    next()
+  } catch (error) {
+    next(error)
+  }
 }
 
 function getUserId(req) {
@@ -168,14 +196,18 @@ function sendKnownError(res, error) {
 }
 
 // GET /erp/products
-router.get('/', permissionMiddleware('Product', 'LIST'), async (req, res, next) => {
+router.get('/', requireProductListOrTransferPermission, async (req, res, next) => {
   try {
-    const companyId = validCompanyId(req, res)
-    if (!companyId) return
+    const companyId = req.companyId
 
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20))
     const filter = getProductFilter(req.query, companyId)
+
+    // Stock transfer users can only read active products.
+    if (!req.canListAllProducts) {
+      filter.status = 'Active'
+    }
 
     const [products, total] = await Promise.all([
       Product.find(filter)

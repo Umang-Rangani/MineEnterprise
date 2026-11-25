@@ -9,6 +9,7 @@ const InventoryMovement = require('../models/InventoryMovement')
 
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
+const { hasPermission } = require('../utils/permission')
 
 const router = express.Router()
 
@@ -29,7 +30,7 @@ const getApprovedCompany = async (req, res) => {
   const company = await Company.findOne({
     _id: companyId,
     status: 'Approved',
-  }).select('_id')
+  }).select('_id status customRoles predefinedRolePermissions')
 
   if (!company) {
     res.status(403).json({
@@ -125,6 +126,34 @@ const formatDate = (value) => {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString()
 }
 
+const requireWarehouseListOrTransferPermission = async (req, res, next) => {
+  try {
+    const company = await getApprovedCompany(req, res)
+    if (!company) return
+
+    const canListWarehouses = hasPermission(req.user, company, 'Warehouse', 'LIST')
+
+    const canTransferStock = hasPermission(req.user, company, 'Inventory', 'TRANSFER_STOCK')
+
+    const canCreateSales = hasPermission(req.user, company, 'Sales', 'CREATE')
+
+    if (!canListWarehouses && !canTransferStock && !canCreateSales) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have permission to perform this action.',
+        requiredPermission: 'Warehouse:LIST or Inventory:TRANSFER_STOCK or Sales:CREATE',
+      })
+    }
+
+    req.company = company
+    req.canListAllWarehouses = canListWarehouses
+
+    return next()
+  } catch (error) {
+    next(error)
+  }
+}
+
 // GET /erp/warehouses/export
 router.get('/export', permissionMiddleware('Warehouse', 'EXPORT'), async (req, res) => {
   try {
@@ -204,10 +233,9 @@ router.get('/export', permissionMiddleware('Warehouse', 'EXPORT'), async (req, r
 })
 
 // GET /erp/warehouses
-router.get('/', permissionMiddleware('Warehouse', 'LIST'), async (req, res) => {
+router.get('/', requireWarehouseListOrTransferPermission, async (req, res) => {
   try {
-    const company = await getApprovedCompany(req, res)
-    if (!company) return
+    const company = req.company
 
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
     const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 10))
@@ -227,7 +255,10 @@ router.get('/', permissionMiddleware('Warehouse', 'LIST'), async (req, res) => {
       companyId: company._id,
     }
 
-    if (status !== 'All') {
+    if (!req.canListAllWarehouses) {
+      // Sales and Stock Transfer users can only access active warehouses.
+      filter.status = 'Active'
+    } else if (status !== 'All') {
       filter.status = status
     }
 
@@ -309,7 +340,7 @@ router.post('/', permissionMiddleware('Warehouse', 'CREATE'), async (req, res) =
     const company = await getApprovedCompany(req, res)
     if (!company) return
 
-    const { name, address, city, state, pincode, manager, managerPhone, contactPerson, phone, capacity, description, capacityUnit, } = req.body
+    const { name, address, city, state, pincode, manager, managerPhone, contactPerson, phone, capacity, description, capacityUnit } = req.body
 
     if (typeof name !== 'string' || !name.trim()) {
       return res.status(400).json({
@@ -530,7 +561,7 @@ router.patch('/:id', permissionMiddleware('Warehouse', 'UPDATE'), async (req, re
       })
     }
 
-    const allowedFields = ['name', 'address', 'city', 'state', 'pincode', 'manager', 'managerPhone', 'contactPerson', 'phone', 'capacity','capacityUnit', 'description']
+    const allowedFields = ['name', 'address', 'city', 'state', 'pincode', 'manager', 'managerPhone', 'contactPerson', 'phone', 'capacity', 'capacityUnit', 'description']
 
     const updates = {}
 

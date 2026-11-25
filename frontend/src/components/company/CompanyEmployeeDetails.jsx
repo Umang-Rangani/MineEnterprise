@@ -26,6 +26,18 @@ function formatDate(date) {
   })
 }
 
+function getProfilePhotoUrl(photo) {
+  if (!photo) return ''
+
+  if (/^https?:\/\//i.test(photo)) {
+    return photo
+  }
+
+  const baseURL = axiosInstance.defaults.baseURL || 'http://localhost:3000'
+
+  return `${baseURL.replace(/\/+$/, '')}/${photo.replace(/^\/+/, '')}`
+}
+
 function DetailItem({ label, value, icon: Icon, inactive }) {
   return (
     <div className={`min-w-0 rounded-lg border p-3 ${inactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border bg-erp-surface'}`}>
@@ -68,6 +80,7 @@ export default function CompanyEmployeeDetails() {
   const [refreshing, setRefreshing] = useState(false)
   const [toast, setToast] = useState(null)
   const [error, setError] = useState('')
+  const [photoError, setPhotoError] = useState(false)
 
   const isInactive =
     String(employee?.status ?? '')
@@ -102,6 +115,7 @@ export default function CompanyEmployeeDetails() {
     setLoading(true)
     setRefreshing(showRefreshMessage)
     setError('')
+    setPhotoError(false)
 
     try {
       const { data } = await axiosInstance.get(`/erp/employees/${encodeURIComponent(id)}`)
@@ -132,7 +146,6 @@ export default function CompanyEmployeeDetails() {
     document.title = 'Employee Details | MineERP'
     fetchEmployee()
 
-    // Fetch details again when the employee ID changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
@@ -141,6 +154,7 @@ export default function CompanyEmployeeDetails() {
 
     navigate(`/company/employees/${encodeURIComponent(employee._id || id)}/edit`)
   }
+
   const roles = Array.isArray(employee?.roles) ? employee.roles : []
 
   const employeePermissions = employee?.permissions && typeof employee.permissions === 'object' ? employee.permissions : {}
@@ -154,8 +168,12 @@ export default function CompanyEmployeeDetails() {
     { title: employee?.name || '...', link: null },
   ]
 
-  //  INITIAL LOADING 
-  if (loading ) {
+  const photoUrl = getProfilePhotoUrl(employee?.profilePhoto)
+
+  const employeeInitial = employee?.name?.trim()?.charAt(0)?.toUpperCase() || 'U'
+
+  // INITIAL LOADING
+  if (loading) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
         <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
@@ -175,14 +193,12 @@ export default function CompanyEmployeeDetails() {
     )
   }
 
-  
-
   return (
     <div className="min-w-0 space-y-4 text-erp-text">
       {toast && <Toast toast={toast} onClose={closeToast} />}
 
       {/* Header */}
-      <section className={`overflow-hidden rounded-xl border shadow-erp-card ${panelClass} h-17`}>
+      <section className={`h-17 overflow-hidden rounded-xl border shadow-erp-card ${panelClass}`}>
         <div className={`h-1 ${isInactive ? 'bg-erp-disabled' : 'bg-erp-primary'}`} />
 
         <div className="flex min-w-0 flex-col gap-4 px-4 py-3 sm:px-5 lg:flex-row lg:items-center lg:justify-between">
@@ -267,6 +283,25 @@ export default function CompanyEmployeeDetails() {
             {/* Personal Information */}
             <section className={`min-w-0 rounded-xl border p-4 shadow-erp-card sm:p-5 ${panelClass}`}>
               <SectionHeader icon={UserRound} title="Personal Information" description="Basic employee details" inactive={isInactive} />
+
+              {/* Profile Photo */}
+              <div className={`mb-4 flex items-center gap-4 rounded-lg border p-3 ${isInactive ? 'border-erp-disabled-border bg-erp-disabled-light/50' : 'border-erp-border bg-erp-surface'}`}>
+                <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-erp-border bg-erp-primary-light">
+                  {photoUrl && !photoError ? (
+                    <img src={photoUrl} alt={`${employee.name || 'Employee'} profile`} className="h-full w-full object-cover" onError={() => setPhotoError(true)} />
+                  ) : (
+                    <span className="text-2xl font-bold text-erp-primary">{employeeInitial}</span>
+                  )}
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-xs text-erp-text-secondary">Profile Photo</p>
+
+                  <p className="mt-1 break-words text-sm font-bold text-erp-text">{employee.name || 'Employee'}</p>
+
+                  <p className="mt-1 text-xs text-erp-text-secondary">{photoUrl && !photoError ? 'Employee profile picture' : 'No profile photo uploaded'}</p>
+                </div>
+              </div>
 
               <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                 <DetailItem label="Full Name" value={employee.name} icon={UserRound} inactive={isInactive} />

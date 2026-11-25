@@ -7,7 +7,6 @@ const crypto = require('crypto')
 const router = express.Router()
 
 const UPLOADS_DIR = path.resolve(__dirname, '..', 'public', 'uploads')
-
 const MAX_FILE_SIZE = 4 * 1024 * 1024
 
 // Sanitize folder and filename
@@ -21,6 +20,19 @@ const sanitizeSegment = (value, fallback) => {
   return cleaned || fallback
 }
 
+// Resolve and validate upload directory
+const getSafeUploadPath = (relativePath) => {
+  const resolvedPath = path.resolve(UPLOADS_DIR, relativePath)
+
+  if (!resolvedPath.startsWith(`${UPLOADS_DIR}${path.sep}`)) {
+    const error = new Error('Invalid file path.')
+    error.statusCode = 400
+    throw error
+  }
+
+  return resolvedPath
+}
+
 // Multer Memory Storage
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -30,7 +42,7 @@ const upload = multer({
   },
 })
 
-// Upload Middleware
+// Reusable Upload Middleware
 const handleUpload = (req, res, next) => {
   upload.single('file')(req, res, (error) => {
     if (error instanceof multer.MulterError) {
@@ -55,6 +67,78 @@ const handleUpload = (req, res, next) => {
   })
 }
 
+// Reusable Save Uploaded File Function
+const saveUploadedFile = (file, folder = 'common', filename = 'file') => {
+  if (!file || !file.buffer) {
+    const error = new Error('File is required.')
+    error.statusCode = 400
+    throw error
+  }
+
+  const safeFolder = sanitizeSegment(folder, 'common')
+
+  const originalExtension = path.extname(file.originalname).toLowerCase()
+
+  const requestedFilename = sanitizeSegment(filename || path.parse(file.originalname).name, 'file')
+
+  const uniqueSuffix = `${Date.now()}-${crypto.randomUUID()}`
+
+  const storedName = `${requestedFilename}-${uniqueSuffix}${originalExtension}`
+
+  const uploadPath = getSafeUploadPath(safeFolder)
+
+  fs.mkdirSync(uploadPath, {
+    recursive: true,
+  })
+
+  const fullFilePath = path.join(uploadPath, storedName)
+
+  fs.writeFileSync(fullFilePath, file.buffer)
+
+  return {
+    filePath: `/uploads/${safeFolder}/${storedName}`,
+    filename: storedName,
+    originalName: file.originalname,
+    mimeType: file.mimetype,
+    size: file.size,
+  }
+}
+
+// Reusable Delete Uploaded File Function
+const deleteUploadedFile = (filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    const error = new Error('Valid filePath is required.')
+    error.statusCode = 400
+    throw error
+  }
+
+  if (/^https?:\/\//i.test(filePath)) {
+    const error = new Error('Only local uploaded files can be deleted.')
+    error.statusCode = 400
+    throw error
+  }
+
+  if (!filePath.startsWith('/uploads/')) {
+    const error = new Error('Invalid file path.')
+    error.statusCode = 400
+    throw error
+  }
+
+  const relativePath = filePath.replace(/^\/uploads[\\/]/, '')
+
+  const uploadPath = getSafeUploadPath(relativePath)
+
+  if (!fs.existsSync(uploadPath)) {
+    const error = new Error('File not found.')
+    error.statusCode = 404
+    throw error
+  }
+
+  fs.unlinkSync(uploadPath)
+
+  return true
+}
+
 // POST - UPLOAD FILE
 router.post('/', handleUpload, async (req, res) => {
   if (!req.file) {
@@ -65,55 +149,25 @@ router.post('/', handleUpload, async (req, res) => {
   }
 
   try {
-    const folder = sanitizeSegment(req.body.uploadFolder, 'common')
-
-    const originalExtension = path.extname(req.file.originalname).toLowerCase()
-
-    const requestedFilename = sanitizeSegment(req.body.filename || path.parse(req.file.originalname).name, 'file')
-
-    const uniqueSuffix = `${Date.now()}-${crypto.randomUUID()}`
-
-    const storedName = `${requestedFilename}-${uniqueSuffix}${originalExtension}`
-
-    // Create upload directory
-    const uploadPath = path.resolve(UPLOADS_DIR, folder)
-
-    if (!uploadPath.startsWith(`${UPLOADS_DIR}${path.sep}`)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid upload folder.',
-      })
-    }
-
-    fs.mkdirSync(uploadPath, {
-      recursive: true,
-    })
-
-    // Save file
-    const fullFilePath = path.join(uploadPath, storedName)
-
-    fs.writeFileSync(fullFilePath, req.file.buffer)
-
-    const filePath = `/uploads/${folder}/${storedName}`
+    const result = saveUploadedFile(req.file, req.body.uploadFolder, req.body.filename || path.parse(req.file.originalname).name)
 
     return res.status(200).json({
       success: true,
       message: 'File uploaded successfully.',
-      filePath,
+      filePath: result.filePath,
       file: {
-        filename: storedName,
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        size: req.file.size,
+        filename: result.filename,
+        originalName: result.originalName,
+        mimeType: result.mimeType,
+        size: result.size,
       },
     })
   } catch (error) {
     console.error('Upload Error:', error)
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message: 'Failed to upload file.',
-      error: error.message,
+      message: error.statusCode ? error.message : 'Failed to upload file.',
     })
   }
 })
@@ -123,40 +177,7 @@ router.delete('/', async (req, res) => {
   try {
     const { filePath } = req.body
 
-    if (!filePath) {
-      return res.status(400).json({
-        success: false,
-        message: 'filePath is required.',
-      })
-    }
-
-    // Only allow local uploads paths
-    if (/^https?:\/\//i.test(filePath)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Only local uploaded files can be deleted.',
-      })
-    }
-
-    const relativePath = filePath.replace(/^\/uploads[\\/]/, '')
-
-    const uploadPath = path.resolve(UPLOADS_DIR, relativePath)
-
-    if (!uploadPath.startsWith(`${UPLOADS_DIR}${path.sep}`)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid file path.',
-      })
-    }
-
-    if (!fs.existsSync(uploadPath)) {
-      return res.status(404).json({
-        success: false,
-        message: 'File not found.',
-      })
-    }
-
-    fs.unlinkSync(uploadPath)
+    deleteUploadedFile(filePath)
 
     return res.status(200).json({
       success: true,
@@ -165,12 +186,15 @@ router.delete('/', async (req, res) => {
   } catch (error) {
     console.error('Delete Upload Error:', error)
 
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       success: false,
-      message: 'Failed to delete file.',
-      error: error.message,
+      message: error.statusCode ? error.message : 'Failed to delete file.',
     })
   }
 })
 
+// Export reusable functions along with router
 module.exports = router
+module.exports.handleUpload = handleUpload
+module.exports.saveUploadedFile = saveUploadedFile
+module.exports.deleteUploadedFile = deleteUploadedFile

@@ -50,6 +50,7 @@ export default function CompanyRoles() {
   const [availablePermissions, setAvailablePermissions] = useState([])
 
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('All')
   const [pageSize, setPageSize] = useState(5)
   const [currentPage, setCurrentPage] = useState(1)
@@ -104,6 +105,15 @@ export default function CompanyRoles() {
   }, [])
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search)
+      setCurrentPage(1)
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
     let cancelled = false
 
     async function fetchRoles() {
@@ -127,7 +137,7 @@ export default function CompanyRoles() {
       try {
         const { data } = await axiosInstance.get('/erp/roles', {
           params: {
-            search: search.trim(),
+            search: debouncedSearch.trim(),
             type: typeFilter,
             page: currentPage,
             limit: pageSize,
@@ -189,7 +199,7 @@ export default function CompanyRoles() {
     return () => {
       cancelled = true
     }
-  }, [canList, search, typeFilter, currentPage, pageSize, refreshKey])
+  }, [canList, debouncedSearch, typeFilter, currentPage, pageSize, refreshKey])
 
   useEffect(() => {
     if (!location.state?.successMessage) return
@@ -361,15 +371,15 @@ export default function CompanyRoles() {
       <Toast toast={toast} onClose={closeToast} />
 
       {/* Header */}
-      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+      <section className="overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
 
-        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
-          <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-5">
+          <div className="min-w-0 flex-1">
             <BreadCrumb items={items} />
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <div className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-erp-border px-3">
               <span className="text-xs text-slate-500">Total</span>
               <span className="text-sm font-bold text-slate-900">{stats.totalRoles}</span>
@@ -423,7 +433,6 @@ export default function CompanyRoles() {
                   value={search}
                   onChange={(event) => {
                     setSearch(event.target.value)
-                    setCurrentPage(1)
                   }}
                   placeholder="Search roles..."
                   aria-label="Search roles"

@@ -13,6 +13,7 @@ const Company = require('../models/Company')
 
 const authMiddleware = require('../middleware/authMiddleware')
 const permissionMiddleware = require('../middleware/permissionMiddleware')
+const { hasPermission } = require('../utils/permission')
 
 const router = express.Router()
 
@@ -99,17 +100,16 @@ const getAnalytics = async ({ Model, companyId, dateField, period, now, valueExp
   }))
 }
 
-// COMPANY ADMIN DASHBOARD SUMMARY
+const runIfAllowed = (allowed, query, fallback) => {
+  if (!allowed) {
+    return Promise.resolve(fallback)
+  }
+
+  return query()
+}
 
 router.get('/summary', permissionMiddleware('Dashboard', 'VIEW'), async (req, res) => {
   try {
-    if (req.user?.role !== 'CompanyAdmin') {
-      return res.status(403).json({
-        success: false,
-        message: 'This dashboard is currently available only to Company Admin.',
-      })
-    }
-
     const companyId = req.user?.companyId
 
     if (!companyId || !mongoose.Types.ObjectId.isValid(companyId)) {
@@ -121,6 +121,26 @@ router.get('/summary', permissionMiddleware('Dashboard', 'VIEW'), async (req, re
 
     const companyObjectId = new mongoose.Types.ObjectId(companyId)
     const now = new Date()
+
+    // Permission checks
+    const canViewProducts = hasPermission(req.user, req.company, 'Product', 'LIST')
+
+    const canViewEmployees = hasPermission(req.user, req.company, 'Employee', 'LIST')
+
+    const canViewSales = hasPermission(req.user, req.company, 'Sales', 'LIST')
+
+    const canViewInvoices = hasPermission(req.user, req.company, 'Invoice', 'VIEW')
+
+    const canViewPayments = hasPermission(req.user, req.company, 'Payment', 'LIST')
+
+    const canViewInventory = hasPermission(req.user, req.company, 'Inventory', 'VIEW')
+
+    const canViewWarehouses = hasPermission(req.user, req.company, 'Warehouse', 'LIST')
+
+    const canViewCompanySettings = hasPermission(req.user, req.company, 'Settings', 'VIEW')
+
+    // Dashboard VIEW is already required by permissionMiddleware.
+    const canViewActivities = hasPermission(req.user, req.company, 'Dashboard', 'VIEW')
 
     const invoiceFilter = {
       companyId: companyObjectId,
@@ -147,369 +167,465 @@ router.get('/summary', permissionMiddleware('Dashboard', 'VIEW'), async (req, re
       monthlyPayments,
       yearlyPayments,
     ] = await Promise.all([
-      // COMPANY DETAILS
-      Company.findOne({
-        _id: companyObjectId,
-        status: 'Approved',
-      })
-        .select('companyName logo status currency')
-        .lean(),
+      // Company details
+      runIfAllowed(
+        canViewCompanySettings,
+        () =>
+          Company.findOne({
+            _id: companyObjectId,
+            status: 'Approved',
+          })
+            .select('companyName logo status currency')
+            .lean(),
+        null,
+      ),
 
-      // PRODUCT OVERVIEW
-      Product.aggregate([
-        {
-          $match: {
-            companyId: companyObjectId,
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            active: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Active'] }, 1, 0],
+      // Product overview
+      runIfAllowed(
+        canViewProducts,
+        () =>
+          Product.aggregate([
+            {
+              $match: {
+                companyId: companyObjectId,
               },
             },
-            inactive: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Inactive'] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
-
-      // EMPLOYEE OVERVIEW
-      User.aggregate([
-        {
-          $match: {
-            companyId: companyObjectId,
-            role: 'Employee',
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            active: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Active'] }, 1, 0],
-              },
-            },
-            inactive: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Inactive'] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
-
-      // WAREHOUSE OVERVIEW
-      Warehouse.aggregate([
-        {
-          $match: {
-            companyId: companyObjectId,
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            active: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Active'] }, 1, 0],
-              },
-            },
-            inactive: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Inactive'] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
-
-      // SALES ORDER STATUS OVERVIEW
-      SalesOrder.aggregate([
-        {
-          $match: {
-            companyId: companyObjectId,
-          },
-        },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-            orderValue: { $sum: '$grandTotal' },
-          },
-        },
-      ]),
-
-      // RECENT SALES ORDERS
-      SalesOrder.find({
-        companyId: companyObjectId,
-      })
-        .populate('customerId', 'customerName customerCode')
-        .populate('warehouseId', 'name code')
-        .select('orderNumber customerId warehouseId orderDate grandTotal status')
-        .sort({ orderDate: -1, createdAt: -1 })
-        .limit(5)
-        .lean(),
-
-      // INVENTORY OVERVIEW
-      Product.aggregate([
-        {
-          $match: {
-            companyId: companyObjectId,
-            status: 'Active',
-          },
-        },
-        {
-          $lookup: {
-            from: Inventory.collection.name,
-            let: { productId: '$_id' },
-            pipeline: [
-              {
-                $match: {
-                  companyId: companyObjectId,
-                  $expr: {
-                    $eq: ['$productId', '$$productId'],
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                active: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Active'] }, 1, 0],
+                  },
+                },
+                inactive: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Inactive'] }, 1, 0],
                   },
                 },
               },
-              {
-                $group: {
-                  _id: null,
-                  currentStock: { $sum: '$currentStock' },
-                  reservedStock: { $sum: '$reservedStock' },
+            },
+          ]),
+        [],
+      ),
+
+      // Employee overview
+      runIfAllowed(
+        canViewEmployees,
+        () =>
+          User.aggregate([
+            {
+              $match: {
+                companyId: companyObjectId,
+                role: 'Employee',
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                active: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Active'] }, 1, 0],
+                  },
+                },
+                inactive: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Inactive'] }, 1, 0],
+                  },
                 },
               },
-            ],
-            as: 'stockData',
-          },
-        },
-        {
-          $addFields: {
-            stock: {
-              $ifNull: [{ $arrayElemAt: ['$stockData', 0] }, {}],
             },
-          },
-        },
-        {
-          $addFields: {
-            currentStock: { $ifNull: ['$stock.currentStock', 0] },
-            reservedStock: { $ifNull: ['$stock.reservedStock', 0] },
-          },
-        },
-        {
-          $addFields: {
-            availableStock: {
-              $max: [0, { $subtract: ['$currentStock', '$reservedStock'] }],
-            },
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            totalProducts: { $sum: 1 },
-            totalStock: { $sum: '$currentStock' },
-            reservedStock: { $sum: '$reservedStock' },
-            availableStock: { $sum: '$availableStock' },
-            lowStockProducts: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [{ $gt: ['$availableStock', 0] }, { $lte: ['$availableStock', '$minStockLevel'] }],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-            outOfStockProducts: {
-              $sum: {
-                $cond: [{ $lte: ['$availableStock', 0] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
+          ]),
+        [],
+      ),
 
-      // INVOICE FINANCIAL OVERVIEW
-      Invoice.aggregate([
-        {
-          $match: invoiceFilter,
-        },
-        {
-          $group: {
-            _id: null,
-            totalInvoices: { $sum: 1 },
-            totalRevenue: { $sum: '$grandTotal' },
-            totalReceived: { $sum: '$paidAmount' },
-            outstanding: {
-              $sum: {
-                $max: [0, '$balanceAmount'],
+      // Warehouse overview
+      runIfAllowed(
+        canViewWarehouses,
+        () =>
+          Warehouse.aggregate([
+            {
+              $match: {
+                companyId: companyObjectId,
               },
             },
-            paidInvoices: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Paid'] }, 1, 0],
-              },
-            },
-            partiallyPaidInvoices: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'Partially Paid'] }, 1, 0],
-              },
-            },
-            overdueInvoices: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [{ $lt: ['$dueDate', now] }, { $gt: ['$balanceAmount', 0] }],
+            {
+              $group: {
+                _id: null,
+                total: { $sum: 1 },
+                active: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Active'] }, 1, 0],
                   },
-                  1,
-                  0,
-                ],
-              },
-            },
-            overdueAmount: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [{ $lt: ['$dueDate', now] }, { $gt: ['$balanceAmount', 0] }],
+                },
+                inactive: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Inactive'] }, 1, 0],
                   },
-                  '$balanceAmount',
-                  0,
-                ],
+                },
               },
             },
-          },
-        },
-      ]),
+          ]),
+        [],
+      ),
 
-      // NET PAYMENT RECEIVED AFTER REFUNDS
-      Payment.aggregate([
-        {
-          $match: {
+      // Sales order status overview
+      runIfAllowed(
+        canViewSales,
+        () =>
+          SalesOrder.aggregate([
+            {
+              $match: {
+                companyId: companyObjectId,
+              },
+            },
+            {
+              $group: {
+                _id: '$status',
+                count: { $sum: 1 },
+                orderValue: { $sum: '$grandTotal' },
+              },
+            },
+          ]),
+        [],
+      ),
+
+      // Recent sales orders
+      runIfAllowed(
+        canViewSales,
+        () =>
+          SalesOrder.find({
             companyId: companyObjectId,
-          },
-        },
-        {
-          $group: {
-            _id: null,
-            grossReceived: { $sum: '$amount' },
-            refundedAmount: { $sum: '$refundedAmount' },
-            paymentCount: { $sum: 1 },
-          },
-        },
-        {
-          $project: {
-            grossReceived: 1,
-            refundedAmount: 1,
-            paymentCount: 1,
-            netReceived: {
-              $subtract: ['$grossReceived', '$refundedAmount'],
+          })
+            .populate('customerId', 'customerName customerCode')
+            .populate('warehouseId', 'name code')
+            .select('orderNumber customerId warehouseId orderDate grandTotal status')
+            .sort({ orderDate: -1, createdAt: -1 })
+            .limit(5)
+            .lean(),
+        [],
+      ),
+
+      // Inventory overview
+      runIfAllowed(
+        canViewInventory,
+        () =>
+          Product.aggregate([
+            {
+              $match: {
+                companyId: companyObjectId,
+                status: 'Active',
+              },
             },
-          },
-        },
-      ]),
+            {
+              $lookup: {
+                from: Inventory.collection.name,
+                let: { productId: '$_id' },
+                pipeline: [
+                  {
+                    $match: {
+                      companyId: companyObjectId,
+                      $expr: {
+                        $eq: ['$productId', '$$productId'],
+                      },
+                    },
+                  },
+                  {
+                    $group: {
+                      _id: null,
+                      currentStock: { $sum: '$currentStock' },
+                      reservedStock: { $sum: '$reservedStock' },
+                    },
+                  },
+                ],
+                as: 'stockData',
+              },
+            },
+            {
+              $addFields: {
+                stock: {
+                  $ifNull: [{ $arrayElemAt: ['$stockData', 0] }, {}],
+                },
+              },
+            },
+            {
+              $addFields: {
+                currentStock: { $ifNull: ['$stock.currentStock', 0] },
+                reservedStock: { $ifNull: ['$stock.reservedStock', 0] },
+              },
+            },
+            {
+              $addFields: {
+                availableStock: {
+                  $max: [0, { $subtract: ['$currentStock', '$reservedStock'] }],
+                },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                totalProducts: { $sum: 1 },
+                totalStock: { $sum: '$currentStock' },
+                reservedStock: { $sum: '$reservedStock' },
+                availableStock: { $sum: '$availableStock' },
+                lowStockProducts: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [{ $gt: ['$availableStock', 0] }, { $lte: ['$availableStock', '$minStockLevel'] }],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                outOfStockProducts: {
+                  $sum: {
+                    $cond: [{ $lte: ['$availableStock', 0] }, 1, 0],
+                  },
+                },
+              },
+            },
+          ]),
+        [],
+      ),
 
-      // RECENT SYSTEM ACTIVITIES
-      SystemActivity.find({
-        'company.companyId': companyObjectId,
-      })
-        .select('actor target action description metadata createdAt')
-        .sort({ createdAt: -1 })
-        .limit(5)
-        .lean(),
+      // Invoice financial overview
+      runIfAllowed(
+        canViewInvoices,
+        () =>
+          Invoice.aggregate([
+            {
+              $match: invoiceFilter,
+            },
+            {
+              $group: {
+                _id: null,
+                totalInvoices: { $sum: 1 },
+                totalRevenue: { $sum: '$grandTotal' },
+                totalReceived: { $sum: '$paidAmount' },
+                outstanding: {
+                  $sum: {
+                    $max: [0, '$balanceAmount'],
+                  },
+                },
+                paidInvoices: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Paid'] }, 1, 0],
+                  },
+                },
+                partiallyPaidInvoices: {
+                  $sum: {
+                    $cond: [{ $eq: ['$status', 'Partially Paid'] }, 1, 0],
+                  },
+                },
+                overdueInvoices: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [{ $lt: ['$dueDate', now] }, { $gt: ['$balanceAmount', 0] }],
+                      },
+                      1,
+                      0,
+                    ],
+                  },
+                },
+                overdueAmount: {
+                  $sum: {
+                    $cond: [
+                      {
+                        $and: [{ $lt: ['$dueDate', now] }, { $gt: ['$balanceAmount', 0] }],
+                      },
+                      '$balanceAmount',
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+          ]),
+        [],
+      ),
 
-      // REVENUE ANALYTICS
-      getAnalytics({
-        Model: Invoice,
-        companyId: companyObjectId,
-        dateField: 'invoiceDate',
-        period: 'daily',
-        now,
-        match: { status: { $in: VALID_INVOICE_STATUSES } },
-        valueExpression: '$grandTotal',
-      }),
+      // Payment overview
+      runIfAllowed(
+        canViewPayments,
+        () =>
+          Payment.aggregate([
+            {
+              $match: {
+                companyId: companyObjectId,
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                grossReceived: { $sum: '$amount' },
+                refundedAmount: { $sum: '$refundedAmount' },
+                paymentCount: { $sum: 1 },
+              },
+            },
+            {
+              $project: {
+                grossReceived: 1,
+                refundedAmount: 1,
+                paymentCount: 1,
+                netReceived: {
+                  $subtract: ['$grossReceived', '$refundedAmount'],
+                },
+              },
+            },
+          ]),
+        [],
+      ),
 
-      getAnalytics({
-        Model: Invoice,
-        companyId: companyObjectId,
-        dateField: 'invoiceDate',
-        period: 'weekly',
-        now,
-        match: { status: { $in: VALID_INVOICE_STATUSES } },
-        valueExpression: '$grandTotal',
-      }),
+      // Recent system activities
+      runIfAllowed(
+        canViewActivities,
+        () =>
+          SystemActivity.find({
+            'company.companyId': companyObjectId,
+          })
+            .select('action description createdAt')
+            .sort({ createdAt: -1 })
+            .limit(5)
+            .lean(),
+        [],
+      ),
 
-      getAnalytics({
-        Model: Invoice,
-        companyId: companyObjectId,
-        dateField: 'invoiceDate',
-        period: 'monthly',
-        now,
-        match: { status: { $in: VALID_INVOICE_STATUSES } },
-        valueExpression: '$grandTotal',
-      }),
+      // Revenue analytics - daily
+      runIfAllowed(
+        canViewInvoices,
+        () =>
+          getAnalytics({
+            Model: Invoice,
+            companyId: companyObjectId,
+            dateField: 'invoiceDate',
+            period: 'daily',
+            now,
+            match: { status: { $in: VALID_INVOICE_STATUSES } },
+            valueExpression: '$grandTotal',
+          }),
+        [],
+      ),
 
-      getAnalytics({
-        Model: Invoice,
-        companyId: companyObjectId,
-        dateField: 'invoiceDate',
-        period: 'yearly',
-        now,
-        match: { status: { $in: VALID_INVOICE_STATUSES } },
-        valueExpression: '$grandTotal',
-      }),
+      // Revenue analytics - weekly
+      runIfAllowed(
+        canViewInvoices,
+        () =>
+          getAnalytics({
+            Model: Invoice,
+            companyId: companyObjectId,
+            dateField: 'invoiceDate',
+            period: 'weekly',
+            now,
+            match: { status: { $in: VALID_INVOICE_STATUSES } },
+            valueExpression: '$grandTotal',
+          }),
+        [],
+      ),
 
-      // PAYMENT ANALYTICS (NET OF REFUNDS)
-      getAnalytics({
-        Model: Payment,
-        companyId: companyObjectId,
-        dateField: 'paymentDate',
-        period: 'daily',
-        now,
-        valueExpression: {
-          $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
-        },
-      }),
+      // Revenue analytics - monthly
+      runIfAllowed(
+        canViewInvoices,
+        () =>
+          getAnalytics({
+            Model: Invoice,
+            companyId: companyObjectId,
+            dateField: 'invoiceDate',
+            period: 'monthly',
+            now,
+            match: { status: { $in: VALID_INVOICE_STATUSES } },
+            valueExpression: '$grandTotal',
+          }),
+        [],
+      ),
 
-      getAnalytics({
-        Model: Payment,
-        companyId: companyObjectId,
-        dateField: 'paymentDate',
-        period: 'weekly',
-        now,
-        valueExpression: {
-          $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
-        },
-      }),
+      // Revenue analytics - yearly
+      runIfAllowed(
+        canViewInvoices,
+        () =>
+          getAnalytics({
+            Model: Invoice,
+            companyId: companyObjectId,
+            dateField: 'invoiceDate',
+            period: 'yearly',
+            now,
+            match: { status: { $in: VALID_INVOICE_STATUSES } },
+            valueExpression: '$grandTotal',
+          }),
+        [],
+      ),
 
-      getAnalytics({
-        Model: Payment,
-        companyId: companyObjectId,
-        dateField: 'paymentDate',
-        period: 'monthly',
-        now,
-        valueExpression: {
-          $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
-        },
-      }),
+      // Payment analytics - daily
+      runIfAllowed(
+        canViewPayments,
+        () =>
+          getAnalytics({
+            Model: Payment,
+            companyId: companyObjectId,
+            dateField: 'paymentDate',
+            period: 'daily',
+            now,
+            valueExpression: {
+              $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
+            },
+          }),
+        [],
+      ),
 
-      getAnalytics({
-        Model: Payment,
-        companyId: companyObjectId,
-        dateField: 'paymentDate',
-        period: 'yearly',
-        now,
-        valueExpression: {
-          $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
-        },
-      }),
+      // Payment analytics - weekly
+      runIfAllowed(
+        canViewPayments,
+        () =>
+          getAnalytics({
+            Model: Payment,
+            companyId: companyObjectId,
+            dateField: 'paymentDate',
+            period: 'weekly',
+            now,
+            valueExpression: {
+              $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
+            },
+          }),
+        [],
+      ),
+
+      // Payment analytics - monthly
+      runIfAllowed(
+        canViewPayments,
+        () =>
+          getAnalytics({
+            Model: Payment,
+            companyId: companyObjectId,
+            dateField: 'paymentDate',
+            period: 'monthly',
+            now,
+            valueExpression: {
+              $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
+            },
+          }),
+        [],
+      ),
+
+      // Payment analytics - yearly
+      runIfAllowed(
+        canViewPayments,
+        () =>
+          getAnalytics({
+            Model: Payment,
+            companyId: companyObjectId,
+            dateField: 'paymentDate',
+            period: 'yearly',
+            now,
+            valueExpression: {
+              $subtract: ['$amount', { $ifNull: ['$refundedAmount', 0] }],
+            },
+          }),
+        [],
+      ),
     ])
 
     const product = productStats[0] || {
@@ -578,63 +694,88 @@ router.get('/summary', permissionMiddleware('Dashboard', 'VIEW'), async (req, re
 
     const company = companyDetails || {}
 
+    // Build permission visibility flags
+    const visibleSections = {
+      products: canViewProducts,
+      employees: canViewEmployees,
+      salesOrders: canViewSales,
+      inventory: canViewInventory,
+      warehouses: canViewWarehouses,
+      invoices: canViewInvoices,
+      payments: canViewPayments,
+      finance: canViewInvoices || canViewPayments,
+      company: canViewCompanySettings,
+      recentOrders: canViewSales,
+      recentActivities: canViewActivities,
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Dashboard summary fetched successfully.',
       data: {
         generatedAt: now,
 
-        company: {
-          companyName: company.companyName || '',
-          logo: company.logo || '',
-          status: company.status || '',
-          currency: company.currency || 'INR',
-        },
+        visibleSections,
+
+        company: canViewCompanySettings
+          ? {
+              companyName: company.companyName || '',
+              logo: company.logo || '',
+              status: company.status || '',
+              currency: company.currency || 'INR',
+            }
+          : null,
 
         businessOverview: {
-          totalProducts: product.total,
-          activeProducts: product.active,
-          inactiveProducts: product.inactive,
+          totalProducts: canViewProducts ? product.total : null,
+          activeProducts: canViewProducts ? product.active : null,
+          inactiveProducts: canViewProducts ? product.inactive : null,
 
-          totalSalesOrders: orderOverview.total,
+          totalSalesOrders: canViewSales ? orderOverview.total : null,
 
-          totalEmployees: employee.total,
-          activeEmployees: employee.active,
-          inactiveEmployees: employee.inactive,
+          totalEmployees: canViewEmployees ? employee.total : null,
+          activeEmployees: canViewEmployees ? employee.active : null,
+          inactiveEmployees: canViewEmployees ? employee.inactive : null,
 
-          totalRevenue: roundMoney(invoice.totalRevenue),
+          totalRevenue: canViewInvoices ? roundMoney(invoice.totalRevenue) : null,
         },
 
-        salesOrders: orderOverview,
+        salesOrders: canViewSales ? orderOverview : null,
 
-        inventory: {
-          totalProducts: inventory.totalProducts,
-          totalStock: roundMoney(inventory.totalStock),
-          reservedStock: roundMoney(inventory.reservedStock),
-          availableStock: roundMoney(inventory.availableStock),
-          lowStockProducts: inventory.lowStockProducts,
-          outOfStockProducts: inventory.outOfStockProducts,
-        },
+        inventory: canViewInventory
+          ? {
+              totalProducts: inventory.totalProducts,
+              totalStock: roundMoney(inventory.totalStock),
+              reservedStock: roundMoney(inventory.reservedStock),
+              availableStock: roundMoney(inventory.availableStock),
+              lowStockProducts: inventory.lowStockProducts,
+              outOfStockProducts: inventory.outOfStockProducts,
+            }
+          : null,
 
-        warehouses: {
-          total: warehouse.total,
-          active: warehouse.active,
-          inactive: warehouse.inactive,
-        },
+        warehouses: canViewWarehouses
+          ? {
+              total: warehouse.total,
+              active: warehouse.active,
+              inactive: warehouse.inactive,
+            }
+          : null,
 
         finance: {
-          totalInvoices: invoice.totalInvoices,
-          totalRevenue: roundMoney(invoice.totalRevenue),
-          invoiceReceivedAmount: roundMoney(invoice.totalReceived),
-          paymentReceivedAmount: roundMoney(payment.netReceived),
-          grossPaymentAmount: roundMoney(payment.grossReceived),
-          refundedAmount: roundMoney(payment.refundedAmount),
-          outstandingAmount: roundMoney(invoice.outstanding),
-          overdueAmount: roundMoney(invoice.overdueAmount),
-          paidInvoices: invoice.paidInvoices,
-          partiallyPaidInvoices: invoice.partiallyPaidInvoices,
-          overdueInvoices: invoice.overdueInvoices,
-          paymentCount: payment.paymentCount,
+          totalInvoices: canViewInvoices ? invoice.totalInvoices : null,
+          totalRevenue: canViewInvoices ? roundMoney(invoice.totalRevenue) : null,
+          invoiceReceivedAmount: canViewInvoices ? roundMoney(invoice.totalReceived) : null,
+
+          paymentReceivedAmount: canViewPayments ? roundMoney(payment.netReceived) : null,
+          grossPaymentAmount: canViewPayments ? roundMoney(payment.grossReceived) : null,
+          refundedAmount: canViewPayments ? roundMoney(payment.refundedAmount) : null,
+          paymentCount: canViewPayments ? payment.paymentCount : null,
+
+          outstandingAmount: canViewInvoices ? roundMoney(invoice.outstanding) : null,
+          overdueAmount: canViewInvoices ? roundMoney(invoice.overdueAmount) : null,
+          paidInvoices: canViewInvoices ? invoice.paidInvoices : null,
+          partiallyPaidInvoices: canViewInvoices ? invoice.partiallyPaidInvoices : null,
+          overdueInvoices: canViewInvoices ? invoice.overdueInvoices : null,
         },
 
         analytics: {
@@ -656,17 +797,26 @@ router.get('/summary', permissionMiddleware('Dashboard', 'VIEW'), async (req, re
           },
         },
 
-        recentOrders: recentOrders.map((order) => ({
-          _id: order._id,
-          orderNumber: order.orderNumber,
-          customerName: order.customerId?.customerName || 'Unknown Customer',
-          warehouseName: order.warehouseId?.name || '',
-          orderDate: order.orderDate,
-          grandTotal: roundMoney(order.grandTotal),
-          status: order.status,
-        })),
+        recentOrders: canViewSales
+          ? recentOrders.map((order) => ({
+              _id: order._id,
+              orderNumber: order.orderNumber,
+              customerName: order.customerId?.customerName || 'Unknown Customer',
+              warehouseName: order.warehouseId?.name || '',
+              orderDate: order.orderDate,
+              grandTotal: roundMoney(order.grandTotal),
+              status: order.status,
+            }))
+          : [],
 
-        recentActivities,
+        recentActivities: canViewActivities
+          ? recentActivities.map((activity) => ({
+              _id: activity._id,
+              action: activity.action || '',
+              description: activity.description || '',
+              createdAt: activity.createdAt,
+            }))
+          : [],
       },
     })
   } catch (error) {

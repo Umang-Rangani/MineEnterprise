@@ -32,7 +32,6 @@ function getStoredPreferences() {
     }
 
     const savedRoleFilter = typeof saved.roleFilter === 'string' ? saved.roleFilter : 'All'
-
     const roleFilter = validRoleAliases[savedRoleFilter] || savedRoleFilter
 
     return {
@@ -110,7 +109,6 @@ export default function CompanyEmployees() {
 
   const [statusTarget, setStatusTarget] = useState(null)
   const [updatingStatusId, setUpdatingStatusId] = useState('')
-
   const [isExporting, setIsExporting] = useState(false)
 
   const [stats, setStats] = useState({
@@ -238,7 +236,6 @@ export default function CompanyEmployees() {
           totalPages: Math.max(1, paginationData.totalPages ?? 1),
         })
 
-        // Sync with the valid page returned by the backend.
         if (serverPage !== currentPage) {
           setCurrentPage(serverPage)
         }
@@ -281,7 +278,6 @@ export default function CompanyEmployees() {
 
   const handleRefresh = () => {
     if (loading) return
-
     setRefreshKey((key) => key + 1)
   }
 
@@ -381,7 +377,6 @@ export default function CompanyEmployees() {
 
       showToast('success', response.data?.message || 'Employee deleted successfully.')
 
-      // Refresh the list; the backend will correct the page if needed.
       setRefreshKey((key) => key + 1)
     } catch (error) {
       showToast('error', error.response?.data?.message || error.message || 'Unable to delete employee. Please try again.')
@@ -415,12 +410,13 @@ export default function CompanyEmployees() {
   const openDetails = (employee) => {
     navigate(`/company/employees/${employee._id}`)
   }
+
   const totalPages = Math.max(1, pagination.totalPages)
   const safePage = Math.min(currentPage, totalPages)
 
   const startItem = pagination.totalEmployees === 0 ? 0 : (safePage - 1) * pageSize + 1
-
   const endItem = Math.min(safePage * pageSize, pagination.totalEmployees)
+
   const items = [{ title: 'Employees', link: null }]
 
   if (loading && !hasLoaded) {
@@ -452,26 +448,21 @@ export default function CompanyEmployees() {
         <div className="h-1 bg-erp-primary" />
 
         <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
-          {/* Breadcrumb */}
           <div className="min-w-0 flex-1 overflow-hidden">
             <BreadCrumb items={items} />
           </div>
 
-          {/* Employee Stats & Actions */}
           <div className="flex shrink-0 items-center gap-2">
-            {/* Total Employees */}
             <div className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-erp-border px-3">
               <span className="text-xs text-slate-500">Total</span>
               <span className="text-sm font-bold text-slate-900">{stats.total}</span>
             </div>
 
-            {/* Inactive */}
             <div className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-amber-200 px-3">
               <span className="text-xs text-amber-700">Inactive</span>
               <span className="text-sm font-bold text-slate-900">{stats.inactive}</span>
             </div>
 
-            {/* Refresh Button */}
             <button
               type="button"
               onClick={handleRefresh}
@@ -493,12 +484,10 @@ export default function CompanyEmployees() {
                 className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-700 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isExporting ? <LoaderCircle size={15} className="animate-spin" /> : <Download size={15} />}
-
                 <span>{isExporting ? 'Exporting...' : 'Export'}</span>
               </button>
             )}
 
-            {/* Add Employee Button */}
             {canCreate && (
               <button
                 type="button"
@@ -535,10 +524,10 @@ export default function CompanyEmployees() {
               {hasActiveFilters && (
                 <button type="button" onClick={resetFilters} className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 sm:text-sm">
                   <FilterX size={14} />
-                  {/* Clear filters */}
                 </button>
               )}
             </div>
+
             <div className="flex gap-5">
               <select
                 value={statusFilter}
@@ -583,6 +572,7 @@ export default function CompanyEmployees() {
               Updating employees...
             </div>
           )}
+
           {employees.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
@@ -599,16 +589,18 @@ export default function CompanyEmployees() {
                   Clear filters
                 </button>
               ) : (
-                <button type="button" onClick={openCreate} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
-                  <UserRoundPlus size={15} />
-                  Add Employee
-                </button>
+                canCreate && (
+                  <button type="button" onClick={openCreate} className="mt-3 inline-flex h-9 items-center gap-1.5 rounded-lg bg-erp-primary px-3 text-xs font-semibold text-white hover:bg-erp-primary-hover">
+                    <UserRoundPlus size={15} />
+                    Add Employee
+                  </button>
+                )
               )}
             </div>
           ) : (
             <>
               {/* Desktop table */}
-              <div className="hidden overflow-x-auto md:block">
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full min-w-[800px] text-left">
                   <thead className="bg-slate-50">
                     <tr className="border-b border-slate-100">
@@ -617,7 +609,7 @@ export default function CompanyEmployees() {
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Phone</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Roles</th>
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-500">Status</th>
-                      <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>
+                      {canShowActions && <th className="px-4 py-3 text-right text-[10px] font-bold uppercase tracking-wider text-slate-500">Actions</th>}
                     </tr>
                   </thead>
 
@@ -633,7 +625,6 @@ export default function CompanyEmployees() {
 
                               <div className="min-w-0">
                                 <p className="max-w-48 truncate text-xs font-semibold text-slate-800 sm:text-sm">{employee.name || 'Unnamed employee'}</p>
-                                {/* <p className="mt-0.5 text-[10px] text-slate-400">ID: {String(employee._id).slice(-8)}</p> */}
                               </div>
                             </div>
                           </td>
@@ -670,61 +661,63 @@ export default function CompanyEmployees() {
                             </span>
                           </td>
 
-                          <td className="px-4 py-3">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {canView && (
-                                <button
-                                  type="button"
-                                  onClick={() => openDetails(employee)}
-                                  title="View employee"
-                                  aria-label={`View ${employee.name}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                                >
-                                  <Eye size={15} />
-                                </button>
-                              )}
+                          {canShowActions && (
+                            <td className="px-4 py-3">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {canView && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openDetails(employee)}
+                                    title="View employee"
+                                    aria-label={`View ${employee.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Eye size={15} />
+                                  </button>
+                                )}
 
-                              {canUpdate && (
-                                <button
-                                  type="button"
-                                  onClick={() => openEdit(employee)}
-                                  title="Edit employee"
-                                  aria-label={`Edit ${employee.name}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
-                                >
-                                  <Pencil size={14} />
-                                </button>
-                              )}
+                                {canUpdate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEdit(employee)}
+                                    title="Edit employee"
+                                    aria-label={`Edit ${employee.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                  >
+                                    <Pencil size={14} />
+                                  </button>
+                                )}
 
-                              {canUpdateStatus && (
-                                <button
-                                  type="button"
-                                  onClick={() => setStatusTarget(employee)}
-                                  disabled={Boolean(updatingStatusId) || Boolean(deletingId)}
-                                  title={employee.status === 'Active' ? 'Deactivate employee' : 'Activate employee'}
-                                  aria-label={`${employee.status === 'Active' ? 'Deactivate' : 'Activate'} ${employee.name}`}
-                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                                    employee.status === 'Active' ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
-                                  }`}
-                                >
-                                  {updatingStatusId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
-                                </button>
-                              )}
+                                {canUpdateStatus && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setStatusTarget(employee)}
+                                    disabled={Boolean(updatingStatusId) || Boolean(deletingId)}
+                                    title={employee.status === 'Active' ? 'Deactivate employee' : 'Activate employee'}
+                                    aria-label={`${employee.status === 'Active' ? 'Deactivate' : 'Activate'} ${employee.name}`}
+                                    className={`flex h-8 w-8 items-center justify-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      employee.status === 'Active' ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                                    }`}
+                                  >
+                                    {updatingStatusId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Power size={15} />}
+                                  </button>
+                                )}
 
-                              {canDelete && (
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmEmployee(employee)}
-                                  disabled={Boolean(deletingId)}
-                                  title="Delete employee"
-                                  aria-label={`Delete ${employee.name}`}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  {deletingId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
-                                </button>
-                              )}
-                            </div>
-                          </td>
+                                {canDelete && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmEmployee(employee)}
+                                    disabled={Boolean(deletingId)}
+                                    title="Delete employee"
+                                    aria-label={`Delete ${employee.name}`}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-red-200 text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {deletingId === employee._id ? <LoaderCircle size={15} className="animate-spin" /> : <Trash2 size={15} />}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
@@ -733,7 +726,7 @@ export default function CompanyEmployees() {
               </div>
 
               {/* Mobile cards */}
-              <div className="divide-y divide-slate-100 md:hidden">
+              <div className="divide-y divide-slate-100 lg:hidden">
                 {employees.map((employee) => {
                   const roles = getEmployeeRoles(employee)
 
@@ -763,49 +756,51 @@ export default function CompanyEmployees() {
                         ))}
                       </div>
 
-                      <div className="flex gap-2 border-t border-slate-100 pt-2.5">
-                        {canView && (
-                          <button type="button" onClick={() => openDetails(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-                            <Eye size={14} />
-                            View
-                          </button>
-                        )}
+                      {canShowActions && (
+                        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-2.5">
+                          {canView && (
+                            <button type="button" onClick={() => openDetails(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                              <Eye size={14} />
+                              View
+                            </button>
+                          )}
 
-                        {canUpdate && (
-                          <button type="button" onClick={() => openEdit(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
-                            <Pencil size={14} />
-                            Edit
-                          </button>
-                        )}
+                          {canUpdate && (
+                            <button type="button" onClick={() => openEdit(employee)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
+                              <Pencil size={14} />
+                              Edit
+                            </button>
+                          )}
 
-                        {canUpdateStatus && (
-                          <button
-                            type="button"
-                            onClick={() => setStatusTarget(employee)}
-                            disabled={Boolean(updatingStatusId) || Boolean(deletingId)}
-                            title={employee.status === 'Active' ? 'Deactivate employee' : 'Activate employee'}
-                            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                              employee.status === 'Active' ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
-                            }`}
-                          >
-                            {updatingStatusId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Power size={14} />}
+                          {canUpdateStatus && (
+                            <button
+                              type="button"
+                              onClick={() => setStatusTarget(employee)}
+                              disabled={Boolean(updatingStatusId) || Boolean(deletingId)}
+                              title={employee.status === 'Active' ? 'Deactivate employee' : 'Activate employee'}
+                              className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                                employee.status === 'Active' ? 'border-amber-200 text-amber-600 hover:bg-amber-50' : 'border-emerald-200 text-emerald-600 hover:bg-emerald-50'
+                              }`}
+                            >
+                              {updatingStatusId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Power size={14} />}
 
-                            {employee.status === 'Active' ? 'Deactivate' : 'Activate'}
-                          </button>
-                        )}
+                              {employee.status === 'Active' ? 'Deactivate' : 'Activate'}
+                            </button>
+                          )}
 
-                        {canDelete && (
-                          <button
-                            type="button"
-                            onClick={() => setConfirmEmployee(employee)}
-                            disabled={Boolean(deletingId)}
-                            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {deletingId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                            Delete
-                          </button>
-                        )}
-                      </div>
+                          {canDelete && (
+                            <button
+                              type="button"
+                              onClick={() => setConfirmEmployee(employee)}
+                              disabled={Boolean(deletingId)}
+                              className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {deletingId === employee._id ? <LoaderCircle size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )
                 })}

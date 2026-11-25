@@ -119,8 +119,12 @@ export default function ProtectedRoute({ allowedRoles }) {
     return <Navigate to="/login" replace state={{ from: location }} />
   }
 
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
-    if (user.role === 'SuperAdmin') {
+  const userRoles = Array.isArray(user.roles) ? user.roles.map((role) => (typeof role === 'string' ? role : role?.name)) : []
+
+  const hasAllowedRole = allowedRoles && (allowedRoles.includes(user.role) || userRoles.some((role) => allowedRoles.includes(role)))
+
+  if (allowedRoles && !hasAllowedRole) {
+    if (user.role === 'SuperAdmin' || userRoles.includes('SuperAdmin')) {
       return <Navigate to="/superadmin" replace />
     }
 

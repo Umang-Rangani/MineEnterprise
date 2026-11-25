@@ -9,6 +9,24 @@ const passwordOtpSchema = new mongoose.Schema(
       index: true,
     },
 
+    // SELF_SERVICE or ADMIN_EMPLOYEE_RESET
+    purpose: {
+      type: String,
+      enum: ['SELF_SERVICE', 'ADMIN_EMPLOYEE_RESET'],
+      default: 'SELF_SERVICE',
+      required: true,
+      index: true,
+    },
+
+    // User who requested the reset.
+    // Null for existing self-service flow.
+    requestedById: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'UserEnterPrise',
+      default: null,
+      index: true,
+    },
+
     otpHash: {
       type: String,
       required: true,
@@ -46,6 +64,8 @@ const passwordOtpSchema = new mongoose.Schema(
   },
 )
 
-passwordOtpSchema.index({ userId: 1, createdAt: -1 })
+passwordOtpSchema.index({ userId: 1, purpose: 1, createdAt: -1 })
+
+passwordOtpSchema.index({ requestedById: 1, userId: 1, purpose: 1, createdAt: -1 })
 
 module.exports = mongoose.models.PasswordOtp || mongoose.model('PasswordOtp', passwordOtpSchema)

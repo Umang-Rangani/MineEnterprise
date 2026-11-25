@@ -129,7 +129,9 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
 
   const routeRole = location.state?.role || initialRole
 
-  const isPredefined = location.state?.isPredefined === true || routeRole?.type === 'Predefined'
+  const predefinedRoleNames = ['Employee', 'Manager', 'Accountant', 'InventoryManager', 'SalesManager']
+
+  const isPredefined = location.state?.isPredefined === true || routeRole?.type === 'Predefined' || predefinedRoleNames.includes(decodeURIComponent(id || ''))
 
   const roleId = id || routeRole?._id || routeRole?.name || ''
   const isEdit = Boolean(id || routeRole?._id || isPredefined)
@@ -385,7 +387,10 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
         })
       }
     } catch (error) {
-      setApiError(error.response?.data?.message || error.message || 'Something went wrong while saving the role.')
+      setToast({
+        type: 'error',
+        message: error.response?.data?.message || error.message || 'Something went wrong while saving the role.',
+      })
     } finally {
       setSaving(false)
     }
@@ -572,6 +577,8 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
                 <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-erp-text-muted" />
                 <input
                   type="search"
+                  id="permission-search"
+                  name="permissionSearch"
                   value={permissionSearch}
                   onChange={(event) => setPermissionSearch(event.target.value)}
                   placeholder="Search permissions..."
@@ -688,7 +695,7 @@ export default function RoleForm({ initialRole = null, availablePermissions: ini
           </div>
         </section>
 
-        <footer className="sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-erp-border bg-erp-surface/95 p-2.5 shadow-sm backdrop-blur">
+        <footer className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-erp-border bg-erp-surface p-2.5 shadow-sm">
           <div className="hidden min-w-0 sm:block">
             <p className="text-xs font-semibold text-erp-text">{form.permissions.length} permissions selected</p>
             <p className="mt-0.5 text-[10px] text-erp-text-secondary">Review the role permissions before saving.</p>
