@@ -937,7 +937,7 @@ export default function PurchaseForm() {
               )
             })}
 
-            {!loadingProducts && products.length > 0 && <p className="text-[10px] text-erp-text-muted">{filteredProducts.length} active product(s) match the search.</p>}
+            {/* {!loadingProducts && products.length > 0 && <p className="text-[10px] text-erp-text-muted">{filteredProducts.length} active product(s) match the search.</p>} */}
           </div>
         </section>
 

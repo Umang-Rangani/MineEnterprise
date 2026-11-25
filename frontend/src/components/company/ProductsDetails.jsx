@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Package, Tag, RefreshCw, Pencil, CheckCircle2, FileText, CalendarDays, Clock, AlertCircle, Ban, Barcode, IndianRupee, Boxes, Image as ImageIcon, Percent, Warehouse, TrendingUp, Wallet, History } from 'lucide-react'
+import { Package, Tag, RefreshCw, Pencil, CheckCircle2, FileText, CalendarDays, Clock, AlertCircle, Ban, Barcode, IndianRupee, Boxes, Image as ImageIcon, Percent, Warehouse, TrendingUp, Wallet, History, Trash2 } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
 import BreadCrumb from '../../BreadCrumb/BreadCrumb'
@@ -245,13 +245,18 @@ export default function ProductsDetails() {
 
   const totalStock = Number(product?.totalStock || 0)
 
-  const averageInventoryCost = totalStock > 0 ? calculatedStockValue / totalStock : 0
+  const apiAverageCost = Number(product?.averageCost)
+
+  const averageInventoryCost = product?.averageCost !== null && product?.averageCost !== undefined && Number.isFinite(apiAverageCost) ? apiAverageCost : totalStock > 0 ? calculatedStockValue / totalStock : 0
 
   const totalStockValue = calculatedStockValue || Number(product?.stockValue || 0)
 
   const breadcrumbItems = [
     { title: 'Products', link: '/company/products' },
-    { title: product?.name || '...', link: null },
+    {
+      title: loading ? 'Loading...' : product?.name || 'Product Not Found',
+      link: null,
+    },
   ]
 
   if (!canView) {
@@ -321,6 +326,13 @@ export default function ProductsDetails() {
               <button type="button" onClick={handleEdit} disabled={refreshing || deleting || !product} className={`${buttonBase} bg-erp-primary text-white hover:bg-erp-primary-hover`}>
                 <Pencil size={14} />
                 Edit
+              </button>
+            )}
+
+            {canDelete && (
+              <button type="button" onClick={() => setShowDeleteModal(true)} disabled={refreshing || deleting || !product} className={`${buttonBase} border border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100`}>
+                <Trash2 size={14} />
+                Delete
               </button>
             )}
           </div>

@@ -446,6 +446,7 @@ export default function CompanyPurchases() {
           ? `Re-approve ${actionTarget.purchaseNumber || 'this purchase'}? Its status will change from Draft to Ordered and the order email will be attempted again.`
           : `Approve ${actionTarget.purchaseNumber || 'this purchase'}? Its status will change from Draft to Ordered. The supplier purchase order email will be attempted. Inventory will not be updated by this action.`,
         actionButtonText: previouslyApproved ? 'Re-approve Purchase' : 'Approve Purchase',
+        warningText: 'The purchase will move from Draft to Ordered. Inventory will not be updated.',
         cancelButtonText: 'Keep Purchase',
       }
     }
@@ -456,6 +457,7 @@ export default function CompanyPurchases() {
         title: 'Cancel Purchase?',
         message: `Cancel ${actionTarget.purchaseNumber || 'this purchase'}? Its status will return from Ordered to Draft and a cancellation email will be attempted. This purchase will not be marked as Cancelled by this action.`,
         actionButtonText: 'Cancel Purchase',
+        warningText: 'The purchase will return from Ordered to Draft. It will not be marked as Cancelled.',
         cancelButtonText: 'Keep Purchase',
       }
     }

@@ -35,6 +35,7 @@ export default function CompanyCategories() {
 
   const [categories, setCategories] = useState([])
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
   const [pageSize, setPageSize] = useState(5)
   const [currentPage, setCurrentPage] = useState(1)
@@ -60,6 +61,9 @@ export default function CompanyCategories() {
   const [statusTarget, setStatusTarget] = useState(null)
   const [updatingStatusId, setUpdatingStatusId] = useState('')
 
+  const [statusError, setStatusError] = useState('')
+  const [deleteError, setDeleteError] = useState('')
+
   const [toast, setToast] = useState(null)
   const [error, setError] = useState('')
 
@@ -82,6 +86,17 @@ export default function CompanyCategories() {
     document.title = 'Categories | MineERP'
   }, [])
 
+  // Debounce category search to avoid an API request on every keystroke.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 400)
+
+    return () => {
+      window.clearTimeout(timer)
+    }
+  }, [search])
+
   // Fetch categories and summary counts.
   useEffect(() => {
     let cancelled = false
@@ -93,7 +108,7 @@ export default function CompanyCategories() {
       try {
         const { data } = await axiosInstance.get('/erp/categories', {
           params: {
-            search: search.trim(),
+            search: debouncedSearch.trim(),
             status: statusFilter === 'All' ? undefined : statusFilter,
             page: currentPage,
             limit: pageSize,
@@ -147,7 +162,7 @@ export default function CompanyCategories() {
     return () => {
       cancelled = true
     }
-  }, [search, statusFilter, currentPage, pageSize, refreshKey])
+  }, [debouncedSearch, statusFilter, currentPage, pageSize, refreshKey])
 
   // Show success message received from the form or details page.
   useEffect(() => {
@@ -235,7 +250,7 @@ export default function CompanyCategories() {
   }
 
   const openEditPage = (category) => {
-    if (!category?._id) return
+    if (!category?._id || category.status === 'Inactive') return
     navigate(`/company/categories/${category._id}/edit`)
   }
 
@@ -247,19 +262,23 @@ export default function CompanyCategories() {
     const categoryId = String(category._id)
 
     setUpdatingStatusId(categoryId)
+    setStatusError('')
 
     try {
-      const { data } = await axiosInstance.patch(`/erp/categories/${categoryId}`, { status: nextStatus })
+      const { data } = await axiosInstance.patch(`/erp/categories/${categoryId}`, {
+        status: nextStatus,
+      })
 
       if (data.success === false) {
         throw new Error(data.message || 'Unable to update category status.')
       }
 
       setStatusTarget(null)
+      setStatusError('')
       showToast('success', data.message || `Category ${nextStatus.toLowerCase()} successfully.`)
       setRefreshKey((key) => key + 1)
     } catch (err) {
-      showToast('error', getErrorMessage(err, 'Unable to update category status.'))
+      setStatusError(getErrorMessage(err, 'Unable to update category status.'))
     } finally {
       setUpdatingStatusId('')
     }
@@ -269,7 +288,9 @@ export default function CompanyCategories() {
     if (!deletingCategory?._id || deletingId) return
 
     const categoryId = String(deletingCategory._id)
+
     setDeletingId(categoryId)
+    setDeleteError('')
 
     try {
       const { data } = await axiosInstance.delete(`/erp/categories/${categoryId}`)
@@ -279,6 +300,7 @@ export default function CompanyCategories() {
       }
 
       setDeletingCategory(null)
+      setDeleteError('')
       showToast('success', data.message || 'Category deleted successfully.')
 
       if (categories.length === 1 && currentPage > 1) {
@@ -287,7 +309,7 @@ export default function CompanyCategories() {
         setRefreshKey((key) => key + 1)
       }
     } catch (err) {
-      showToast('error', getErrorMessage(err, 'Unable to delete category.'))
+      setDeleteError(getErrorMessage(err, 'Unable to delete category.'))
     } finally {
       setDeletingId('')
     }
@@ -317,7 +339,7 @@ export default function CompanyCategories() {
   if (loading && !hasLoaded) {
     return (
       <div className="min-w-0 space-y-4 text-sm">
-        <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+        <section className="h-auto min-h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
           <div className="h-1 bg-erp-primary" />
 
           <div className="flex min-h-16 items-center px-4 sm:px-5">
@@ -339,15 +361,15 @@ export default function CompanyCategories() {
       <Toast toast={toast} onClose={closeToast} />
 
       {/* Header */}
-      <section className="h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
+      <section className="h-auto min-h-17 overflow-hidden rounded-xl border border-erp-border bg-erp-surface shadow-erp-card">
         <div className="h-1 bg-erp-primary" />
 
-        <div className="flex h-[calc(100%-4px)] min-w-0 items-center justify-between gap-3 px-4 sm:px-5">
+        <div className="flex min-w-0 flex-col items-stretch justify-between gap-3 px-4 py-3 sm:px-5 lg:h-[calc(100%-4px)] lg:flex-row lg:items-center">
           <div className="min-w-0 flex-1 overflow-hidden">
             <BreadCrumb items={items} />
           </div>
 
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap">
             <div className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-erp-border px-3">
               <span className="text-xs text-slate-500">Total</span>
               <span className="text-sm font-bold text-slate-900">{stats.total}</span>
@@ -371,7 +393,6 @@ export default function CompanyCategories() {
               aria-label="Refresh categories"
               className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-lg border border-erp-border bg-erp-surface px-3 text-xs font-semibold text-slate-600 transition hover:bg-erp-hover disabled:cursor-not-allowed disabled:opacity-60"
             >
-
               <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
               <span className="hidden sm:inline">{refreshing ? 'Refreshing...' : 'Refresh'}</span>
             </button>
@@ -414,6 +435,8 @@ export default function CompanyCategories() {
 
                 <input
                   type="search"
+                  id="category-search"
+                  name="search"
                   value={search}
                   onChange={(event) => {
                     setSearch(event.target.value)
@@ -440,6 +463,8 @@ export default function CompanyCategories() {
 
             <div className="flex gap-3 sm:gap-5">
               <select
+                id="category-status-filter"
+                name="status"
                 value={statusFilter}
                 onChange={(event) => {
                   setStatusFilter(event.target.value)
@@ -458,7 +483,7 @@ export default function CompanyCategories() {
 
         {/* Table and loading */}
         <div className="relative min-h-[220px]">
-          { categories.length === 0 ? (
+          {categories.length === 0 ? (
             <div className="flex min-h-56 flex-col items-center justify-center px-4 py-8 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                 <PackageOpen size={24} />
@@ -485,7 +510,7 @@ export default function CompanyCategories() {
           ) : (
             <>
               {/* Desktop table */}
-              <div className="hidden overflow-x-auto md:block">
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full min-w-[850px] text-left">
                   <thead className="bg-slate-50">
                     <tr className="border-b border-slate-100">
@@ -550,9 +575,10 @@ export default function CompanyCategories() {
                                   <button
                                     type="button"
                                     onClick={() => openEditPage(category)}
-                                    title="Edit category"
+                                    disabled={isInactive}
+                                    title={isInactive ? 'Inactive categories cannot be edited' : 'Edit category'}
                                     aria-label={`Edit ${category.name}`}
-                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary"
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 transition hover:border-erp-primary/30 hover:bg-erp-primary/5 hover:text-erp-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 disabled:hover:bg-transparent disabled:hover:text-slate-600"
                                   >
                                     <Pencil size={14} />
                                   </button>
@@ -561,7 +587,10 @@ export default function CompanyCategories() {
                                 {canUpdateStatus && (
                                   <button
                                     type="button"
-                                    onClick={() => setStatusTarget(category)}
+                                    onClick={() => {
+                                      setStatusError('')
+                                      setStatusTarget(category)
+                                    }}
                                     disabled={Boolean(updatingStatusId)}
                                     title={isInactive ? 'Activate category' : 'Deactivate category'}
                                     aria-label={`${isInactive ? 'Activate' : 'Deactivate'} ${category.name}`}
@@ -576,7 +605,10 @@ export default function CompanyCategories() {
                                 {canDelete && (
                                   <button
                                     type="button"
-                                    onClick={() => setDeletingCategory(category)}
+                                    onClick={() => {
+                                      setDeleteError('')
+                                      setDeletingCategory(category)
+                                    }}
                                     disabled={Boolean(deletingId)}
                                     title="Delete category"
                                     aria-label={`Delete ${category.name}`}
@@ -596,7 +628,7 @@ export default function CompanyCategories() {
               </div>
 
               {/* Mobile cards */}
-              <div className="divide-y divide-slate-100 md:hidden">
+              <div className="divide-y divide-slate-100 lg:hidden">
                 {categories.map((category) => {
                   const isInactive = category.status === 'Inactive'
                   const categoryId = String(category._id || '')
@@ -633,7 +665,14 @@ export default function CompanyCategories() {
                         )}
 
                         {canUpdate && (
-                          <button type="button" onClick={() => openEditPage(category)} className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15">
+                          <button
+                            type="button"
+                            onClick={() => openEditPage(category)}
+                            disabled={isInactive}
+                            title={isInactive ? 'Inactive categories cannot be edited' : 'Edit category'}
+                            aria-label={`Edit ${category.name}`}
+                            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-erp-primary/10 text-xs font-semibold text-erp-primary hover:bg-erp-primary/15 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-erp-primary/10"
+                          >
                             <Pencil size={14} />
                             Edit
                           </button>
@@ -642,21 +681,27 @@ export default function CompanyCategories() {
                         {canUpdateStatus && (
                           <button
                             type="button"
-                            onClick={() => setStatusTarget(category)}
+                            onClick={() => {
+                              setStatusError('')
+                              setStatusTarget(category)
+                            }}
                             disabled={Boolean(updatingStatusId)}
-                            className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold disabled:opacity-50 ${
+                            className={`inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border px-2 text-xs font-semibold disabled:opacity-50 ${
                               isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-orange-200 bg-orange-50 text-orange-600'
                             }`}
                           >
-                            <Power size={14} />
-                            {isInactive ? 'Activate' : 'Deactivate'}
+                            <Power size={14} className="shrink-0" />
+                            <span className="truncate">{isInactive ? 'Activate' : 'Deactivate'}</span>
                           </button>
                         )}
 
                         {canDelete && (
                           <button
                             type="button"
-                            onClick={() => setDeletingCategory(category)}
+                            onClick={() => {
+                              setDeleteError('')
+                              setDeletingCategory(category)
+                            }}
                             disabled={Boolean(deletingId)}
                             className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-600 hover:bg-rose-100 disabled:opacity-50"
                           >
@@ -673,7 +718,7 @@ export default function CompanyCategories() {
           )}
 
           {/* Loading overlay */}
-          {!loading  && isFetching && (
+          {!loading && isFetching && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 backdrop-blur-[2px]">
               <Loading fullScreen={false} label="Updating categories" description="Refreshing category records..." className="!h-full min-h-[220px]" />
             </div>
@@ -710,6 +755,7 @@ export default function CompanyCategories() {
 
                 <select
                   id="category-page-size"
+                  name="pageSize"
                   value={pageSize}
                   onChange={(event) => {
                     setPageSize(Number(event.target.value))
@@ -778,8 +824,12 @@ export default function CompanyCategories() {
       <TrashBox
         isOpen={Boolean(deletingCategory)}
         onClose={() => {
-          if (!deletingId) setDeletingCategory(null)
+          if (!deletingId) {
+            setDeletingCategory(null)
+            setDeleteError('')
+          }
         }}
+        errorMessage={deleteError}
         title="Delete Category"
         message={`Are you sure you want to delete "${deletingCategory?.name || 'this category'}"? Categories assigned to products cannot be deleted. Reassign those products first.`}
         actionButtonText="Delete Category"
@@ -792,7 +842,10 @@ export default function CompanyCategories() {
       <TrashBox
         isOpen={Boolean(statusTarget)}
         onClose={() => {
-          if (!updatingStatusId) setStatusTarget(null)
+          if (!updatingStatusId) {
+            setStatusTarget(null)
+            setStatusError('')
+          }
         }}
         title={statusTarget?.status === 'Inactive' ? 'Activate Category' : 'Deactivate Category'}
         message={statusTarget?.status === 'Inactive' ? `Are you sure you want to activate "${statusTarget?.name}"?` : `Are you sure you want to deactivate "${statusTarget?.name}"?`}
@@ -801,6 +854,8 @@ export default function CompanyCategories() {
         onAction={handleToggleStatus}
         isProcessing={Boolean(updatingStatusId)}
         variant={statusTarget?.status === 'Inactive' ? 'activate' : 'deactivate'}
+        warningText={statusTarget?.status === 'Inactive' ? 'This will make the category available for use again.' : 'Products assigned to this category may be affected.'}
+        errorMessage={statusError}
       />
     </div>
   )

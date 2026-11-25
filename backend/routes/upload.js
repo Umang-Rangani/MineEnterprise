@@ -3,11 +3,18 @@ const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
 const crypto = require('crypto')
+const authMiddleware = require('../middleware/authMiddleware')
 
 const router = express.Router()
 
 const UPLOADS_DIR = path.resolve(__dirname, '..', 'public', 'uploads')
 const MAX_FILE_SIZE = 4 * 1024 * 1024
+const ALLOWED_FILE_TYPES = {
+  'image/jpeg': ['.jpg', '.jpeg'],
+  'image/png': ['.png'],
+  'image/webp': ['.webp'],
+  'application/pdf': ['.pdf'],
+}
 
 // Sanitize folder and filename
 const sanitizeSegment = (value, fallback) => {
@@ -39,6 +46,18 @@ const upload = multer({
   limits: {
     fileSize: MAX_FILE_SIZE,
     files: 1,
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedExtensions = ALLOWED_FILE_TYPES[file.mimetype]
+    const extension = path.extname(file.originalname).toLowerCase()
+
+    if (!allowedExtensions || !allowedExtensions.includes(extension)) {
+      const error = new Error('Only JPG, PNG, WEBP and PDF files are allowed.')
+      error.status = 400
+      return cb(error)
+    }
+
+    cb(null, true)
   },
 })
 
@@ -78,6 +97,13 @@ const saveUploadedFile = (file, folder = 'common', filename = 'file') => {
   const safeFolder = sanitizeSegment(folder, 'common')
 
   const originalExtension = path.extname(file.originalname).toLowerCase()
+  const allowedExtensions = ALLOWED_FILE_TYPES[file.mimetype]
+
+  if (!allowedExtensions || !allowedExtensions.includes(originalExtension)) {
+    const error = new Error('Invalid file type.')
+    error.statusCode = 400
+    throw error
+  }
 
   const requestedFilename = sanitizeSegment(filename || path.parse(file.originalname).name, 'file')
 
@@ -140,7 +166,7 @@ const deleteUploadedFile = (filePath) => {
 }
 
 // POST - UPLOAD FILE
-router.post('/', handleUpload, async (req, res) => {
+router.post('/', authMiddleware, handleUpload, async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
       success: false,
@@ -173,7 +199,7 @@ router.post('/', handleUpload, async (req, res) => {
 })
 
 // DELETE - UPLOADED FILE
-router.delete('/', async (req, res) => {
+router.delete('/', authMiddleware, async (req, res) => {
   try {
     const { filePath } = req.body
 

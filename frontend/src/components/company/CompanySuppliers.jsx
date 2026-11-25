@@ -690,6 +690,7 @@ export default function CompanySuppliers() {
         cancelButtonText="Cancel"
         onAction={confirmToggleStatus}
         isProcessing={Boolean(processingId)}
+        warningText={statusTarget?.status === 'Inactive' ? 'This will make the supplier available for use.' : 'This will deactivate the supplier.'}
         variant={statusTarget?.status === 'Inactive' ? 'activate' : 'deactivate'}
       />
     </div>

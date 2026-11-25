@@ -381,9 +381,15 @@ export default function WarehousesDetails() {
         },
       })
     } catch (err) {
-      setShowDeleteModal(false)
+      const statusCode = err.response?.status
+      const errorMessage = err.response?.data?.message || err.message || 'Unable to delete warehouse.'
 
-      showToast('error', err.response?.data?.message || err.message || 'Unable to delete warehouse.')
+      if (statusCode === 409) {
+        showToast('error', errorMessage)
+      } else {
+        setShowDeleteModal(false)
+        showToast('error', errorMessage)
+      }
     } finally {
       setDeleting(false)
     }
@@ -417,8 +423,6 @@ export default function WarehousesDetails() {
           </div>
 
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-           
-
             <button
               type="button"
               onClick={() => fetchWarehouse(true)}

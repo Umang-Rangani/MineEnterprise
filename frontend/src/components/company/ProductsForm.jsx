@@ -460,7 +460,11 @@ export default function ProductsForm() {
         }
       }
 
-      setApiError(error.response?.data?.message || error.message || 'Something went wrong while saving the product.')
+      const serverMessage = error.response?.data?.message || error.message || ''
+
+      const isDuplicateSku = error.response?.data?.code === 11000 || error.response?.data?.code === 'DUPLICATE_SKU' || /duplicate.*(key|record|sku)|sku.*already exists/i.test(serverMessage)
+
+      setApiError(isDuplicateSku ? 'This SKU already exists. Please use a different SKU.' : serverMessage || 'Something went wrong while saving the product.')
     } finally {
       setSaving(false)
     }
@@ -739,7 +743,7 @@ export default function ProductsForm() {
             {!isEdit ? (
               <div className="min-w-0 space-y-3 sm:col-span-2 lg:col-span-3">
                 <div>
-                  <label className={labelClass}>Opening Stock by Warehouse</label>
+                  <p className={labelClass}>Opening Stock by Warehouse</p>
 
                   <p className="text-[10px] text-erp-text-muted">Enter the initial quantity available at each warehouse.</p>
                 </div>
@@ -753,6 +757,8 @@ export default function ProductsForm() {
 
                       <input
                         type="number"
+                        id={`opening-stock-${item.warehouseId}`}
+                        aria-label={`Opening stock quantity for ${warehouse?.name || warehouse?.warehouseName || 'warehouse'}`}
                         min="0"
                         step="any"
                         value={item.quantity}

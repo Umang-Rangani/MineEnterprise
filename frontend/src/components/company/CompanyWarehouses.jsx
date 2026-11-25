@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Plus, Search, Eye, Pencil, Trash2, Warehouse, MapPin, Users, CheckCircle2, XCircle, ChevronLeft, ChevronRight, RefreshCw, FilterX, AlertCircle, Power, LoaderCircle, Download, Phone } from 'lucide-react'
 
 import axiosInstance from '../../api/axiosInstance'
@@ -47,6 +47,8 @@ function getCapacityColor(percentage) {
 
 export default function CompanyWarehouses() {
   const { permissions } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
 
   const canCreate = hasPermission(permissions, 'warehouse:create')
   const canView = hasPermission(permissions, 'warehouse:view')
@@ -92,6 +94,19 @@ export default function CompanyWarehouses() {
       duration: 3000,
     })
   }
+
+  useEffect(() => {
+    const successMessage = location.state?.successMessage
+
+    if (successMessage) {
+      showToast('success', successMessage)
+
+      navigate(location.pathname, {
+        replace: true,
+        state: {},
+      })
+    }
+  }, [location, navigate])
 
   useEffect(() => {
     document.title = 'Warehouses | MineERP'

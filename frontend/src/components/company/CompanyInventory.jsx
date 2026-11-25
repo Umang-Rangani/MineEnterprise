@@ -122,6 +122,7 @@ export default function CompanyInventory() {
 
   const [items, setItems] = useState([])
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
 
   const [pageSize, setPageSize] = useState(5)
@@ -160,6 +161,14 @@ export default function CompanyInventory() {
   }, [])
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search.trim())
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [search])
+
+  useEffect(() => {
     const message = location.state?.successMessage
 
     if (!message) return
@@ -184,7 +193,7 @@ export default function CompanyInventory() {
       try {
         const { data } = await axiosInstance.get('/erp/inventory', {
           params: {
-            search: search.trim() || undefined,
+            search: debouncedSearch || undefined,
             status: statusFilter === 'All' ? undefined : statusFilter,
             page: currentPage,
             limit: pageSize,
@@ -254,7 +263,7 @@ export default function CompanyInventory() {
     return () => {
       cancelled = true
     }
-  }, [canView, search, statusFilter, currentPage, pageSize, refreshKey])
+  }, [canView, debouncedSearch, statusFilter, currentPage, pageSize, refreshKey])
 
   const handleRefresh = () => {
     if (isFetching) return
@@ -420,6 +429,8 @@ export default function CompanyInventory() {
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-erp-text-muted" />
 
               <input
+                id="inventory-search"
+                name="search"
                 type="search"
                 value={search}
                 onChange={(event) => {
@@ -434,6 +445,8 @@ export default function CompanyInventory() {
 
             <div className="flex flex-wrap items-center gap-2">
               <select
+                id="inventory-status-filter"
+                name="status"
                 value={statusFilter}
                 onChange={(event) => {
                   setStatusFilter(event.target.value)
@@ -506,8 +519,8 @@ export default function CompanyInventory() {
                 </div>
               )}
 
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[1100px] text-left">
+              <div className="hidden w-full max-w-full overflow-x-auto md:block">
+                <table className="min-w-[1100px] w-full text-left">
                   <thead className="bg-erp-surface-secondary">
                     <tr className="border-b border-erp-border">
                       <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-erp-text-secondary">Product</th>

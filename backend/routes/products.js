@@ -648,6 +648,8 @@ router.post('/', permissionMiddleware('Product', 'CREATE'), async (req, res, nex
           warehouseId: warehouse._id,
           type: 'STOCK_IN',
           quantity,
+          unitCost,
+          totalCost: lineStockValue,
           previousStock: 0,
           newStock: quantity,
           reason: 'Initial stock',

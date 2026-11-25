@@ -65,6 +65,8 @@ export default function CompanyProducts() {
   const [categories, setCategories] = useState([])
 
   const [search, setSearch] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
   const [statusFilter, setStatusFilter] = useState('All')
   const [categoryFilter, setCategoryFilter] = useState('All')
 
@@ -112,6 +114,15 @@ export default function CompanyProducts() {
     document.title = 'Products | MineERP'
   }, [])
 
+  // Debounce product search to avoid an API call on every keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search)
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [search])
+
   // Load categories for the category filter and product display.
   useEffect(() => {
     let cancelled = false
@@ -148,7 +159,7 @@ export default function CompanyProducts() {
       try {
         const { data } = await axiosInstance.get('/erp/products', {
           params: {
-            search: search.trim() || undefined,
+            search: debouncedSearch.trim() || undefined,
             status: statusFilter === 'All' ? undefined : statusFilter,
             categoryId: categoryFilter === 'All' ? undefined : categoryFilter,
             page: currentPage,
@@ -216,7 +227,7 @@ export default function CompanyProducts() {
     return () => {
       cancelled = true
     }
-  }, [canList, search, statusFilter, categoryFilter, currentPage, pageSize, refreshKey])
+  }, [canList, debouncedSearch, statusFilter, categoryFilter, currentPage, pageSize, refreshKey])
 
   // Display success messages passed back from create, edit or details pages.
   useEffect(() => {
@@ -463,7 +474,7 @@ export default function CompanyProducts() {
               <button
                 type="button"
                 onClick={openCreatePage}
-                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-3.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1"
+                className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-erp-primary px-2.5 text-xs font-semibold text-white transition hover:bg-erp-primary-hover focus:outline-none focus:ring-2 focus:ring-erp-primary/30 focus:ring-offset-1 sm:px-3.5"
               >
                 <Plus size={15} />
                 <span>Create Product</span>
@@ -572,7 +583,7 @@ export default function CompanyProducts() {
           ) : (
             <>
               {/* Desktop table */}
-              <div className="hidden overflow-x-auto md:block">
+              <div className="hidden w-full max-w-full overflow-x-auto md:block">
                 <table className="w-full min-w-[1050px] text-left">
                   <thead className="bg-slate-50">
                     <tr className="border-b border-slate-100">
@@ -730,7 +741,7 @@ export default function CompanyProducts() {
                               event.currentTarget.style.display = 'none'
                             }}
                             className="h-10 w-10 shrink-0 rounded-lg border border-slate-200 object-cover"
-                          /> 
+                          />
                         ) : (
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
                             <Package size={18} />
@@ -801,7 +812,7 @@ export default function CompanyProducts() {
                               type="button"
                               onClick={() => setStatusTarget(product)}
                               disabled={Boolean(updatingStatusId)}
-                              className={`inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg border text-xs font-semibold disabled:opacity-50 ${
+                              className={`inline-flex h-9 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border px-2 text-xs font-semibold whitespace-nowrap disabled:opacity-50 ${
                                 isInactive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-orange-200 bg-orange-50 text-orange-600'
                               }`}
                             >
