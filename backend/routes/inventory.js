@@ -113,6 +113,30 @@ function roundMoney(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100
 }
 
+// Stock value is the ledger balance. Average cost is that balance divided by
+// quantity, rounded to cents. Multiplying the rounded unit cost back by
+// quantity can miss the ledger balance by more than a few cents, so
+// reconciliation compares the stored unit cost with the cost implied by value.
+function derivedAverageCost(quantity, stockValue) {
+  const qty = Number(quantity) || 0
+  if (qty <= 0) return 0
+  return roundMoney(Number(stockValue) / qty)
+}
+
+function inventoryValuationReconciles(quantity, averageCost, stockValue) {
+  const qty = Number(quantity) || 0
+  const avg = Number(averageCost) || 0
+  const value = Number(stockValue) || 0
+
+  if (qty === 0) {
+    return Math.abs(value) <= 0.01 && Math.abs(avg) <= 0.01
+  }
+
+  if (avg <= 0 || value <= 0) return false
+
+  return Math.abs(derivedAverageCost(qty, value) - roundMoney(avg)) <= 0.01
+}
+
 function validateUnitCost(value, fieldName = 'Unit cost') {
   if (value === '' || value === null || value === undefined || typeof value === 'boolean' || !Number.isFinite(Number(value)) || Number(value) <= 0) {
     throw createError(`${fieldName} must be greater than zero.`)
@@ -146,16 +170,16 @@ function validateInventoryValuation(inventory, label = 'Inventory') {
     throw createError(`${label} has stock without a reliable valuation. Complete Inventory Valuation Review first.`)
   }
 
-  const expectedValue = roundMoney(quantity * averageCost)
+  const averageFromValue = derivedAverageCost(quantity, stockValue)
 
-  if (Math.abs(expectedValue - stockValue) > 0.02) {
+  if (Math.abs(averageFromValue - roundMoney(averageCost)) > 0.01) {
     throw createError(`${label} average cost and stock value do not reconcile. Complete Inventory Valuation Review first.`)
   }
 
   return {
     quantity,
-    averageCost,
-    stockValue,
+    averageCost: averageFromValue,
+    stockValue: roundMoney(stockValue),
   }
 }
 
@@ -1336,9 +1360,7 @@ router.get('/valuation-preview', permissionMiddleware('Inventory', 'VIEW'), asyn
 
       const quantityMatches = Boolean(actual) && Math.abs(actualQuantity - state.quantity) < 0.000001
 
-      const validExistingValuation =
-        Boolean(actual && actualQuantity > 0 && actualAverageCost > 0 && actualStockValue > 0 && Math.abs(roundMoney(actualAverageCost * actualQuantity) - actualStockValue) <= 0.02) ||
-        Boolean(actual && actualQuantity === 0 && actualAverageCost === 0 && actualStockValue === 0)
+      const validExistingValuation = Boolean(actual && inventoryValuationReconciles(actualQuantity, actualAverageCost, actualStockValue))
 
       const reasons = [...state.reasons]
 
@@ -1386,7 +1408,7 @@ router.get('/valuation-preview', permissionMiddleware('Inventory', 'VIEW'), asyn
       const actualAverageCost = Number(inventory.averageCost || 0)
       const actualStockValue = Number(inventory.stockValue || 0)
 
-      const validExistingValuation = actualQuantity === 0 ? actualAverageCost === 0 && actualStockValue === 0 : actualAverageCost > 0 && actualStockValue > 0 && Math.abs(roundMoney(actualQuantity * actualAverageCost) - actualStockValue) <= 0.02
+      const validExistingValuation = inventoryValuationReconciles(actualQuantity, actualAverageCost, actualStockValue)
 
       preview.push({
         productId: String(inventory.productId?._id || inventory.productId),
@@ -1909,14 +1931,12 @@ router.post('/stock-transfer', permissionMiddleware('Inventory', 'TRANSFER_STOCK
         const averageCost = Number(inventory.averageCost) || 0
         const stockValue = Number(inventory.stockValue) || 0
 
-        // Invalid negative values should be rejected by the validator.
+        // Invalid negative values and empty stock are rejected by the validator.
         if (quantity <= 0 || averageCost < 0 || stockValue < 0) {
           return false
         }
 
-        const expectedValue = roundMoney(quantity * averageCost)
-
-        return averageCost <= 0 || stockValue <= 0 || Math.abs(expectedValue - stockValue) > 0.02
+        return !inventoryValuationReconciles(quantity, averageCost, stockValue)
       }
 
       const restoreHistoricalValuation = (inventory, warehouseId, label, history) => {
