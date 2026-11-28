@@ -36,6 +36,13 @@ router.post('/login', async (req, res, next) => {
       })
     }
 
+    console.log('LOGIN DEBUG:', {
+      email: user?.email,
+      userFound: !!user,
+      passwordHashExists: !!user?.password,
+      passwordHashPrefix: user?.password?.slice(0, 7),
+    })
+
     const isPasswordValid = await bcrypt.compare(password, user.password)
 
     if (!isPasswordValid) {

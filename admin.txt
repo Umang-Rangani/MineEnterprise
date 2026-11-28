@@ -1,8 +1,0 @@
-Invoices Module નો workflow
-1. Sales Order પસંદ કરવો
-2. Customer અને Dispatch details મેળવવી
-3. Invoice માં products, quantity, rate, discount અને GST ગણતરી
-4. Invoice Draft બનાવવો
-5. Invoice Approve / Finalize કરવો
-6. Invoice PDF અને Print
-7. Payment status અને outstanding amount track કરવું
